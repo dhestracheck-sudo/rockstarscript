@@ -1,1517 +1,753 @@
--- ==========================================
--- ROCKSTAR SCRIPT HUB - MULTI-GAME LOADER (NATIVE CLIMBCONTROLLER BYPASS)
--- Map 1: Steal & Escape Cage (95168737547508) [Safe Velocity Boost]
--- Map 2: Panjat untuk Telur Hewan (85738654635245) [Native StartCFrame Climb + Auto Place Egg]
--- Fallback: Targeted Module Decompiler
--- ==========================================
-
+-- Rockstar UI - Blue Theme (With Full Map Analyzer & Config System)
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local RunService = game:GetService("RunService")
-local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MarketplaceService = game:GetService("MarketplaceService")
 
-local lp = Players.LocalPlayer
-local placeId = game.PlaceId
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- ==========================================
--- STEALTH UI PARENT
--- ==========================================
-local function getSafeGuiParent()
-    local ok, hui = pcall(function()
-        if gethui then return gethui() end
+-- Hapus UI lama jika sudah ada
+if PlayerGui:FindFirstChild("RockstarBlueUI") then
+    PlayerGui.RockstarBlueUI:Destroy()
+end
+
+-- Tabel Penyimpanan Config
+local Config = {
+    FiturUtama = false,
+    AutoAction = false,
+    IncludeRemotes = true,
+    IncludeNPCs = true,
+    IncludeInteractables = true,
+    IncludeZones = true,
+    LastSaved = ""
+}
+
+-- Warna Tema Rockstar Blue
+local Theme = {
+    Background = Color3.fromRGB(13, 17, 26),
+    Sidebar = Color3.fromRGB(18, 24, 38),
+    Element = Color3.fromRGB(23, 31, 48),
+    ElementHover = Color3.fromRGB(30, 41, 64),
+    Accent = Color3.fromRGB(0, 140, 255),
+    AccentBright = Color3.fromRGB(50, 180, 255),
+    TextPrimary = Color3.fromRGB(240, 245, 255),
+    TextSecondary = Color3.fromRGB(150, 165, 190),
+    Stroke = Color3.fromRGB(35, 65, 110)
+}
+
+-- ScreenGui Utama
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RockstarBlueUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 580, 0, 390)
+MainFrame.Position = UDim2.new(0.5, -290, 0.5, -195)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.Accent
+MainStroke.Thickness = 1.5
+MainStroke.Transparency = 0.3
+MainStroke.Parent = MainFrame
+
+-- Topbar / Header
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 42)
+TopBar.BackgroundColor3 = Theme.Sidebar
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopBarCorner = Instance.new("UICorner")
+TopBarCorner.CornerRadius = UDim.new(0, 10)
+TopBarCorner.Parent = TopBar
+
+local TopBarCover = Instance.new("Frame")
+TopBarCover.Size = UDim2.new(1, 0, 0, 10)
+TopBarCover.Position = UDim2.new(0, 0, 1, -10)
+TopBarCover.BackgroundColor3 = Theme.Sidebar
+TopBarCover.BorderSizePixel = 0
+TopBarCover.Parent = TopBar
+
+local DividerLine = Instance.new("Frame")
+DividerLine.Size = UDim2.new(1, 0, 0, 1)
+DividerLine.Position = UDim2.new(0, 0, 1, -1)
+DividerLine.BackgroundColor3 = Theme.Stroke
+DividerLine.BorderSizePixel = 0
+DividerLine.Parent = TopBar
+
+-- Judul Rockstar
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(0, 250, 1, 0)
+TitleLabel.Position = UDim2.new(0, 16, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Text = "★ ROCKSTAR HUB"
+TitleLabel.TextColor3 = Theme.AccentBright
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.TextSize = 16
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TopBar
+
+local SubTitle = Instance.new("TextLabel")
+SubTitle.Size = UDim2.new(0, 200, 1, 0)
+SubTitle.Position = UDim2.new(0, 165, 0, 1)
+SubTitle.BackgroundTransparency = 1
+SubTitle.Text = "BLUE EDITION • FULL ANALYZER"
+SubTitle.TextColor3 = Theme.TextSecondary
+SubTitle.Font = Enum.Font.GothamSemibold
+SubTitle.TextSize = 11
+SubTitle.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TopBar
+SubTitle.Parent = TopBar
+
+-- Tombol Minimize & Close
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 28, 0, 28)
+MinimizeBtn.Position = UDim2.new(1, -68, 0.5, -14)
+MinimizeBtn.BackgroundColor3 = Theme.Element
+MinimizeBtn.Text = "—"
+MinimizeBtn.TextColor3 = Theme.TextPrimary
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.TextSize = 13
+MinimizeBtn.Parent = TopBar
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 6)
+MinCorner.Parent = MinimizeBtn
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 28, 0, 28)
+CloseBtn.Position = UDim2.new(1, -34, 0.5, -14)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 60)
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Theme.TextPrimary
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 13
+CloseBtn.Parent = TopBar
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
+
+-- Container Body
+local BodyFrame = Instance.new("Frame")
+BodyFrame.Name = "BodyFrame"
+BodyFrame.Size = UDim2.new(1, 0, 1, -42)
+BodyFrame.Position = UDim2.new(0, 0, 0, 42)
+BodyFrame.BackgroundTransparency = 1
+BodyFrame.Parent = MainFrame
+
+-- Sidebar
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 155, 1, -16)
+Sidebar.Position = UDim2.new(0, 8, 0, 8)
+Sidebar.BackgroundColor3 = Theme.Sidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = BodyFrame
+
+local SidebarCorner = Instance.new("UICorner")
+SidebarCorner.CornerRadius = UDim.new(0, 8)
+SidebarCorner.Parent = Sidebar
+
+local SidebarStroke = Instance.new("UIStroke")
+SidebarStroke.Color = Theme.Stroke
+SidebarStroke.Thickness = 1
+SidebarStroke.Parent = Sidebar
+
+local SidebarLayout = Instance.new("UIListLayout")
+SidebarLayout.Padding = UDim.new(0, 6)
+SidebarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarLayout.Parent = Sidebar
+
+local SidebarPadding = Instance.new("UIPadding")
+SidebarPadding.PaddingTop = UDim.new(0, 8)
+SidebarPadding.Parent = Sidebar
+
+-- Content Container
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Size = UDim2.new(1, -179, 1, -16)
+ContentContainer.Position = UDim2.new(0, 171, 0, 8)
+ContentContainer.BackgroundColor3 = Theme.Sidebar
+ContentContainer.BorderSizePixel = 0
+ContentContainer.Parent = BodyFrame
+
+local ContentCorner = Instance.new("UICorner")
+ContentCorner.CornerRadius = UDim.new(0, 8)
+ContentCorner.Parent = ContentContainer
+
+local ContentStroke = Instance.new("UIStroke")
+ContentStroke.Color = Theme.Stroke
+ContentStroke.Thickness = 1
+ContentStroke.Parent = ContentContainer
+
+-- Sistem Dragging Window
+local dragging, dragInput, dragStart, startPos
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- Fungsi Minimize & Close
+local isMinimized = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    local targetSize = isMinimized and UDim2.new(0, 580, 0, 42) or UDim2.new(0, 580, 0, 390)
+    TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = targetSize}):Play()
+end)
+
+CloseBtn.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- Fungsi Pembuat Tab & Elemen
+local Tabs = {}
+local ToggleUpdaters = {}
+local FirstTab = true
+
+local function CreateTab(tabName)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Size = UDim2.new(1, -16, 0, 34)
+    TabButton.BackgroundColor3 = FirstTab and Theme.Accent or Theme.Element
+    TabButton.Text = tabName
+    TabButton.TextColor3 = FirstTab and Theme.TextPrimary or Theme.TextSecondary
+    TabButton.Font = Enum.Font.GothamSemibold
+    TabButton.TextSize = 13
+    TabButton.AutoButtonColor = false
+    TabButton.Parent = Sidebar
+
+    local TabBtnCorner = Instance.new("UICorner")
+    TabBtnCorner.CornerRadius = UDim.new(0, 6)
+    TabBtnCorner.Parent = TabButton
+
+    local Page = Instance.new("ScrollingFrame")
+    Page.Size = UDim2.new(1, -16, 1, -16)
+    Page.Position = UDim2.new(0, 8, 0, 8)
+    Page.BackgroundTransparency = 1
+    Page.BorderSizePixel = 0
+    Page.ScrollBarThickness = 3
+    Page.ScrollBarImageColor3 = Theme.Accent
+    Page.Visible = FirstTab
+    Page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    Page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    Page.Parent = ContentContainer
+
+    local PageLayout = Instance.new("UIListLayout")
+    PageLayout.Padding = UDim.new(0, 8)
+    PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    PageLayout.Parent = Page
+
+    FirstTab = false
+    table.insert(Tabs, {Button = TabButton, Page = Page})
+
+    TabButton.MouseButton1Click:Connect(function()
+        for _, tab in ipairs(Tabs) do
+            tab.Page.Visible = false
+            TweenService:Create(tab.Button, TweenInfo.new(0.2), {
+                BackgroundColor3 = Theme.Element,
+                TextColor3 = Theme.TextSecondary
+            }):Play()
+        end
+        Page.Visible = true
+        TweenService:Create(TabButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = Theme.Accent,
+            TextColor3 = Theme.TextPrimary
+        }):Play()
     end)
-    if ok and hui then return hui end
-    local ok2, cg = pcall(function()
-        return CoreGui
-    end)
-    if ok2 and cg then return cg end
-    return lp:WaitForChild("PlayerGui")
+
+    local Elements = {}
+
+    function Elements:AddLabel(text)
+        local Lbl = Instance.new("TextLabel")
+        Lbl.Size = UDim2.new(1, -6, 0, 22)
+        Lbl.BackgroundTransparency = 1
+        Lbl.Text = text
+        Lbl.TextColor3 = Theme.AccentBright
+        Lbl.Font = Enum.Font.GothamBold
+        Lbl.TextSize = 12
+        Lbl.TextXAlignment = Enum.TextXAlignment.Left
+        Lbl.Parent = Page
+        return Lbl
+    end
+
+    function Elements:AddButton(text, callback)
+        local Btn = Instance.new("TextButton")
+        Btn.Size = UDim2.new(1, -6, 0, 36)
+        Btn.BackgroundColor3 = Theme.Element
+        Btn.Text = "  " .. text
+        Btn.TextColor3 = Theme.TextPrimary
+        Btn.Font = Enum.Font.GothamMedium
+        Btn.TextSize = 13
+        Btn.TextXAlignment = Enum.TextXAlignment.Left
+        Btn.AutoButtonColor = false
+        Btn.Parent = Page
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = Btn
+
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Theme.Stroke
+        Stroke.Thickness = 1
+        Stroke.Parent = Btn
+
+        Btn.MouseEnter:Connect(function()
+            TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3 = Theme.ElementHover}):Play()
+        end)
+        Btn.MouseLeave:Connect(function()
+            TweenService:Create(Btn, TweenInfo.new(0.15), {BackgroundColor3 = Theme.Element}):Play()
+        end)
+        Btn.MouseButton1Click:Connect(function()
+            if callback then callback(Btn) end
+        end)
+        return Btn
+    end
+
+    function Elements:AddToggle(configKey, text, default, callback)
+        local state = (Config[configKey] ~= nil) and Config[configKey] or (default or false)
+        Config[configKey] = state
+
+        local ToggleFrame = Instance.new("Frame")
+        ToggleFrame.Size = UDim2.new(1, -6, 0, 38)
+        ToggleFrame.BackgroundColor3 = Theme.Element
+        ToggleFrame.Parent = Page
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = ToggleFrame
+
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Theme.Stroke
+        Stroke.Thickness = 1
+        Stroke.Parent = ToggleFrame
+
+        local Label = Instance.new("TextLabel")
+        Label.Size = UDim2.new(1, -60, 1, 0)
+        Label.Position = UDim2.new(0, 10, 0, 0)
+        Label.BackgroundTransparency = 1
+        Label.Text = text
+        Label.TextColor3 = Theme.TextPrimary
+        Label.Font = Enum.Font.GothamMedium
+        Label.TextSize = 13
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.Parent = ToggleFrame
+
+        local SwitchBg = Instance.new("TextButton")
+        SwitchBg.Size = UDim2.new(0, 40, 0, 20)
+        SwitchBg.Position = UDim2.new(1, -50, 0.5, -10)
+        SwitchBg.BackgroundColor3 = state and Theme.Accent or Color3.fromRGB(45, 55, 75)
+        SwitchBg.Text = ""
+        SwitchBg.AutoButtonColor = false
+        SwitchBg.Parent = ToggleFrame
+
+        local SwitchCorner = Instance.new("UICorner")
+        SwitchCorner.CornerRadius = UDim.new(1, 0)
+        SwitchCorner.Parent = SwitchBg
+
+        local Circle = Instance.new("Frame")
+        Circle.Size = UDim2.new(0, 14, 0, 14)
+        Circle.Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+        Circle.BackgroundColor3 = Theme.TextPrimary
+        Circle.Parent = SwitchBg
+
+        local CircleCorner = Instance.new("UICorner")
+        CircleCorner.CornerRadius = UDim.new(1, 0)
+        CircleCorner.Parent = Circle
+
+        local function SetState(newState)
+            state = newState
+            Config[configKey] = state
+            TweenService:Create(SwitchBg, TweenInfo.new(0.2), {
+                BackgroundColor3 = state and Theme.Accent or Color3.fromRGB(45, 55, 75)
+            }):Play()
+            TweenService:Create(Circle, TweenInfo.new(0.2), {
+                Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
+            }):Play()
+            if callback then callback(state) end
+        end
+
+        SwitchBg.MouseButton1Click:Connect(function()
+            SetState(not state)
+        end)
+
+        ToggleUpdaters[configKey] = SetState
+    end
+
+    function Elements:AddTextBox(placeholder, height)
+        local BoxFrame = Instance.new("Frame")
+        BoxFrame.Size = UDim2.new(1, -6, 0, height or 110)
+        BoxFrame.BackgroundColor3 = Theme.Background
+        BoxFrame.Parent = Page
+
+        local Corner = Instance.new("UICorner")
+        Corner.CornerRadius = UDim.new(0, 6)
+        Corner.Parent = BoxFrame
+
+        local Stroke = Instance.new("UIStroke")
+        Stroke.Color = Theme.Stroke
+        Stroke.Thickness = 1
+        Stroke.Parent = BoxFrame
+
+        local Box = Instance.new("TextBox")
+        Box.Size = UDim2.new(1, -16, 1, -12)
+        Box.Position = UDim2.new(0, 8, 0, 6)
+        Box.BackgroundTransparency = 1
+        Box.Text = ""
+        Box.PlaceholderText = placeholder
+        Box.PlaceholderColor3 = Theme.TextSecondary
+        Box.TextColor3 = Theme.TextPrimary
+        Box.Font = Enum.Font.Code
+        Box.TextSize = 11
+        Box.TextXAlignment = Enum.TextXAlignment.Left
+        Box.TextYAlignment = Enum.TextYAlignment.Top
+        Box.TextWrapped = true
+        Box.MultiLine = true
+        Box.ClearTextOnFocus = false
+        Box.Parent = BoxFrame
+
+        return Box
+    end
+
+    return Elements
 end
 
 -- ==========================================
--- DEEP AUDITOR
+-- HELPER KOORDINAT OBJEK
 -- ==========================================
-local LastStealRefusedReason = "Belum ada penolakan terekam"
-
-local function runDeepAuditScan()
-    local lines = {}
-    local function add(t) table.insert(lines, t) end
-
-    add("==========================================")
-    add("ROCKSTAR TARGETED MODULE AUDITOR")
-    add("PlaceId : " .. tostring(game.PlaceId))
-    add("Last StealRefused Info : " .. tostring(LastStealRefusedReason))
-    add("==========================================\n")
-
-    local targetNames = {
-        ["eggConfig"] = true,
-        ["staminaUpgradeConfig"] = true,
-        ["portalConfig"] = true
-    }
-
-    for _, container in ipairs({ReplicatedStorage, lp:FindFirstChild("PlayerScripts")}) do
-        if container then
-            for _, v in ipairs(container:GetDescendants()) do
-                if v:IsA("ModuleScript") and targetNames[v.Name] then
-                    add("=== MODULE: " .. v:GetFullName() .. " ===")
-                    pcall(function()
-                        if decompile then
-                            add(decompile(v))
-                        end
-                    end)
-                    add("\n")
-                end
-            end
+local function GetObjectPosition(obj)
+    if obj:IsA("BasePart") then
+        local p = obj.Position
+        return string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z)
+    elseif obj:IsA("Model") then
+        local ok, cf = pcall(function() return obj:GetPivot() end)
+        if ok and cf then
+            local p = cf.Position
+            return string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z)
+        end
+        local part = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
+        if part then
+            local p = part.Position
+            return string.format("%.1f, %.1f, %.1f", p.X, p.Y, p.Z)
         end
     end
-
-    local result = table.concat(lines, "\n")
-    if setclipboard then
-        setclipboard(result)
-    elseif toclipboard then
-        toclipboard(result)
-    end
-    return result
+    return "N/A"
 end
 
 -- ==========================================
--- SHARED UI BUILDER: ROCKSTAR LYNX DARK-ORANGE
+-- FUNGSI FULL MAP ANALYZER (SEMUA MAP)
 -- ==========================================
-local function createRockstarWindow(gameTitleText)
-    local guiParent = getSafeGuiParent()
-    local oldGui = guiParent:FindFirstChild("RockstarLynxUI")
-    if oldGui then oldGui:Destroy() end
+local function GenerateFullMapAnalysis(statusLabel)
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local playerPos = root and string.format("%.1f, %.1f, %.1f", root.Position.X, root.Position.Y, root.Position.Z) or "N/A"
 
-    local sg = Instance.new("ScreenGui")
-    sg.Name = "RockstarLynxUI"
-    sg.ResetOnSpawn = false
-    sg.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    sg.Parent = guiParent
-
-    local C_BG = Color3.fromRGB(24, 18, 15)
-    local C_SIDEBAR = Color3.fromRGB(28, 21, 18)
-    local C_CARD = Color3.fromRGB(36, 28, 24)
-    local C_CARD_DARK = Color3.fromRGB(20, 15, 12)
-    local C_ORANGE = Color3.fromRGB(242, 108, 29)
-    local C_TEXT = Color3.fromRGB(245, 240, 235)
-    local C_SUBTEXT = Color3.fromRGB(165, 155, 148)
-    local C_STROKE = Color3.fromRGB(58, 45, 38)
-
-    local floatBtn = Instance.new("TextButton")
-    floatBtn.Size = UDim2.new(0, 115, 0, 34)
-    floatBtn.Position = UDim2.new(0, 15, 0.5, -17)
-    floatBtn.BackgroundColor3 = C_BG
-    floatBtn.TextColor3 = C_ORANGE
-    floatBtn.Font = Enum.Font.GothamBlack
-    floatBtn.TextSize = 12
-    floatBtn.Text = "🐾 ROCKSTAR"
-    floatBtn.Visible = false
-    floatBtn.Parent = sg
-    Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(0, 8)
-    local fbStroke = Instance.new("UIStroke", floatBtn)
-    fbStroke.Color = C_ORANGE
-    fbStroke.Thickness = 1.5
-
-    local main = Instance.new("Frame")
-    main.Name = "MainWindow"
-    main.Size = UDim2.new(0, 650, 0, 410)
-    main.Position = UDim2.new(0.5, -325, 0.5, -205)
-    main.BackgroundColor3 = C_BG
-    main.BorderSizePixel = 0
-    main.ClipsDescendants = true
-    main.Parent = sg
-    Instance.new("UICorner", main).CornerRadius = UDim.new(0, 12)
-    local mainStroke = Instance.new("UIStroke", main)
-    mainStroke.Color = C_STROKE
-    mainStroke.Thickness = 1.2
-
-    local topBar = Instance.new("Frame")
-    topBar.Size = UDim2.new(1, 0, 0, 44)
-    topBar.BackgroundColor3 = C_SIDEBAR
-    topBar.BorderSizePixel = 0
-    topBar.Parent = main
-
-    local topLine = Instance.new("Frame")
-    topLine.Size = UDim2.new(1, 0, 0, 1)
-    topLine.Position = UDim2.new(0, 0, 1, -1)
-    topLine.BackgroundColor3 = C_STROKE
-    topLine.BorderSizePixel = 0
-    topLine.Parent = topBar
-
-    local logoIcon = Instance.new("TextLabel")
-    logoIcon.Size = UDim2.new(0, 28, 0, 28)
-    logoIcon.Position = UDim2.new(0, 12, 0.5, -14)
-    logoIcon.BackgroundTransparency = 1
-    logoIcon.Text = "🐾"
-    logoIcon.TextSize = 18
-    logoIcon.Parent = topBar
-
-    local titleLbl = Instance.new("TextLabel")
-    titleLbl.Size = UDim2.new(0, 85, 1, 0)
-    titleLbl.Position = UDim2.new(0, 42, 0, 0)
-    titleLbl.BackgroundTransparency = 1
-    titleLbl.Text = "ROCKSTAR"
-    titleLbl.TextColor3 = C_ORANGE
-    titleLbl.Font = Enum.Font.GothamBlack
-    titleLbl.TextSize = 15
-    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    titleLbl.Parent = topBar
-
-    local subTitleLbl = Instance.new("TextLabel")
-    subTitleLbl.Size = UDim2.new(0, 260, 1, 0)
-    subTitleLbl.Position = UDim2.new(0, 132, 0, 0)
-    subTitleLbl.BackgroundTransparency = 1
-    subTitleLbl.Text = gameTitleText
-    subTitleLbl.TextColor3 = C_SUBTEXT
-    subTitleLbl.Font = Enum.Font.GothamBold
-    subTitleLbl.TextSize = 12
-    subTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    subTitleLbl.Parent = topBar
-
-    local minBtn = Instance.new("TextButton")
-    minBtn.Size = UDim2.new(0, 28, 0, 24)
-    minBtn.Position = UDim2.new(1, -38, 0.5, -12)
-    minBtn.BackgroundColor3 = C_CARD
-    minBtn.Text = "—"
-    minBtn.TextColor3 = C_TEXT
-    minBtn.Font = Enum.Font.GothamBold
-    minBtn.TextSize = 12
-    minBtn.Parent = topBar
-    Instance.new("UICorner", minBtn).CornerRadius = UDim.new(0, 6)
-
-    minBtn.MouseButton1Click:Connect(function()
-        main.Visible = false
-        floatBtn.Visible = true
-    end)
-    floatBtn.MouseButton1Click:Connect(function()
-        main.Visible = true
-        floatBtn.Visible = false
+    local gameName = "Unknown"
+    pcall(function()
+        gameName = MarketplaceService:GetProductInfo(game.PlaceId).Name
     end)
 
-    local dragging, dragInput, dragStart, startPos
-    topBar.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = main.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-    topBar.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
+    local allZones = {}
+    local allNPCs = {}
+    local allInteractables = {}
+    local allSpawns = {}
+    local allToolsAndItems = {}
+    local allRemotes = {}
 
-    local sidebar = Instance.new("Frame")
-    sidebar.Size = UDim2.new(0, 175, 1, -44)
-    sidebar.Position = UDim2.new(0, 0, 0, 44)
-    sidebar.BackgroundColor3 = C_SIDEBAR
-    sidebar.BorderSizePixel = 0
-    sidebar.Parent = main
+    -- 1. Scan Semua Folder & Model Utama (Zones / Islands / Buildings)
+    if Config.IncludeZones then
+        if statusLabel then statusLabel.Text = "Status: Memindai Semua Zona & Folder Map..." end
+        task.wait()
+        for _, obj in ipairs(workspace:GetChildren()) do
+            if obj ~= char and not Players:GetPlayerFromCharacter(obj) and obj.Name ~= "Terrain" and obj.Name ~= "Camera" then
+                local subStructure = {}
+                local childGroupCount = {}
 
-    local sideLine = Instance.new("Frame")
-    sideLine.Size = UDim2.new(0, 1, 1, 0)
-    sideLine.Position = UDim2.new(1, -1, 0, 0)
-    sideLine.BackgroundColor3 = C_STROKE
-    sideLine.BorderSizePixel = 0
-    sideLine.Parent = sidebar
-
-    local tabList = Instance.new("ScrollingFrame")
-    tabList.Size = UDim2.new(1, -20, 1, -20)
-    tabList.Position = UDim2.new(0, 10, 0, 10)
-    tabList.BackgroundTransparency = 1
-    tabList.ScrollBarThickness = 0
-    tabList.Parent = sidebar
-    local tabLayout = Instance.new("UIListLayout", tabList)
-    tabLayout.Padding = UDim.new(0, 5)
-
-    local contentArea = Instance.new("Frame")
-    contentArea.Size = UDim2.new(1, -175, 1, -44)
-    contentArea.Position = UDim2.new(0, 175, 0, 44)
-    contentArea.BackgroundTransparency = 1
-    contentArea.Parent = main
-
-    local pages = {}
-    local tabButtons = {}
-
-    local function createTab(tabName, iconTxt)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 34)
-        btn.BackgroundColor3 = C_ORANGE
-        btn.BackgroundTransparency = 1
-        btn.Text = "   " .. iconTxt .. "   " .. tabName
-        btn.TextColor3 = C_SUBTEXT
-        btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 12
-        btn.TextXAlignment = Enum.TextXAlignment.Left
-        btn.Parent = tabList
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
-
-        local page = Instance.new("ScrollingFrame")
-        page.Size = UDim2.new(1, -24, 1, -20)
-        page.Position = UDim2.new(0, 12, 0, 10)
-        page.BackgroundTransparency = 1
-        page.ScrollBarThickness = 3
-        page.ScrollBarImageColor3 = C_ORANGE
-        page.Visible = false
-        page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-        page.CanvasSize = UDim2.new(0, 0, 0, 0)
-        page.Parent = contentArea
-
-        local layout = Instance.new("UIListLayout", page)
-        layout.Padding = UDim.new(0, 8)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-
-        pages[tabName] = page
-        tabButtons[tabName] = btn
-
-        btn.MouseButton1Click:Connect(function()
-            for k, p in pairs(pages) do
-                p.Visible = (k == tabName)
-                tabButtons[k].BackgroundTransparency = (k == tabName) and 0 or 1
-                tabButtons[k].TextColor3 = (k == tabName) and C_TEXT or C_SUBTEXT
-            end
-        end)
-        return page
-    end
-
-    local function createCard(parent, titleText, subText)
-        local card = Instance.new("Frame")
-        card.Size = UDim2.new(1, -6, 0, 0)
-        card.AutomaticSize = Enum.AutomaticSize.Y
-        card.BackgroundColor3 = C_CARD
-        card.BorderSizePixel = 0
-        card.Parent = parent
-        Instance.new("UICorner", card).CornerRadius = UDim.new(0, 8)
-        local st = Instance.new("UIStroke", card)
-        st.Color = C_STROKE
-        st.Thickness = 1
-
-        local pad = Instance.new("UIPadding", card)
-        pad.PaddingTop = UDim.new(0, 10)
-        pad.PaddingBottom = UDim.new(0, 10)
-        pad.PaddingLeft = UDim.new(0, 12)
-        pad.PaddingRight = UDim.new(0, 12)
-
-        local lay = Instance.new("UIListLayout", card)
-        lay.Padding = UDim.new(0, 8)
-        lay.SortOrder = Enum.SortOrder.LayoutOrder
-
-        if titleText then
-            local header = Instance.new("Frame")
-            header.Size = UDim2.new(1, 0, 0, subText and 32 or 20)
-            header.BackgroundTransparency = 1
-            header.LayoutOrder = 1
-            header.Parent = card
-
-            local t = Instance.new("TextLabel")
-            t.Size = UDim2.new(1, 0, 0, 18)
-            t.BackgroundTransparency = 1
-            t.Text = titleText
-            t.TextColor3 = C_TEXT
-            t.Font = Enum.Font.GothamBold
-            t.TextSize = 13
-            t.TextXAlignment = Enum.TextXAlignment.Left
-            t.Parent = header
-
-            if subText then
-                local s = Instance.new("TextLabel")
-                s.Size = UDim2.new(1, 0, 0, 14)
-                s.Position = UDim2.new(0, 0, 0, 18)
-                s.BackgroundTransparency = 1
-                s.Text = subText
-                s.TextColor3 = C_SUBTEXT
-                s.Font = Enum.Font.Gotham
-                s.TextSize = 11
-                s.TextXAlignment = Enum.TextXAlignment.Left
-                s.Parent = header
-            end
-        end
-        return card
-    end
-
-    local function addStatusBox(card, defaultText)
-        local box = Instance.new("Frame")
-        box.Size = UDim2.new(1, 0, 0, 32)
-        box.BackgroundColor3 = C_CARD_DARK
-        box.LayoutOrder = 2
-        box.Parent = card
-        Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
-
-        local bar = Instance.new("Frame")
-        bar.Size = UDim2.new(0, 3, 1, -8)
-        bar.Position = UDim2.new(0, 4, 0, 4)
-        bar.BackgroundColor3 = C_ORANGE
-        bar.BorderSizePixel = 0
-        bar.Parent = box
-        Instance.new("UICorner", bar).CornerRadius = UDim.new(1, 0)
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -18, 1, 0)
-        lbl.Position = UDim2.new(0, 14, 0, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = defaultText
-        lbl.TextColor3 = C_TEXT
-        lbl.Font = Enum.Font.GothamMedium
-        lbl.TextSize = 11
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = box
-        return lbl
-    end
-
-    local function addToggle(card, labelText, defaultVal, callback, order)
-        local row = Instance.new("Frame")
-        row.Size = UDim2.new(1, 0, 0, 28)
-        row.BackgroundTransparency = 1
-        row.LayoutOrder = order or 10
-        row.Parent = card
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(1, -60, 1, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = labelText
-        lbl.TextColor3 = C_TEXT
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 12
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = row
-
-        local swBg = Instance.new("TextButton")
-        swBg.Size = UDim2.new(0, 44, 0, 22)
-        swBg.Position = UDim2.new(1, -44, 0.5, -11)
-        swBg.BackgroundColor3 = defaultVal and C_ORANGE or C_CARD_DARK
-        swBg.Text = ""
-        swBg.Parent = row
-        Instance.new("UICorner", swBg).CornerRadius = UDim.new(1, 0)
-        local st = Instance.new("UIStroke", swBg)
-        st.Color = C_STROKE
-        st.Thickness = 1
-
-        local knob = Instance.new("Frame")
-        knob.Size = UDim2.new(0, 16, 0, 16)
-        knob.Position = defaultVal and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-        knob.BackgroundColor3 = C_TEXT
-        knob.Parent = swBg
-        Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
-
-        local state = defaultVal
-        swBg.MouseButton1Click:Connect(function()
-            state = not state
-            TweenService:Create(swBg, TweenInfo.new(0.18), {BackgroundColor3 = state and C_ORANGE or C_CARD_DARK}):Play()
-            TweenService:Create(knob, TweenInfo.new(0.18), {Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)}):Play()
-            if callback then task.spawn(callback, state) end
-        end)
-    end
-
-    local function addMultiDropdown(card, labelText, itemsList, selectedTable, order)
-        local container = Instance.new("Frame")
-        container.Size = UDim2.new(1, 0, 0, 32)
-        container.AutomaticSize = Enum.AutomaticSize.Y
-        container.BackgroundTransparency = 1
-        container.LayoutOrder = order or 5
-        container.Parent = card
-
-        local topRow = Instance.new("Frame")
-        topRow.Size = UDim2.new(1, 0, 0, 30)
-        topRow.BackgroundTransparency = 1
-        topRow.Parent = container
-
-        local lbl = Instance.new("TextLabel")
-        lbl.Size = UDim2.new(0.42, 0, 1, 0)
-        lbl.BackgroundTransparency = 1
-        lbl.Text = labelText
-        lbl.TextColor3 = C_TEXT
-        lbl.Font = Enum.Font.GothamBold
-        lbl.TextSize = 12
-        lbl.TextXAlignment = Enum.TextXAlignment.Left
-        lbl.Parent = topRow
-
-        local dropBtn = Instance.new("TextButton")
-        dropBtn.Size = UDim2.new(0.58, 0, 0, 28)
-        dropBtn.Position = UDim2.new(0.42, 0, 0, 1)
-        dropBtn.BackgroundColor3 = C_CARD_DARK
-        dropBtn.TextColor3 = C_TEXT
-        dropBtn.Font = Enum.Font.GothamMedium
-        dropBtn.TextSize = 11
-        dropBtn.TextXAlignment = Enum.TextXAlignment.Left
-        dropBtn.TextTruncate = Enum.TextTruncate.AtEnd
-        dropBtn.Parent = topRow
-        Instance.new("UICorner", dropBtn).CornerRadius = UDim.new(0, 6)
-        local dst = Instance.new("UIStroke", dropBtn)
-        dst.Color = C_ORANGE
-        dst.Thickness = 1
-
-        local listFrame = Instance.new("Frame")
-        listFrame.Size = UDim2.new(1, 0, 0, 0)
-        listFrame.Position = UDim2.new(0, 0, 0, 34)
-        listFrame.AutomaticSize = Enum.AutomaticSize.Y
-        listFrame.BackgroundColor3 = C_CARD_DARK
-        listFrame.Visible = false
-        listFrame.Parent = container
-        Instance.new("UICorner", listFrame).CornerRadius = UDim.new(0, 6)
-
-        local lPad = Instance.new("UIPadding", listFrame)
-        lPad.PaddingTop = UDim.new(0, 6)
-        lPad.PaddingBottom = UDim.new(0, 6)
-        lPad.PaddingLeft = UDim.new(0, 8)
-        lPad.PaddingRight = UDim.new(0, 8)
-
-        local lLay = Instance.new("UIListLayout", listFrame)
-        lLay.Padding = UDim.new(0, 4)
-
-        local function updateText()
-            local active = {}
-            for _, item in ipairs(itemsList) do
-                if selectedTable[item] then table.insert(active, item) end
-            end
-            if #active == 0 then
-                dropBtn.Text = "  None Selected  ▼"
-            else
-                dropBtn.Text = "  " .. table.concat(active, ", ") .. "  ▼"
-            end
-        end
-
-        for _, item in ipairs(itemsList) do
-            local itemBtn = Instance.new("TextButton")
-            itemBtn.Size = UDim2.new(1, 0, 0, 24)
-            itemBtn.BackgroundColor3 = selectedTable[item] and C_ORANGE or C_CARD
-            itemBtn.Text = "  " .. (selectedTable[item] and "☑ " or "☐ ") .. item
-            itemBtn.TextColor3 = C_TEXT
-            itemBtn.Font = Enum.Font.GothamBold
-            itemBtn.TextSize = 11
-            itemBtn.TextXAlignment = Enum.TextXAlignment.Left
-            itemBtn.Parent = listFrame
-            Instance.new("UICorner", itemBtn).CornerRadius = UDim.new(0, 5)
-
-            itemBtn.MouseButton1Click:Connect(function()
-                selectedTable[item] = not selectedTable[item]
-                itemBtn.BackgroundColor3 = selectedTable[item] and C_ORANGE or C_CARD
-                itemBtn.Text = "  " .. (selectedTable[item] and "☑ " or "☐ ") .. item
-                updateText()
-            end)
-        end
-
-        updateText()
-        dropBtn.MouseButton1Click:Connect(function()
-            listFrame.Visible = not listFrame.Visible
-        end)
-    end
-
-    local function addButton(card, btnText, callback, order)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(1, 0, 0, 30)
-        btn.BackgroundColor3 = C_ORANGE
-        btn.Text = btnText
-        btn.TextColor3 = C_TEXT
-        btn.Font = Enum.Font.GothamBlack
-        btn.TextSize = 12
-        btn.LayoutOrder = order or 20
-        btn.Parent = card
-        Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
-        btn.MouseButton1Click:Connect(function()
-            if callback then task.spawn(callback) end
-        end)
-        return btn
-    end
-
-    return {
-        createTab = createTab,
-        createCard = createCard,
-        addStatusBox = addStatusBox,
-        addToggle = addToggle,
-        addMultiDropdown = addMultiDropdown,
-        addButton = addButton,
-        pages = pages,
-        tabButtons = tabButtons,
-        C_TEXT = C_TEXT,
-        C_SUBTEXT = C_SUBTEXT
-    }
-end
-
--- ============================================================================
--- MAP 1: STEAL & ESCAPE CAGE (PlaceId: 95168737547508)
--- ============================================================================
-if placeId == 95168737547508 then
-    local Remotes = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes")
-    local ui = createRockstarWindow("Steal & Escape Cage (Audited Speed)")
-
-    local tabMain = ui.createTab("Main", "🏠")
-    local tabAuto = ui.createTab("Automation", "⚡")
-    local tabShop = ui.createTab("Shop", "🛒")
-    local tabConfig = ui.createTab("Config", "📁")
-
-    ui.pages["Main"].Visible = true
-    ui.tabButtons["Main"].BackgroundTransparency = 0
-    ui.tabButtons["Main"].TextColor3 = ui.C_TEXT
-
-    local State = {
-        AutoSteal = false,
-        VelocityBoost = false,
-        TurboMultiplier = false,
-        AutoCollectCash = false,
-        SelectedRarities = {
-            ["AstralCage"] = true, ["InfinityCage"] = true, ["DivineCage"] = true,
-            ["EternalCage"] = true, ["SecretCage"] = true, ["CosmicCage"] = true,
-            ["MythicCage"] = true, ["LegendaryCage"] = false, ["EpicCage"] = false,
-            ["RareCage"] = false, ["CommonCage"] = false
-        },
-        SelectedPaths = {
-            ["Path20"] = true, ["Path19"] = true, ["Path18"] = true, ["Path17"] = true, ["Path16"] = true
-        }
-    }
-    for i = 1, 15 do State.SelectedPaths["Path" .. i] = false end
-
-    local RarityOrder = {
-        "AstralCage", "InfinityCage", "DivineCage", "EternalCage",
-        "SecretCage", "CosmicCage", "MythicCage", "LegendaryCage",
-        "EpicCage", "RareCage", "CommonCage"
-    }
-    local PathOrder = {}
-    for i = 20, 1, -1 do table.insert(PathOrder, "Path" .. i) end
-
-    RunService.Heartbeat:Connect(function()
-        if not State.VelocityBoost then return end
-        local char = lp.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hrp and hum and hum.Health > 0 and hum.MoveDirection.Magnitude > 0.1 then
-            local baseSpd = hum.WalkSpeed
-            local mult = State.TurboMultiplier and 1.85 or 1.40
-            local targetSpd = math.clamp(baseSpd * mult, 28, 320)
-            local dir = hum.MoveDirection.Unit
-            hrp.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpd, hrp.AssemblyLinearVelocity.Y, dir.Z * targetSpd)
-        end
-    end)
-
-    local function getMyPlot()
-        local plots = Workspace:FindFirstChild("Hub") and Workspace.Hub:FindFirstChild("Plots")
-        if not plots then return nil end
-        for _, plot in ipairs(plots:GetChildren()) do
-            local od = plot:FindFirstChild("OwnerDisplay")
-            if od then
-                for _, d in ipairs(od:GetDescendants()) do
-                    if d:IsA("TextLabel") then
-                        local t = string.lower(d.Text or "")
-                        if string.find(t, string.lower(lp.Name), 1, true) or string.find(t, string.lower(lp.DisplayName), 1, true) then
-                            return plot
-                        end
-                    end
-                end
-            end
-        end
-        return nil
-    end
-
-    local function pureLegitWalkTo(targetPos, stopDist, checkToggleFunc)
-        stopDist = stopDist or 6
-        local startTime = os.clock()
-        while os.clock() - startTime < 22 do
-            if checkToggleFunc and not checkToggleFunc() then return false end
-            local char = lp.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not hrp or not hum or hum.Health <= 0 then return false end
-
-            local flatDist = (Vector3.new(hrp.Position.X, 0, hrp.Position.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
-            if flatDist <= stopDist then return true end
-            hum:MoveTo(targetPos)
-            task.wait(0.1)
-        end
-        return false
-    end
-
-    local function holdPromptMap1(prompt)
-        if not prompt or not prompt.Parent then return end
-        local hold = prompt.HoldDuration or 0
-        pcall(function()
-            prompt.RequiresLineOfSight = false
-            prompt:InputHoldBegin()
-        end)
-        task.wait(hold + 0.18)
-        pcall(function() prompt:InputHoldEnd() end)
-    end
-
-    local cardSteal = ui.createCard(tabMain, "Audited Auto Steal Cage + Safe Speed", "Tanpa ubah properti WalkSpeed (Lolos Anti-Cheat PenProblem)")
-    local statusLbl = ui.addStatusBox(cardSteal, "Status: Idle (100% Anti-Ban Mode)")
-    ui.addMultiDropdown(cardSteal, "Filter Rarity", RarityOrder, State.SelectedRarities, 3)
-    ui.addMultiDropdown(cardSteal, "Filter Path", PathOrder, State.SelectedPaths, 4)
-
-    ui.addToggle(cardSteal, "Safe Physics Velocity Boost (1.4x Speed)", false, function(val)
-        State.VelocityBoost = val
-    end, 5)
-
-    ui.addToggle(cardSteal, "Turbo Velocity Multiplier (1.85x Speed)", false, function(val)
-        State.TurboMultiplier = val
-    end, 6)
-
-    ui.addToggle(cardSteal, "Start Audited Auto Steal", false, function(val)
-        State.AutoSteal = val
-        if not val then statusLbl.Text = "Status: Idle" return end
-        task.spawn(function()
-            while State.AutoSteal do
-                local pathsFolder = Workspace:FindFirstChild("Paths")
-                local foundCage, foundPath = nil, nil
-                if pathsFolder then
-                    for _, rName in ipairs(RarityOrder) do
-                        if State.SelectedRarities[rName] then
-                            for i = 20, 1, -1 do
-                                local pName = "Path" .. i
-                                if State.SelectedPaths[pName] then
-                                    local pMod = pathsFolder:FindFirstChild(pName)
-                                    local cages = pMod and pMod:FindFirstChild("Cages")
-                                    if cages then
-                                        for _, c in ipairs(cages:GetChildren()) do
-                                            if c.Name == rName then
-                                                foundCage = c
-                                                foundPath = pMod
-                                                break
-                                            end
-                                        end
-                                    end
-                                end
-                                if foundCage then break end
-                            end
-                        end
-                        if foundCage then break end
-                    end
+                for _, sub in ipairs(obj:GetChildren()) do
+                    local key = sub.Name .. " [" .. sub.ClassName .. "]"
+                    childGroupCount[key] = (childGroupCount[key] or 0) + 1
                 end
 
-                if foundCage and foundPath then
-                    statusLbl.Text = "Running to " .. foundCage.Name .. " (" .. foundPath.Name .. ")..."
-                    local targetPos = foundCage:GetPivot().Position
-                    pureLegitWalkTo(targetPos, 7, function() return State.AutoSteal end)
+                for k, count in pairs(childGroupCount) do
+                    local entry = count > 1 and (k .. " x" .. tostring(count)) or k
+                    table.insert(subStructure, entry)
+                end
 
-                    local root = foundCage:FindFirstChild("Root")
-                    if root then
-                        pureLegitWalkTo(root.Position, 5.5, function() return State.AutoSteal end)
-                        local prompt = root:FindFirstChild("StealPrompt") or foundCage:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        if prompt and State.AutoSteal then
-                            statusLbl.Text = "Holding E on " .. foundCage.Name .. "..."
-                            holdPromptMap1(prompt)
-                            local plot = getMyPlot()
-                            if plot and State.AutoSteal then
-                                statusLbl.Text = "Returning to Base..."
-                                pureLegitWalkTo(plot:GetPivot().Position, 10, function() return State.AutoSteal end)
+                -- Ambil koordinat sub-area penting jika obj adalah Folder
+                local subLocations = {}
+                if obj:IsA("Folder") or obj:IsA("Model") then
+                    for _, sub in ipairs(obj:GetChildren()) do
+                        if sub:IsA("Model") or sub:IsA("BasePart") or sub:IsA("Folder") then
+                            local pos = GetObjectPosition(sub)
+                            if pos ~= "N/A" and #subLocations < 60 then
+                                table.insert(subLocations, {
+                                    Name = sub.Name,
+                                    Position = pos
+                                })
                             end
                         end
                     end
-                else
-                    statusLbl.Text = "Scanning selected Paths & Rarities..."
                 end
-                task.wait(0.35)
+
+                table.insert(allZones, {
+                    Name = obj.Name,
+                    Class = obj.ClassName,
+                    Position = GetObjectPosition(obj),
+                    TotalChildren = #obj:GetChildren(),
+                    ChildrenSummary = subStructure,
+                    SubLocations = subLocations
+                })
             end
-        end)
-    end, 7)
-
-    local cardPlot = ui.createCard(tabAuto, "Legit Plot Automation", "Berjalan menghampiri CashPad secara natural")
-    ui.addToggle(cardPlot, "Auto Walk to CashPad (Collect Cash)", false, function(val)
-        State.AutoCollectCash = val
-        task.spawn(function()
-            while State.AutoCollectCash do
-                if not State.AutoSteal then
-                    local plot = getMyPlot()
-                    local btn = plot and plot:FindFirstChild("CashPad") and plot.CashPad:FindFirstChild("Button")
-                    if btn then
-                        pureLegitWalkTo(btn.Position, 3, function() return State.AutoCollectCash and not State.AutoSteal end)
-                    end
-                end
-                task.wait(4)
-            end
-        end)
-    end, 1)
-
-    local cardShop = ui.createCard(tabShop, "Upgrades & Pets", "Upgrade resmi via tombol UI game")
-    ui.addButton(cardShop, "UPGRADE TREADMILL (SPEED)", function()
-        pcall(function() Remotes.UpgradeTreadmill:FireServer() end)
-    end, 1)
-    ui.addButton(cardShop, "UPGRADE PLOT", function()
-        pcall(function() Remotes.UpgradePlot:FireServer() end)
-    end, 2)
-
--- ============================================================================
--- MAP 2: [🎃] PANJAT UNTUK TELUR HEWAN 🥚 (PlaceId: 85738654635245)
--- [100% NATIVE CLIMBCONTROLLER PHYSICS + STARTCFRAME + SMART AUTO PLACE EGG]
--- ============================================================================
-elseif placeId == 85738654635245 then
-    local ui = createRockstarWindow("Panjat untuk Telur Hewan (Native Climb + Place)")
-
-    local tabMain = ui.createTab("Main", "🥚")
-    local tabAuto = ui.createTab("Automation", "⚡")
-    local tabShop = ui.createTab("Shop", "🛒")
-    local tabTeleport = ui.createTab("Islands", "🏝️")
-    local tabConfig = ui.createTab("Config", "📁")
-
-    ui.pages["Main"].Visible = true
-    ui.tabButtons["Main"].BackgroundTransparency = 0
-    ui.tabButtons["Main"].TextColor3 = ui.C_TEXT
-
-    local Knit = nil
-    local eggConfig = nil
-    local zonesUtil = nil
-
-    pcall(function() Knit = require(ReplicatedStorage.src.Packages.knit) end)
-    pcall(function() eggConfig = require(ReplicatedStorage.src.GameConfiguration.Gameplay.eggConfig) end)
-    pcall(function() zonesUtil = require(ReplicatedStorage.src.utility.zones) end)
-
-    local function getKnitService(serviceName)
-        local ok, svc = pcall(function()
-            if Knit then return Knit.GetService(serviceName) end
-            return ReplicatedStorage.src.Packages._Index["sleitnick_knit@1.7.0"].knit.Services[serviceName]
-        end)
-        return ok and svc or nil
-    end
-
-    local function getKnitController(ctrlName)
-        local ok, ctrl = pcall(function()
-            if Knit then return Knit.GetController(ctrlName) end
-        end)
-        return ok and ctrl or nil
-    end
-
-    local DataController = getKnitController("DataController")
-    local StaminaController = getKnitController("StaminaController")
-    local SpeedStateController = getKnitController("SpeedStateController")
-    local ClimbController = getKnitController("ClimbController")
-    local BaseController = getKnitController("BaseController")
-    local ZoneController = getKnitController("ZoneController")
-    local EggCarryController = getKnitController("EggCarryController")
-    local EggPlacementController = getKnitController("EggPlacementController")
-
-    local EggPlaceSvc = getKnitService("EggPlacementService")
-    local EggHatchSvc = getKnitService("EggHatchService")
-    local BaseUpgSvc = getKnitService("BaseUpgradeService")
-    local TreadmillSvc = getKnitService("TreadmillService")
-    local RebirthSvc = getKnitService("RebirthService")
-    local CashFlowSvc = getKnitService("CashFlowService")
-    local GiftPlayTimeSvc = getKnitService("GiftPlayTimeService")
-    local DailyRewardsSvc = getKnitService("DailyRewardsService")
-    local IndexSvc = getKnitService("IndexService")
-    local StaminaUpgSvc = getKnitService("StaminaUpgradeService")
-
-    -- Ambil StartCFrame resmi dari ReplicatedStorage.Assets.HeightBar.StartCFrame (Sesuai zones.lua!)
-    local OfficialStartPart = nil
-    pcall(function()
-        OfficialStartPart = ReplicatedStorage:WaitForChild("Assets", 5):WaitForChild("HeightBar", 5):WaitForChild("StartCFrame", 5)
-    end)
-
-    -- INFINITE STAMINA HEARTBEAT: Reset Stamina terus-menerus agar tidak pernah lelah / melambat!
-    RunService.Heartbeat:Connect(function()
-        if StaminaController then
-            pcall(function()
-                StaminaController:Reset()
-            end)
         end
-    end)
-
-    -- Listener StealRefused
-    local StealRefusedFlag = false
-    local rawEggSpawnRE = nil
-    pcall(function()
-        rawEggSpawnRE = ReplicatedStorage.src.Packages._Index["sleitnick_knit@1.7.0"].knit.Services.EggSpawnService.RE.StealRefused
-    end)
-    if rawEggSpawnRE then
-        rawEggSpawnRE.OnClientEvent:Connect(function(reason)
-            StealRefusedFlag = true
-            LastStealRefusedReason = tostring(reason)
-        end)
     end
 
-    local State = {
-        AutoStealEgg = false,
-        AutoPlaceEgg = false,
-        ChainClimbBoost = false,
-        AutoHatchBase = false,
-        AutoClaimRewards = false,
-        SelectedRarities = {
-            ["Astral"] = true, ["Celestial"] = true, ["Radiant"] = true,
-            ["Eternal"] = true, ["Divine"] = true, ["Legendary"] = true,
-            ["Rare"] = true, ["Uncommon"] = true, ["Common"] = false
+    -- 2. Scan Seluruh Descendants Workspace (NPC, Interactables, Spawns, Items)
+    if statusLabel then statusLabel.Text = "Status: Memindai Seluruh Isi Map (NPC, Interaksi, Item)..." end
+    task.wait()
+
+    local descendants = workspace:GetDescendants()
+    local seenInteractables = {}
+    local seenNPCs = {}
+
+    for i, desc in ipairs(descendants) do
+        if i % 2500 == 0 then
+            task.wait() -- Mencegah lag/freeze pada map berukuran besar
+        end
+
+        -- Deteksi Semua NPC (Model dengan Humanoid bukan Player)
+        if Config.IncludeNPCs and desc:IsA("Humanoid") then
+            local npcModel = desc.Parent
+            if npcModel and npcModel:IsA("Model") and not Players:GetPlayerFromCharacter(npcModel) then
+                local pos = GetObjectPosition(npcModel)
+                local key = npcModel:GetFullName()
+                if not seenNPCs[key] then
+                    seenNPCs[key] = true
+                    table.insert(allNPCs, {
+                        Name = npcModel.Name,
+                        Path = key,
+                        Health = string.format("%.0f/%.0f", desc.Health, desc.MaxHealth),
+                        Position = pos
+                    })
+                end
+            end
+        end
+
+        -- Deteksi Semua Objek Interaktif (ProximityPrompt, ClickDetector, Seat)
+        if Config.IncludeInteractables then
+            if desc:IsA("ProximityPrompt") or desc:IsA("ClickDetector") then
+                local parent = desc.Parent
+                local pos = parent and GetObjectPosition(parent) or "N/A"
+                local parentPath = parent and parent:GetFullName() or "Nil"
+                local key = desc.ClassName .. "|" .. parentPath
+                if not seenInteractables[key] then
+                    seenInteractables[key] = true
+                    table.insert(allInteractables, {
+                        Type = desc.ClassName,
+                        ObjectName = parent and parent.Name or "Unknown",
+                        Path = parentPath,
+                        ActionText = desc:IsA("ProximityPrompt") and (desc.ActionText .. " (" .. desc.ObjectText .. ")") or "",
+                        Position = pos
+                    })
+                end
+            elseif desc:IsA("SpawnLocation") then
+                table.insert(allSpawns, {
+                    Name = desc.Name,
+                    Path = desc:GetFullName(),
+                    Position = GetObjectPosition(desc)
+                })
+            elseif desc:IsA("Tool") then
+                table.insert(allToolsAndItems, {
+                    Name = desc.Name,
+                    Location = "Workspace",
+                    Path = desc:GetFullName(),
+                    Position = GetObjectPosition(desc)
+                })
+            end
+        end
+    end
+
+    -- 3. Scan ReplicatedStorage (Remotes & Items)
+    if Config.IncludeRemotes then
+        if statusLabel then statusLabel.Text = "Status: Memindai ReplicatedStorage & Remotes..." end
+        task.wait()
+        for i, desc in ipairs(ReplicatedStorage:GetDescendants()) do
+            if i % 2500 == 0 then
+                task.wait()
+            end
+            if desc:IsA("RemoteEvent") or desc:IsA("RemoteFunction") or desc:IsA("BindableEvent") then
+                table.insert(allRemotes, {
+                    Name = desc.Name,
+                    Type = desc.ClassName,
+                    Path = desc:GetFullName()
+                })
+            elseif desc:IsA("Tool") then
+                table.insert(allToolsAndItems, {
+                    Name = desc.Name,
+                    Location = "ReplicatedStorage",
+                    Path = desc:GetFullName()
+                })
+            end
+        end
+    end
+
+    local fullReport = {
+        GameInfo = {
+            GameName = gameName,
+            PlaceId = game.PlaceId,
+            PlaceVersion = game.PlaceVersion,
+            ScanTimestamp = os.date("%Y-%m-%d %H:%M:%S"),
+            PlayerPosition = playerPos,
+            TotalWorkspaceDescendants = #descendants
         },
-        -- Default: Fokus ke pulau ketinggian bawah-menengah (Y=200 s/d Y=3124) agar cepat dicapai!
-        SelectedBiomes = {
-            ["Forest"] = true,          -- Y = 200
-            ["Winter"] = true,          -- Y = 404
-            ["Ocean"] = true,           -- Y = 812
-            ["Desert"] = true,          -- Y = 1356
-            ["Crystal Mines"] = true,   -- Y = 2172
-            ["Jungle"] = true,          -- Y = 3124
-            ["Mystic Isles"] = false,   -- Y = 4348
-            ["PreHistoric"] = false,    -- Y = 5640
-            ["Divine Heights"] = false, -- Y = 7136
-            ["Celestial"] = false,      -- Y = 8632
-            ["Realm of Legends"] = false, -- Y = 10120
-            ["Forbidden Forest"] = false  -- Y = 12160
-        }
+        SummaryCounts = {
+            TopZonesCount = #allZones,
+            NPCsCount = #allNPCs,
+            InteractablesCount = #allInteractables,
+            SpawnsCount = #allSpawns,
+            ToolsAndItemsCount = #allToolsAndItems,
+            RemotesCount = #allRemotes
+        },
+        AllMapZones = allZones,
+        AllNPCs = allNPCs,
+        AllInteractables = allInteractables,
+        AllSpawnLocations = allSpawns,
+        AllToolsAndItems = allToolsAndItems,
+        AllRemotes = allRemotes
     }
 
-    local RarityOrder = {
-        "Astral", "Celestial", "Radiant", "Eternal", "Divine",
-        "Legendary", "Rare", "Uncommon", "Common"
-    }
-    local RarityWeight = {
-        ["Astral"] = 9, ["Celestial"] = 8, ["Radiant"] = 7,
-        ["Eternal"] = 6, ["Divine"] = 5, ["Legendary"] = 4,
-        ["Rare"] = 3, ["Uncommon"] = 2, ["Common"] = 1
-    }
-    local BiomeList = {
-        "Forest", "Winter", "Ocean", "Desert", "Crystal Mines", "Jungle",
-        "Mystic Isles", "PreHistoric", "Divine Heights", "Celestial",
-        "Realm of Legends", "Forbidden Forest"
-    }
-
-    local function getMyBaseModel()
-        if BaseController then
-            local ok, b = pcall(function() return BaseController:GetBase() end)
-            if ok and b then return b end
-        end
-        local structures = Workspace:FindFirstChild("Structures")
-        local bases = structures and structures:FindFirstChild("Bases")
-        if not bases then return nil end
-        for _, base in ipairs(bases:GetChildren()) do
-            for _, desc in ipairs(base:GetDescendants()) do
-                if desc:GetAttribute("OwnerUserId") == lp.UserId then
-                    return base
-                end
-            end
-        end
-        return nil
+    if statusLabel then
+        statusLabel.Text = string.format(
+            "Status: Selesai! (Zona: %d | NPC: %d | Interaksi: %d | Remote: %d)",
+            #allZones, #allNPCs, #allInteractables, #allRemotes
+        )
     end
 
-    -- ========================================================================
-    -- SMART AUTO PLACE EGG ENGINE (SESUAI PLACEMENTPREVIEWCONTROLLER & GROUND)
-    -- ========================================================================
-    local function getFreeBaseGroundSpots(baseModel)
-        local spots = {}
-        if not baseModel then return spots end
-        local fences = baseModel:FindFirstChild("Fences")
-        if not fences then return spots end
+    return HttpService:JSONEncode(fullReport)
+end
 
-        local plotCF, plotSize = fences:GetBoundingBox()
-        local groundObj = Workspace:FindFirstChild("Ground")
-        local rayParams = RaycastParams.new()
-        if groundObj then
-            rayParams.FilterType = Enum.RaycastFilterType.Include
-            rayParams.FilterDescendantsInstances = { groundObj }
+-- ==========================================
+-- PEMBUATAN TAB & FITUR
+-- ==========================================
+local MainTab = CreateTab("Main")
+local AnalyzerTab = CreateTab("Full Map Analyzer")
+local ConfigTab = CreateTab("Config")
+
+-- 1. Isi Tab Main
+MainTab:AddLabel("Fitur Utama")
+MainTab:AddToggle("FiturUtama", "Aktifkan Fitur Utama", false, function(val)
+    print("Fitur Utama:", val)
+end)
+
+MainTab:AddToggle("AutoAction", "Auto Action", false, function(val)
+    print("Auto Action:", val)
+end)
+
+-- 2. Isi Tab Full Map Analyzer
+local AnalyzerStatus = AnalyzerTab:AddLabel("Status: Siap memindai seluruh map")
+local OutputAnalyzerBox = AnalyzerTab:AddTextBox("Hasil Analisis Semua Map (JSON) akan muncul di sini...", 115)
+
+AnalyzerTab:AddButton("🌍 Scan Semua Map Sekarang (Full Map Analysis)", function()
+    task.spawn(function()
+        local ok, result = pcall(GenerateFullMapAnalysis, AnalyzerStatus)
+        if ok then
+            OutputAnalyzerBox.Text = result
+            if typeof(setclipboard) == "function" then
+                pcall(setclipboard, result)
+            end
+            if typeof(writefile) == "function" then
+                pcall(writefile, "Rockstar_FullMapAnalysis_" .. tostring(game.PlaceId) .. ".json", result)
+            end
         else
-            rayParams.FilterType = Enum.RaycastFilterType.Exclude
-            rayParams.FilterDescendantsInstances = { lp.Character, fences }
+            AnalyzerStatus.Text = "Status: Error saat scan"
+            OutputAnalyzerBox.Text = "Gagal melakukan scan: " .. tostring(result)
         end
-
-        local placedFolder = baseModel:FindFirstChild("PlacedEggs")
-        local existingPositions = {}
-        if placedFolder then
-            for _, eggMod in ipairs(placedFolder:GetChildren()) do
-                local ok, piv = pcall(function() return eggMod:GetPivot().Position end)
-                if ok and piv then
-                    table.insert(existingPositions, piv)
-                end
-            end
-        end
-
-        local gridOffsets = { -0.34, -0.17, 0, 0.17, 0.34 }
-        for _, rx in ipairs(gridOffsets) do
-            for _, rz in ipairs(gridOffsets) do
-                local testWorldPos = (plotCF * CFrame.new(rx * plotSize.X, 25, rz * plotSize.Z)).Position
-                local hit = Workspace:Raycast(testWorldPos, Vector3.new(0, -80, 0), rayParams)
-                local groundPos = hit and hit.Position or Vector3.new(testWorldPos.X, plotCF.Position.Y - (plotSize.Y / 2) + 0.5, testWorldPos.Z)
-
-                local isFree = true
-                for _, exPos in ipairs(existingPositions) do
-                    if (Vector2.new(groundPos.X, groundPos.Z) - Vector2.new(exPos.X, exPos.Z)).Magnitude < 3.2 then
-                        isFree = false
-                        break
-                    end
-                end
-
-                if isFree then
-                    table.insert(spots, CFrame.new(groundPos))
-                end
-            end
-        end
-
-        return spots
-    end
-
-    local function getUnplacedEggsList()
-        local unplaced = {}
-        local seenRef = {}
-
-        local placedMap = {}
-        if DataController then
-            local okP, pData = pcall(function() return DataController:GetValue("PlacedEggs") end)
-            if okP and type(pData) == "table" then
-                placedMap = pData
-            end
-
-            local okI, invData = pcall(function() return DataController:GetValue("Inventory") end)
-            if okI and type(invData) == "table" then
-                for refName, itemData in pairs(invData) do
-                    if type(itemData) == "table" and itemData.Handler == "Egg" and not placedMap[refName] then
-                        seenRef[refName] = true
-                        local eggCleanName = itemData.Name or tostring(refName):split("_")[1]
-                        local rarity = itemData.Rarity
-                        if not rarity and eggConfig and eggConfig.Eggs and eggConfig.Eggs[eggCleanName] then
-                            rarity = eggConfig.Eggs[eggCleanName].Rarity
-                        end
-                        table.insert(unplaced, {
-                            refName = refName,
-                            eggName = eggCleanName,
-                            rarity = rarity or "Common",
-                            weight = RarityWeight[rarity or "Common"] or 1
-                        })
-                    end
-                end
-            end
-        end
-
-        for _, container in ipairs({ lp:FindFirstChild("Backpack"), lp.Character }) do
-            if container then
-                for _, tool in ipairs(container:GetChildren()) do
-                    if tool:IsA("Tool") and tool:GetAttribute("Handler") == "Egg" then
-                        local refName = tool:GetAttribute("ReferenceName") or tool.Name
-                        if not seenRef[refName] and not placedMap[refName] then
-                            seenRef[refName] = true
-                            local eggCleanName = tool:GetAttribute("ItemName") or tostring(refName):split("_")[1]
-                            local rarity = tool:GetAttribute("Rarity")
-                            if not rarity and eggConfig and eggConfig.Eggs and eggConfig.Eggs[eggCleanName] then
-                                rarity = eggConfig.Eggs[eggCleanName].Rarity
-                            end
-                            table.insert(unplaced, {
-                                refName = refName,
-                                eggName = eggCleanName,
-                                rarity = rarity or "Common",
-                                weight = RarityWeight[rarity or "Common"] or 1,
-                                toolInstance = tool
-                            })
-                        end
-                    end
-                end
-            end
-        end
-
-        table.sort(unplaced, function(a, b)
-            return a.weight > b.weight
-        end)
-
-        return unplaced
-    end
-
-    local IsPlacingEggsNow = false
-    local function placeAllAvailableEggs(statusLbl)
-        if IsPlacingEggsNow then return 0 end
-        IsPlacingEggsNow = true
-
-        local placedCount = 0
-        pcall(function()
-            local baseModel = getMyBaseModel()
-            if not baseModel then return end
-
-            local unplacedList = getUnplacedEggsList()
-            if #unplacedList == 0 then
-                if statusLbl then statusLbl.Text = "Tidak ada telur di Inventory untuk ditaruh." end
-                return
-            end
-
-            local freeSpots = getFreeBaseGroundSpots(baseModel)
-            if #freeSpots == 0 then
-                if statusLbl then statusLbl.Text = "Area Base penuh / semua titik sudah terisi!" end
-                return
-            end
-
-            local fences = baseModel:FindFirstChild("Fences")
-            local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-            if fences and hrp and hum and hrp.Position.Y < 55 then
-                local fPos = fences:GetPivot().Position
-                if (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(fPos.X, fPos.Z)).Magnitude > 16 then
-                    if statusLbl then statusLbl.Text = "Berjalan mendekati kandang Base..." end
-                    hum:MoveTo(fPos)
-                    task.wait(0.8)
-                end
-            end
-
-            local maxToPlace = math.min(#unplacedList, #freeSpots)
-            for i = 1, maxToPlace do
-                local eggEntry = unplacedList[i]
-                local spotCF = freeSpots[i]
-
-                if statusLbl then
-                    statusLbl.Text = string.format("Menaruh Telur [%s] %s (%d/%d)...", eggEntry.rarity, eggEntry.eggName, i, maxToPlace)
-                end
-
-                if eggEntry.toolInstance and eggEntry.toolInstance.Parent == lp.Backpack and hum then
-                    pcall(function() hum:EquipTool(eggEntry.toolInstance) end)
-                    task.wait(0.15)
-                end
-
-                local placedOk = false
-                if EggPlacementController and EggPlacementController.Place then
-                    pcall(function()
-                        EggPlacementController.Debounce = false
-                        EggPlacementController:Place(eggEntry.refName, spotCF)
-                        placedOk = true
-                    end)
-                end
-                if not placedOk and EggPlaceSvc and EggPlaceSvc:FindFirstChild("RF") and EggPlaceSvc.RF:FindFirstChild("RequestToPlace") then
-                    pcall(function()
-                        EggPlaceSvc.RF.RequestToPlace:InvokeServer(eggEntry.refName, spotCF)
-                    end)
-                end
-
-                placedCount = placedCount + 1
-                task.wait(1.1)
-            end
-
-            if statusLbl and placedCount > 0 then
-                statusLbl.Text = string.format("✅ Berhasil menaruh %d telur di Base!", placedCount)
-            end
-        end)
-
-        IsPlacingEggsNow = false
-        return placedCount
-    end
-
-    -- ========================================================================
-    -- 100% NATIVE CLIMBCONTROLLER ENGINE (ZERO CFRAME TELEPORT WHILE CLIMBING!)
-    -- ========================================================================
-    local function resetToLobbyLegit(statusLbl)
-        local char = lp.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-
-        if ClimbController then
-            pcall(function() ClimbController.BoostControlsLocked = false end)
-        end
-
-        if statusLbl then
-            statusLbl.Text = "Jump To Start (Reset ke Lobby)..."
-        end
-
-        -- Terjun ke Y = 18 agar OutOfBoundsController memindahkan karakter secara sah ke Lobby
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.CFrame = CFrame.new(hrp.Position.X, 18, hrp.Position.Z)
-
-        local waitStart = os.clock()
-        while os.clock() - waitStart < 3.0 do
-            char = lp.Character
-            hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local zName = ZoneController and ZoneController.Zone or nil
-            if zName == "Lobby" and hrp and hrp.Position.Y > 25 and hrp.Position.Y < 50 then
-                break
-            end
-            task.wait(0.1)
-        end
-
-        StealRefusedFlag = false
-        -- Berdiri di tanah Lobby selama 0.9 detik agar updateBoostReady (v_u_126) di ClimbController aktif!
-        task.wait(0.9)
-    end
-
-    local function walkOnGroundTo(targetPos, stopDist, checkFunc)
-        stopDist = stopDist or 3.5
-        local startTime = os.clock()
-        while os.clock() - startTime < 18 do
-            if checkFunc and not checkFunc() then return false end
-            local char = lp.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not hrp or not hum or hum.Health <= 0 then return false end
-
-            local flatDiff = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
-            if flatDiff.Magnitude <= stopDist then
-                return true
-            end
-
-            hum:MoveTo(targetPos)
-            task.wait(0.1)
-        end
-        return false
-    end
-
-    -- Cari TrussPart terendah di RainbowTruss (di sekitar StartCFrame)
-    local function getRainbowTrussStartPos(targetZ)
-        local startPos = OfficialStartPart and OfficialStartPart.Position or Vector3.new(0, 30, 0)
-        local rTruss = Workspace:FindFirstChild("Structures") and Workspace.Structures:FindFirstChild("RainbowTruss")
-        local bestPart = nil
-        local bestY = math.huge
-        if rTruss then
-            for _, v in ipairs(rTruss:GetDescendants()) do
-                if v:IsA("TrussPart") and v.Position.Y < bestY then
-                    bestY = v.Position.Y
-                    bestPart = v
-                end
-            end
-        end
-        local clampZ = startPos.Z
-        if targetZ then
-            clampZ = math.clamp(targetZ, startPos.Z - 22, startPos.Z + 22)
-        end
-        local trussX = bestPart and bestPart.Position.X or startPos.X
-        return Vector3.new(trussX, startPos.Y, clampZ), bestPart
-    end
-
-    -- PANJAT MURNI MENGGUNAKAN CLIMBCONTROLLER ASLI GAME (TANPA UBAH CFRAME SAAT MEMANJAT!)
-    local function nativeClimbToHeight(targetY, targetZ, statusLbl, checkFunc)
-        local char = lp.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if not hrp or not hum then return false end
-
-        local climbEntryPos = getRainbowTrussStartPos(targetZ)
-
-        -- 1. Jika masih di Lobby, wajib jalan kaki melewati StartCFrame agar zones.IsInClimbZone == true!
-        if hrp.Position.Y < 55 then
-            if statusLbl then statusLbl.Text = "Berjalan ke StartCFrame (RainbowTruss)..." end
-            -- Jalan ke depan tangga (2.5 stud di depan tangga di sisi Lobby)
-            local dirFromTruss = (hrp.Position.X >= climbEntryPos.X) and 2.2 or -2.2
-            local preTrussPos = Vector3.new(climbEntryPos.X + dirFromTruss, hrp.Position.Y, climbEntryPos.Z)
-            walkOnGroundTo(preTrussPos, 2.5, checkFunc)
-            task.wait(0.25)
-
-            -- Jalan menabrak tangga RainbowTruss agar ClimbController otomatis masuk state Climbing + Official Boost!
-            if statusLbl then statusLbl.Text = "Menempel ke RainbowTruss (Trigger Official Boost)..." end
-            local intoTrussPos = Vector3.new(climbEntryPos.X - dirFromTruss, hrp.Position.Y, climbEntryPos.Z)
-            local touchStart = os.clock()
-            while os.clock() - touchStart < 3.0 do
-                if checkFunc and not checkFunc() then return false end
-                if hum:GetState() == Enum.HumanoidStateType.Climbing then
-                    break
-                end
-                hum:MoveTo(intoTrussPos)
-                task.wait(0.05)
-            end
-        end
-
-        -- 2. Selama memanjat ke targetY:
-        -- JANGAN UBAH hrp.CFrame! Gunakan ClimbController.BoostControlsLocked = true & lp:Move(LookVector)!
-        local climbStartClock = os.clock()
-        local lastY = hrp.Position.Y
-        local stuckTimer = os.clock()
-
-        while hrp and hrp.Parent and hrp.Position.Y < (targetY - 1.5) do
-            if checkFunc and not checkFunc() then
-                if ClimbController then pcall(function() ClimbController.BoostControlsLocked = false end) end
-                return false
-            end
-
-            char = lp.Character
-            hrp = char and char:FindFirstChild("HumanoidRootPart")
-            hum = char and char:FindFirstChildOfClass("Humanoid")
-            if not hrp or not hum or hum.Health <= 0 then return false end
-
-            -- Reset Stamina terus agar Multiplier selalu 1 (Full Speed!)
-            if StaminaController then
-                pcall(function() StaminaController:Reset() end)
-            end
-
-            -- Aktifkan BoostControlsLocked agar ClimbController otomatis memanjat vertikal penuh!
-            if ClimbController then
-                pcall(function()
-                    ClimbController.BoostControlsLocked = true
-                    -- Jika user menyalakan ChainClimbBoost, panggil fungsi resmi ClimbController:boost(hum)
-                    if State.ChainClimbBoost and not ClimbController.Boosting and os.clock() >= (ClimbController.NextBoostAt or 0) then
-                        ClimbController:boost(hum)
-                    end
-                end)
-            end
-
-            -- Dorong gerakan maju ke arah tangga secara murni (sama persis seperti baris 216 climbController.lua)
-            pcall(function()
-                lp:Move(hrp.CFrame.LookVector, false)
-            end)
-
-            if statusLbl then
-                statusLbl.Text = string.format("Native Climbing: Y=%d / %d (0%% CFrame Spoof)", math.floor(hrp.Position.Y), math.floor(targetY))
-            end
-
-            -- Deteksi jika karakter terlepas dari tangga di tengah jalan
-            if math.abs(hrp.Position.Y - lastY) > 1 then
-                lastY = hrp.Position.Y
-                stuckTimer = os.clock()
-            elseif os.clock() - stuckTimer > 3.5 then
-                -- Tekan maju ke arah tangga lagi
-                hum:MoveTo(Vector3.new(climbEntryPos.X, hrp.Position.Y + 5, climbEntryPos.Z))
-                stuckTimer = os.clock()
-            end
-
-            if os.clock() - climbStartClock > 120 then
-                break
-            end
-
-            task.wait(0.05)
-        end
-
-        if ClimbController then
-            pcall(function() ClimbController.BoostControlsLocked = false end)
-        end
-
-        return hrp and hrp.Position.Y >= (targetY - 4)
-    end
-
-    -- ========================================================================
-    -- UI TAB MAIN: NATIVE CLIMB AUTO STEAL & SMART AUTO PLACE EGG
-    -- ========================================================================
-    local cardEgg = ui.createCard(tabMain, "Native ClimbController Auto Steal", "100% fisika ClimbController asli + StartCFrame + Infinite Stamina")
-    local statusEggLbl = ui.addStatusBox(cardEgg, "Status: Idle (Siap memanjat & ambil telur)")
-
-    ui.addMultiDropdown(cardEgg, "Filter Rarity", RarityOrder, State.SelectedRarities, 3)
-    ui.addMultiDropdown(cardEgg, "Filter Biome", BiomeList, State.SelectedBiomes, 4)
-
-    ui.addToggle(cardEgg, "Chain Official ClimbController:boost() (15x Speed)", false, function(val)
-        State.ChainClimbBoost = val
-    end, 5)
-
-    ui.addToggle(cardEgg, "Start Native Climb Auto Steal", false, function(val)
-        State.AutoStealEgg = val
-        if not val then
-            if ClimbController then pcall(function() ClimbController.BoostControlsLocked = false end) end
-            statusEggLbl.Text = "Status: Idle"
-            return
-        end
-
-        task.spawn(function()
-            local hrpStart = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            if hrpStart and (hrpStart.Position.Y > 50 or StealRefusedFlag) then
-                resetToLobbyLegit(statusEggLbl)
-            end
-
-            while State.AutoStealEgg do
-                if lp.Character and lp.Character:FindFirstChildOfClass("Humanoid") then
-                    pcall(function() lp.Character.Humanoid:UnequipTools() end)
-                end
-
-                local spawned = Workspace:FindFirstChild("SpawnedEggs")
-                local bestEgg = nil
-                local bestHitbox = nil
-                local bestScore = -1
-
-                if spawned then
-                    for _, biomeFolder in ipairs(spawned:GetChildren()) do
-                        if State.SelectedBiomes[biomeFolder.Name] then
-                            for _, eggModel in ipairs(biomeFolder:GetChildren()) do
-                                if eggModel.Name ~= "Nest" then
-                                    local r = eggModel:GetAttribute("Rarity")
-                                    local hitbox = eggModel:FindFirstChild("Hitbox") or eggModel:FindFirstChildWhichIsA("BasePart")
-                                    if r and State.SelectedRarities[r] and hitbox then
-                                        -- Prioritaskan Rarity tertinggi di pulau yang terjangkau
-                                        local score = (RarityWeight[r] or 1) * 10000 - hitbox.Position.Y
-                                        if score > bestScore then
-                                            bestScore = score
-                                            bestEgg = eggModel
-                                            bestHitbox = hitbox
-                                        end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-
-                if bestEgg and bestHitbox then
-                    local rName = bestEgg:GetAttribute("Rarity") or ""
-                    local eName = bestEgg:GetAttribute("EggName") or bestEgg.Name
-                    local eggPos = bestHitbox.Position
-
-                    -- 1. Panjat murni lewat StartCFrame menggunakan ClimbController asli!
-                    local climbed = nativeClimbToHeight(eggPos.Y + 2, eggPos.Z, statusEggLbl, function()
-                        return State.AutoStealEgg and bestEgg.Parent ~= nil
-                    end)
-
-                    if climbed and State.AutoStealEgg and bestEgg.Parent then
-                        -- 2. Melangkah turun dari tangga ke lantai pulau & jalan kaki ke telur
-                        statusEggLbl.Text = string.format("Berjalan di Pulau ke [%s] %s...", rName, eName)
-                        local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
-                        if hum then
-                            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
-                        end
-                        task.wait(0.2)
-
-                        walkOnGroundTo(bestHitbox.Position, 4.5, function()
-                            return State.AutoStealEgg and bestEgg.Parent ~= nil
-                        end)
-
-                        task.wait(0.35)
-
-                        -- 3. Tahan StealPrompt 0.65 detik
-                        local prompt = bestEgg:FindFirstChild("StealPrompt", true) or bestEgg:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        if prompt then
-                            pcall(function()
-                                prompt.RequiresLineOfSight = false
-                                prompt.MaxActivationDistance = 20
-                                prompt.Enabled = true
-                            end)
-                        end
-
-                        local cam = Workspace.CurrentCamera
-                        local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                        if cam and hrp then
-                            cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 3, 0), bestHitbox.Position)
-                        end
-                        task.wait(0.2)
-
-                        statusEggLbl.Text = "Menahan StealPrompt [" .. rName .. "] " .. eName .. "..."
-                        if prompt then pcall(function() prompt:InputHoldBegin() end) end
-                        if VirtualInputManager then
-                            pcall(function() VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game) end)
-                        end
-
-                        for _ = 1, 13 do
-                            if not State.AutoStealEgg then break end
-                            if cam and hrp and bestHitbox then
-                                cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 3, 0), bestHitbox.Position)
-                            end
-                            task.wait(0.05)
-                        end
-
-                        if prompt then pcall(function() prompt:InputHoldEnd() end) end
-                        if VirtualInputManager then
-                            pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
-                        end
-
-                        task.wait(0.35)
-
-                        -- 4. Jika berhasil mengambil telur (CarryingEgg ~= nil), Jump To Start & Auto Place!
-                        if lp:GetAttribute("CarryingEgg") ~= nil then
-                            statusEggLbl.Text = "✅ Telur Dapat! Jump To The Start (Auto Claim)..."
-                            resetToLobbyLegit(statusEggLbl)
-                            if EggCarryController then
-                                pcall(function() EggCarryController:tryClaimEgg() end)
-                            end
-                            task.wait(1.0)
-
-                            if State.AutoPlaceEgg then
-                                placeAllAvailableEggs(statusEggLbl)
-                            end
-                        elseif StealRefusedFlag then
-                            statusEggLbl.Text = "⚠️ Reset ke Lobby: " .. tostring(LastStealRefusedReason)
-                            resetToLobbyLegit(statusEggLbl)
-                        end
-                    end
-                else
-                    statusEggLbl.Text = "Scanning SpawnedEggs (Menunggu Rarity terpilih)..."
-                end
-                task.wait(0.4)
-            end
-        end)
-    end, 6)
-
-    -- CARD SMART AUTO PLACE EGG KE BASE
-    local cardPlace = ui.createCard(tabMain, "Smart Auto Place Egg (Grid Base Ground)", "Otomatis menaruh telur dari Inventory/Tas ke tanah Base Anda (Anti-Tumpuk)")
-    local statusPlaceLbl = ui.addStatusBox(cardPlace, "Status Place: Siap menaruh telur ke Base")
-
-    ui.addToggle(cardPlace, "Auto Place Egg ke Base (Otomatis)", false, function(val)
-        State.AutoPlaceEgg = val
-        if not val then
-            statusPlaceLbl.Text = "Status Place: Idle"
-            return
-        end
-        task.spawn(function()
-            while State.AutoPlaceEgg do
-                local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-                if hrp and hrp.Position.Y < 55 and lp:GetAttribute("CarryingEgg") == nil then
-                    placeAllAvailableEggs(statusPlaceLbl)
-                end
-                task.wait(2.5)
-            end
-        end)
-    end, 3)
-
-    ui.addButton(cardPlace, "🥚 TARUH SEMUA TELUR KE BASE SEKARANG", function()
-        placeAllAvailableEggs(statusPlaceLbl)
-    end, 4)
-
-    -- TAB AUTOMATION
-    local cardBase = ui.createCard(tabAuto, "Base & Rewards Automation", "Otomatis tetaskan telur & klaim hadiah")
-    ui.addToggle(cardBase, "Auto Hatch Ready Eggs at Base", false, function(val)
-        State.AutoHatchBase = val
-        task.spawn(function()
-            while State.AutoHatchBase do
-                local myBase = getMyBaseModel()
-                local placed = myBase and myBase:FindFirstChild("PlacedEggs")
-                if placed then
-                    for _, egg in ipairs(placed:GetChildren()) do
-                        if egg:GetAttribute("CanHatch") == true then
-                            if EggHatchSvc and EggHatchSvc:FindFirstChild("RF") then
-                                pcall(function() EggHatchSvc.RF.Hatch:InvokeServer(egg.Name) end)
-                                pcall(function() EggHatchSvc.RF.CompleteHatch:InvokeServer(egg.Name) end)
-                            end
-                        end
-                    end
-                end
-                task.wait(2)
-            end
-        end)
-    end, 1)
-
-    ui.addToggle(cardBase, "Auto Claim Offline Cash, Gifts & Index", false, function(val)
-        State.AutoClaimRewards = val
-        task.spawn(function()
-            while State.AutoClaimRewards do
-                pcall(function() CashFlowSvc.RF.ClaimOfflineCash:InvokeServer() end)
-                pcall(function() DailyRewardsSvc.RF.Claim:InvokeServer() end)
-                pcall(function() IndexSvc.RF.ClaimAll:InvokeServer() end)
-                for i = 1, 12 do
-                    pcall(function() GiftPlayTimeSvc.RF.Claim:InvokeServer(i) end)
-                end
-                task.wait(10)
-            end
-        end)
-    end, 2)
-
-    -- TAB SHOP
-    local cardShop = ui.createCard(tabShop, "Upgrades & Rebirth", "Upgrade resmi menggunakan Knit Services Map 2")
-    ui.addButton(cardShop, "⚡ UPGRADE TREADMILL", function()
-        pcall(function() TreadmillSvc.RF.RequestToUpgrade:InvokeServer() end)
-    end, 1)
-    ui.addButton(cardShop, "🏠 EXPAND BASE / PLOT", function()
-        pcall(function() BaseUpgSvc.RF.RequestToUpgrade:InvokeServer() end)
-    end, 2)
-    ui.addButton(cardShop, "🔋 UPGRADE STAMINA", function()
-        local lvl = DataController and DataController:GetValue("StaminaLevel") or 1
-        pcall(function() StaminaUpgSvc.RF.Purchase:InvokeServer(lvl) end)
-    end, 3)
-    ui.addButton(cardShop, "🔄 REBIRTH SEKARANG", function()
-        pcall(function() RebirthSvc.RF.Request:InvokeServer() end)
-    end, 4)
-
-    -- TAB ISLANDS
-    local cardTp = ui.createCard(tabTeleport, "Native Climb ke Pulau", "Panjat tangga resmi ke ketinggian pulau pilihan")
-    local islandsFolder = Workspace:FindFirstChild("Structures") and Workspace.Structures:FindFirstChild("Islands")
-    if islandsFolder then
-        for idx, isl in ipairs(islandsFolder:GetChildren()) do
-            ui.addButton(cardTp, "🧗 CLIMB KE: " .. string.upper(isl.Name), function()
-                local spawnPart = isl:FindFirstChild("Area") or isl:FindFirstChild("SpawnEggs") or isl:FindFirstChildWhichIsA("BasePart", true)
-                if spawnPart then
-                    nativeClimbToHeight(spawnPart.Position.Y + 2, spawnPart.Position.Z, statusEggLbl)
-                end
-            end, idx)
+    end)
+end)
+
+AnalyzerTab:AddToggle("IncludeZones", "Sertakan Semua Zona / Pulau / Gedung", true)
+AnalyzerTab:AddToggle("IncludeNPCs", "Sertakan Semua NPC & Karakter", true)
+AnalyzerTab:AddToggle("IncludeInteractables", "Sertakan Semua Interaksi & Item", true)
+AnalyzerTab:AddToggle("IncludeRemotes", "Sertakan Semua Remote ReplicatedStorage", true)
+
+AnalyzerTab:AddButton("📍 Salin Posisi Karakter Saat Ini", function()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if root then
+        local cframeStr = string.format("CFrame.new(%.2f, %.2f, %.2f)", root.Position.X, root.Position.Y, root.Position.Z)
+        OutputAnalyzerBox.Text = cframeStr
+        AnalyzerStatus.Text = "Status: Koordinat karakter disalin!"
+        if typeof(setclipboard) == "function" then
+            pcall(setclipboard, cframeStr)
         end
     end
+end)
 
-    -- TAB CONFIG
-    local cardCfg = ui.createCard(tabConfig, "Targeted Module Decompiler", "Decompile modul tambahan jika diperlukan")
-    local scanStatus = ui.addStatusBox(cardCfg, "Klik tombol di bawah untuk copy modul")
-    ui.addButton(cardCfg, "🔍 DECOMPILE CONFIG MODULES (COPY)", function()
-        runDeepAuditScan()
-        scanStatus.Text = "✅ Modul berhasil di-copy!"
-    end, 5)
+-- 3. Isi Tab Config
+ConfigTab:AddLabel("Manajemen Config (Export / Import JSON)")
+local ConfigBox = ConfigTab:AddTextBox("Data JSON Config akan muncul di sini...", 110)
 
--- ============================================================================
--- FALLBACK: UNIVERSAL DEEP AUDITOR
--- ============================================================================
-else
-    runDeepAuditScan()
-end
+ConfigTab:AddButton("💾 Export / Salin Config JSON", function()
+    Config.LastSaved = os.date("%Y-%m-%d %H:%M:%S")
+    local json = HttpService:JSONEncode(Config)
+    ConfigBox.Text = json
+    if typeof(setclipboard) == "function" then
+        pcall(setclipboard, json)
+    end
+    if typeof(writefile) == "function" then
+        pcall(writefile, "Rockstar_Config_" .. tostring(game.PlaceId) .. ".json", json)
+    end
+end)
+
+ConfigTab:AddButton("📂 Load / Terapkan Config dari Box", function()
+    local success, decoded = pcall(function()
+        return HttpService:JSONDecode(ConfigBox.Text)
+    end)
+    if success and type(decoded) == "table" then
+        for k, v in pairs(decoded) do
+            Config[k] = v
+            if ToggleUpdaters[k] and type(v) == "boolean" then
+                ToggleUpdaters[k](v)
+            end
+        end
+    end
+end)
