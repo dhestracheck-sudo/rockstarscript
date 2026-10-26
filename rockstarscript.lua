@@ -110,4 +110,44 @@ MainTab:CreateToggle({
                               end
                               tempParent = tempParent.Parent
                            end
-                           matchZone = found
+                           matchZone = foundZone
+                        end
+                        
+                        -- 2. Validasi Rarity
+                        if selectedRarity == "Semua Rarity" then
+                           matchRarity = true
+                        else
+                           local foundRarity = false
+                           local tempParent = currentParent
+                           while tempParent and tempParent ~= workspace do
+                              if string.find(string.lower(tempParent.Name), string.lower(selectedRarity)) then
+                                 foundRarity = true
+                                 break
+                              end
+                              tempParent = tempParent.Parent
+                           end
+                           matchRarity = foundRarity
+                        end
+                        
+                        -- Jika Zona dan Rarity sesuai filter, lakukan eksekusi
+                        if matchZone and matchRarity then
+                           local targetPart = prompt.Parent
+                           if targetPart and targetPart:IsA("Attachment") then
+                              targetPart = targetPart.Parent
+                           end
+                           
+                           if targetPart and targetPart:IsA("BasePart") then
+                              hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+                              task.wait(0.05)
+                              fireproximityprompt(prompt)
+                              task.wait(0.2)
+                           end
+                        end
+                     end
+                  end
+               end
+            end)
+         end
+      end)
+   end,
+})
