@@ -1,4 +1,4 @@
--- Cek apakah game sudah dimuat
+-- Cek apakah game sudah dimuat sepenuhnya
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -6,8 +6,8 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "rockstarscript",
-   LoadingTitle = "rockstarscript Map Inspector",
+   Name = "rockstarscript | Pro Inspector",
+   LoadingTitle = "rockstarscript Professional Scanner",
    LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = { Enabled = false },
    Discord = { Enabled = false },
@@ -15,61 +15,66 @@ local Window = Rayfield:CreateWindow({
 })
 
 Rayfield:Notify({
-   Title = "Map Inspector Siap!",
-   Content = "Klik tombol di tab untuk menganalisis struktur map.",
-   Duration = 5,
+   Title = "Pro Scanner Siap!",
+   Content = "Sistem pemindaian mendalam berhasil dimuat.",
+   Duration = 4,
 })
 
-local MainTab = Window:CreateTab("Map Analysis", 4483362458)
-local MainSection = MainTab:CreateSection("Analisis Struktur Map")
+local MainTab = Window:CreateTab("Pro Scanner", 4483362458)
+local MainSection = MainTab:CreateSection("Analisis Komprehensif Map & Objek")
 
 MainTab:CreateButton({
-   Name = "Analisis Objek & Model Terdekat",
+   Name = "Jalankan Pemindaian Profesional",
    Callback = function()
-      local player = game.Players.LocalPlayer
-      local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-      
-      if not hrp then
-         Rayfield:Notify({Title = "Error", Content = "Karakter belum siap!", Duration = 3})
-         return
-      end
-      
-      local scannedCount = 0
-      local foundCategories = {}
-      
-      -- Menelusuri seluruh folder dan model di dalam workspace
-      for _, obj in pairs(workspace:GetChildren()) do
-         if obj:IsA("Model") or obj:IsA("Folder") then
-            -- Hitung jarak dari player ke model/folder tersebut (jika ada Part utamanya)
-            local targetPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
-            if targetPart then
-               local dist = (hrp.Position - targetPart.Position).Magnitude
-               if dist < 100 then -- Jarak 100 meter dari player
-                  scannedCount += 1
-                  Rayfield:Notify({
-                     Title = "Ketemu Folder/Model:",
-                     Content = obj.Name .. " (Jarak: " .. math.floor(dist) .. "m)",
-                     Duration = 4,
-                  })
-                  task.wait(1.2)
-                  if scannedCount >= 8 then break end
+      task.spawn(function()
+         Rayfield:Notify({
+            Title = "Memindai...",
+            Content = "Sedang menganalisis seluruh struktur Workspace...",
+            Duration = 3,
+         })
+
+         local promptCount = 0
+         local uniqueParents = {}
+         local workspaceFolders = {}
+
+         pcall(function()
+            -- Scan seluruh isi workspace secara aman
+            for _, obj in ipairs(workspace:GetDescendants()) do
+               if obj:IsA("ProximityPrompt") then
+                  promptCount += 1
+                  local parent = obj.Parent
+                  if parent then
+                     local parentName = parent.Name
+                     uniqueParents[parentName] = (uniqueParents[parentName] or 0) + 1
+                  end
                end
             end
+
+            for _, child in ipairs(workspace:GetChildren()) do
+               if child:IsA("Folder") or child:IsA("Model") then
+                  workspaceFolders[child.Name] = child.ClassName
+               end
+            end
+         end)
+
+         -- Cetak laporan lengkap dan rapi ke Console (F9 / Console Executor)
+         print("\n================ [ROCKSTAR SCRIPT PRO REPORT] ================")
+         print("Total ProximityPrompt Ditemukan: " .. promptCount)
+         print("\n--- Daftar Parent / Wadah Prompt Unik ---")
+         for name, count in pairs(uniqueParents) do
+            print(string.format("Nama Parent: '%s' | Ditemukan: %d buah", name, count))
          end
-      end
-      
-      if scannedCount == 0 then
+         print("\n--- Folder / Model Utama di Workspace ---")
+         for fName, fType in pairs(workspaceFolders) do
+            print(string.format("Nama: '%s' [%s]", fName, fType))
+         end
+         print("============================================================\n")
+
          Rayfield:Notify({
-            Title = "Hasil Kosong",
-            Content = "Coba pindah posisi karakter lalu scan ulang.",
-            Duration = 4,
+            Title = "Scan Selesai!",
+            Content = "Total Prompt: " .. promptCount .. ". Buka Console untuk lihat detail!",
+            Duration = 6,
          })
-      else
-         Rayfield:Notify({
-            Title = "Analisis Selesai",
-            Content = "Total " .. scannedCount .. " struktur terdeteksi di sekitar Anda.",
-            Duration = 5,
-         })
-      end
+      end)
    end,
 })
