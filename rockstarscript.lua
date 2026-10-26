@@ -1,220 +1,135 @@
--- LocalScript di StarterPlayer > StarterPlayerScripts
-local RunService = game:GetService("RunService")
-if not RunService:IsStudio() then
-	return
-end
+assert(game:GetService("RunService"):IsStudio(), "Jalankan hanya di Roblox Studio")
 
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local TARGET_PROMPT_NAME = "StealPrompt" -- ganti sesuai nama prompt; nil untuk mencari semua prompt
-
-local previousGui = playerGui:FindFirstChild("MapPromptTester")
-if previousGui then
-	previousGui:Destroy()
-end
-
-local highlights = {}
-local rows = {}
-
-local function clearHighlights()
-	for _, highlight in ipairs(highlights) do
-		highlight:Destroy()
+local function allDescendants(root)
+	local items = {root}
+	for _, item in ipairs(root:GetDescendants()) do
+		table.insert(items, item)
 	end
-	table.clear(highlights)
+	return items
 end
 
-local function clearRows()
-	for _, row in ipairs(rows) do
-		row:Destroy()
-	end
-	table.clear(rows)
-end
-
-local function getTargetPart(prompt)
-	local target = prompt.Parent
-
-	if target and target:IsA("Attachment") then
-		target = target.Parent
-	end
-
-	if target and target:IsA("BasePart") then
-		return target
-	end
-
-	return nil
-end
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "MapPromptTester"
-gui.ResetOnSpawn = false
-gui.Parent = playerGui
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(410, 370)
-frame.Position = UDim2.new(0, 24, 0.5, -185)
-frame.BackgroundColor3 = Color3.fromRGB(24, 25, 31)
-frame.BorderSizePixel = 0
-frame.Parent = gui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 10)
-corner.Parent = frame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -48, 0, 42)
-title.Position = UDim2.fromOffset(14, 0)
-title.BackgroundTransparency = 1
-title.Text = "Map Prompt Tester — Studio"
-title.TextColor3 = Color3.fromRGB(240, 240, 245)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 16
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = frame
-
-local closeButton = Instance.new("TextButton")
-closeButton.Size = UDim2.fromOffset(32, 30)
-closeButton.Position = UDim2.new(1, -40, 0, 6)
-closeButton.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
-closeButton.Text = "×"
-closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeButton.Font = Enum.Font.GothamBold
-closeButton.TextSize = 20
-closeButton.Parent = frame
-
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(1, -28, 0, 42)
-status.Position = UDim2.fromOffset(14, 45)
-status.BackgroundTransparency = 1
-status.Text = "Tekan Scan untuk memeriksa prompt di map."
-status.TextColor3 = Color3.fromRGB(190, 193, 203)
-status.Font = Enum.Font.Gotham
-status.TextSize = 12
-status.TextWrapped = true
-status.TextXAlignment = Enum.TextXAlignment.Left
-status.Parent = frame
-
-local scanButton = Instance.new("TextButton")
-scanButton.Size = UDim2.new(1, -28, 0, 34)
-scanButton.Position = UDim2.fromOffset(14, 90)
-scanButton.BackgroundColor3 = Color3.fromRGB(225, 112, 36)
-scanButton.Text = "Scan ulang"
-scanButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-scanButton.Font = Enum.Font.GothamBold
-scanButton.TextSize = 13
-scanButton.Parent = frame
-
-local list = Instance.new("ScrollingFrame")
-list.Size = UDim2.new(1, -28, 1, -140)
-list.Position = UDim2.fromOffset(14, 134)
-list.BackgroundColor3 = Color3.fromRGB(32, 34, 41)
-list.BorderSizePixel = 0
-list.ScrollBarThickness = 6
-list.CanvasSize = UDim2.new()
-list.AutomaticCanvasSize = Enum.AutomaticSize.Y
-list.Parent = frame
-
-local listCorner = Instance.new("UICorner")
-listCorner.CornerRadius = UDim.new(0, 7)
-listCorner.Parent = list
-
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 6)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = list
-
-local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0, 7)
-padding.PaddingBottom = UDim.new(0, 7)
-padding.PaddingLeft = UDim.new(0, 7)
-padding.PaddingRight = UDim.new(0, 7)
-padding.Parent = list
-
-local function scanMap()
-	clearRows()
-	clearHighlights()
-
-	local found = {}
-
-	for _, object in ipairs(workspace:GetDescendants()) do
-		if object:IsA("ProximityPrompt")
-			and (TARGET_PROMPT_NAME == nil or object.Name == TARGET_PROMPT_NAME) then
-			table.insert(found, object)
+local function hasZoneWord(name)
+	name = string.lower(name)
+	for _, word in ipairs({"zone", "area", "world", "island", "last", "final", "steal", "kandang"}) do
+		if string.find(name, word, 1, true) then
+			return true
 		end
 	end
+	return false
+end
 
-	table.sort(found, function(a, b)
+local function getAttributes(instance)
+	local result = {}
+	for key, value in pairs(instance:GetAttributes()) do
+		table.insert(result, key .. "=" .. tostring(value))
+	end
+	table.sort(result)
+	return #result > 0 and table.concat(result, ", ") or "-"
+end
+
+local function findZoneAncestor(instance)
+	local parent = instance.Parent
+	while parent and parent ~= workspace do
+		if (parent:IsA("Model") or parent:IsA("Folder")) and hasZoneWord(parent.Name) then
+			return parent:GetFullName()
+		end
+		parent = parent.Parent
+	end
+	return "-"
+end
+
+local function printList(title, items, limit)
+	table.sort(items, function(a, b)
 		return a:GetFullName() < b:GetFullName()
 	end)
 
-	for index, prompt in ipairs(found) do
-		local target = getTargetPart(prompt)
-
-		if target then
-			local highlight = Instance.new("Highlight")
-			highlight.Name = "MapPromptTestHighlight"
-			highlight.Adornee = target
-			highlight.FillTransparency = 0.72
-			highlight.OutlineColor = prompt.Enabled
-				and Color3.fromRGB(80, 220, 120)
-				or Color3.fromRGB(245, 75, 75)
-			highlight.FillColor = highlight.OutlineColor
-			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-			highlight.Parent = workspace
-			table.insert(highlights, highlight)
+	print("\n=== " .. title .. " (" .. #items .. ") ===")
+	for index, item in ipairs(items) do
+		if index > limit then
+			print("... sisanya tidak ditampilkan")
+			break
 		end
-
-		local button = Instance.new("TextButton")
-		button.Size = UDim2.new(1, -2, 0, 48)
-		button.BackgroundColor3 = Color3.fromRGB(46, 48, 57)
-		button.TextColor3 = Color3.fromRGB(235, 236, 240)
-		button.Font = Enum.Font.Gotham
-		button.TextSize = 11
-		button.TextWrapped = true
-		button.TextXAlignment = Enum.TextXAlignment.Left
-		button.LayoutOrder = index
-		button.Parent = list
-
-		local enabledText = prompt.Enabled and "Aktif" or "Nonaktif"
-		button.Text = string.format(
-			"  %02d. %s | %s | Jarak %.1f | Tahan %.1fs",
-			index,
-			prompt:GetFullName(),
-			enabledText,
-			prompt.MaxActivationDistance,
-			prompt.HoldDuration
-		)
-
-		table.insert(rows, button)
-
-		button.MouseButton1Click:Connect(function()
-			local part = getTargetPart(prompt)
-			local character = player.Character
-
-			if not part or not character then
-				status.Text = "Target atau karakter tidak ditemukan."
-				return
-			end
-
-			character:PivotTo(part.CFrame * CFrame.new(0, 3, 0))
-			status.Text = "Dekat dengan " .. prompt:GetFullName()
-				.. " — uji prompt secara normal dengan tombol E."
-		end)
+		print(item:GetFullName() .. " [" .. item.ClassName .. "]")
 	end
-
-	status.Text = string.format(
-		"Ditemukan %d prompt%s. Hijau = aktif, merah = nonaktif.",
-		#found,
-		TARGET_PROMPT_NAME and (" bernama " .. TARGET_PROMPT_NAME) or ""
-	)
 end
 
-scanButton.MouseButton1Click:Connect(scanMap)
+local worldItems = allDescendants(workspace)
 
-closeButton.MouseButton1Click:Connect(function()
-	clearHighlights()
-	gui:Destroy()
+local zones = {}
+local prompts = {}
+for _, item in ipairs(worldItems) do
+	if (item:IsA("Model") or item:IsA("Folder")) and hasZoneWord(item.Name) then
+		table.insert(zones, item)
+	end
+	if item:IsA("ProximityPrompt") then
+		table.insert(prompts, item)
+	end
+end
+
+printList("KANDIDAT ZONA DI WORKSPACE", zones, 150)
+
+table.sort(prompts, function(a, b)
+	return a:GetFullName() < b:GetFullName()
 end)
+print("\n=== PROXIMITY PROMPTS (" .. #prompts .. ") ===")
+for index, prompt in ipairs(prompts) do
+	if index > 200 then
+		print("... sisanya tidak ditampilkan")
+		break
+	end
 
-scanMap()
+	local parent = prompt.Parent
+	local part = parent
+	if part and part:IsA("Attachment") then
+		part = part.Parent
+	end
+
+	local position = "-"
+	if part and part:IsA("BasePart") then
+		position = tostring(part.Position)
+	end
+
+	print(string.format(
+		"%s | zone=%s | enabled=%s | jarak=%.1f | tahan=%.1f | LOS=%s | posisi=%s | attrs=%s",
+		prompt:GetFullName(),
+		findZoneAncestor(prompt),
+		tostring(prompt.Enabled),
+		prompt.MaxActivationDistance,
+		prompt.HoldDuration,
+		tostring(prompt.RequiresLineOfSight),
+		position,
+		getAttributes(prompt)
+	))
+end
+
+local remotes = {}
+for _, item in ipairs(ReplicatedStorage:GetDescendants()) do
+	if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
+		table.insert(remotes, item)
+	end
+end
+printList("REMOTE DI REPLICATEDSTORAGE (nama/path saja)", remotes, 150)
+
+local scriptRoots = {
+	game:GetService("ServerScriptService"),
+	game:GetService("ServerStorage"),
+	game:GetService("StarterPlayer"),
+	game:GetService("StarterGui"),
+	ReplicatedStorage,
+	workspace,
+}
+
+local scripts = {}
+for _, root in ipairs(scriptRoots) do
+	for _, item in ipairs(root:GetDescendants()) do
+		if item:IsA("Script") or item:IsA("LocalScript") or item:IsA("ModuleScript") then
+			table.insert(scripts, item)
+		end
+	end
+end
+printList("SCRIPT YANG MUNGKIN MENGATUR ZONA/PROMPT (nama/path saja)", scripts, 200)
+
+print("\n=== SELESAI: kirim isi Output ini untuk ditinjau ===")
