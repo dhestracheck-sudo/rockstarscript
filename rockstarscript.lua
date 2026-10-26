@@ -1,13 +1,17 @@
 if not game:IsLoaded() then game.Loaded:Wait() end
 
-local coreGui = game:GetService("CoreGui")
-if coreGui:FindFirstChild("RockstarScannerUI") then
-    coreGui.RockstarScannerUI:Destroy()
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Bersihkan UI sebelumnya jika ada
+if playerGui:FindFirstChild("RockstarScannerUI") then
+    playerGui.RockstarScannerUI:Destroy()
 end
 
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "RockstarScannerUI"
-ScreenGui.Parent = coreGui
+ScreenGui.ResetOnSpawn = false -- Agar UI tidak hilang kalau karakter mati
+ScreenGui.Parent = playerGui
 
 -- Panel Utama
 local MainFrame = Instance.new("Frame")
@@ -28,7 +32,7 @@ Title.BackgroundTransparency = 1
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
-Title.Text = "Scanner Log (Tanpa F9)"
+Title.Text = "Scanner Log (PlayerGui Version)"
 Title.Parent = MainFrame
 
 local ScanButton = Instance.new("TextButton")
@@ -57,7 +61,6 @@ UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Padding = UDim.new(0, 5)
 
 ScanButton.MouseButton1Click:Connect(function()
-    -- Bersihkan hasil log sebelumnya
     for _, child in pairs(ScrollFrame:GetChildren()) do
         if child:IsA("TextLabel") then child:Destroy() end
     end
