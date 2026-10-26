@@ -1,208 +1,220 @@
-if not game:IsLoaded() then game.Loaded:Wait() end
-
-local player = game.Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-
-if playerGui:FindFirstChild("RockstarProUI") then
-    playerGui.RockstarProUI:Destroy()
+-- LocalScript di StarterPlayer > StarterPlayerScripts
+local RunService = game:GetService("RunService")
+if not RunService:IsStudio() then
+	return
 end
 
--- ==========================================
--- 1. PENGATURAN TEMA WARNA
--- ==========================================
-local Theme = {
-    Background = Color3.fromRGB(22, 14, 10),
-    Sidebar = Color3.fromRGB(15, 9, 6),
-    Accent = Color3.fromRGB(255, 120, 0),
-    Element = Color3.fromRGB(35, 22, 15),
-    Text = Color3.fromRGB(230, 230, 230),
-    TextDim = Color3.fromRGB(150, 150, 150)
-}
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
--- ==========================================
--- 2. PEMBUATAN UI UTAMA
--- ==========================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarProUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = playerGui
+local TARGET_PROMPT_NAME = "StealPrompt" -- ganti sesuai nama prompt; nil untuk mencari semua prompt
 
-local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 600, 0, 380)
-MainFrame.Position = UDim2.new(0.5, -300, 0.5, -190)
-MainFrame.BackgroundColor3 = Theme.Background
-MainFrame.BorderSizePixel = 0
-MainFrame.Active = true
-MainFrame.Draggable = true
-MainFrame.Parent = ScreenGui
-Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+local previousGui = playerGui:FindFirstChild("MapPromptTester")
+if previousGui then
+	previousGui:Destroy()
+end
 
--- ==========================================
--- 3. TOP BAR & LOGO
--- ==========================================
-local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 40)
-TopBar.BackgroundTransparency = 1
-TopBar.Parent = MainFrame
+local highlights = {}
+local rows = {}
 
-local LogoText = Instance.new("TextLabel")
-LogoText.Size = UDim2.new(0, 150, 1, 0)
-LogoText.Position = UDim2.new(0, 15, 0, 0)
-LogoText.BackgroundTransparency = 1
-LogoText.Text = "Rockstar"
-LogoText.TextColor3 = Theme.Accent
-LogoText.Font = Enum.Font.GothamBold
-LogoText.TextSize = 18
-LogoText.TextXAlignment = Enum.TextXAlignment.Left
-LogoText.Parent = TopBar
+local function clearHighlights()
+	for _, highlight in ipairs(highlights) do
+		highlight:Destroy()
+	end
+	table.clear(highlights)
+end
 
-local Separator = Instance.new("Frame")
-Separator.Size = UDim2.new(1, 0, 0, 1)
-Separator.Position = UDim2.new(0, 0, 1, 0)
-Separator.BackgroundColor3 = Color3.fromRGB(40, 25, 18)
-Separator.BorderSizePixel = 0
-Separator.Parent = TopBar
+local function clearRows()
+	for _, row in ipairs(rows) do
+		row:Destroy()
+	end
+	table.clear(rows)
+end
 
--- ==========================================
--- 4. SIDEBAR
--- ==========================================
-local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 150, 1, -41)
-Sidebar.Position = UDim2.new(0, 0, 0, 41)
-Sidebar.BackgroundColor3 = Theme.Sidebar
-Sidebar.BorderSizePixel = 0
-Sidebar.Parent = MainFrame
-Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
+local function getTargetPart(prompt)
+	local target = prompt.Parent
 
-local SidebarPatch = Instance.new("Frame")
-SidebarPatch.Size = UDim2.new(0, 10, 1, 0)
-SidebarPatch.Position = UDim2.new(1, -10, 0, 0)
-SidebarPatch.BackgroundColor3 = Theme.Sidebar
-SidebarPatch.BorderSizePixel = 0
-SidebarPatch.Parent = Sidebar
+	if target and target:IsA("Attachment") then
+		target = target.Parent
+	end
 
-local MainTab = Instance.new("TextLabel")
-MainTab.Size = UDim2.new(1, 0, 0, 40)
-MainTab.Position = UDim2.new(0, 0, 0, 10)
-MainTab.BackgroundTransparency = 1
-MainTab.Text = "   Main"
-MainTab.TextColor3 = Theme.Text
-MainTab.Font = Enum.Font.GothamBold
-MainTab.TextSize = 14
-MainTab.TextXAlignment = Enum.TextXAlignment.Left
-MainTab.Parent = Sidebar
+	if target and target:IsA("BasePart") then
+		return target
+	end
 
-local ActiveMarker = Instance.new("Frame")
-ActiveMarker.Size = UDim2.new(0, 3, 0, 20)
-ActiveMarker.Position = UDim2.new(0, 0, 0.5, -10)
-ActiveMarker.BackgroundColor3 = Theme.Accent
-ActiveMarker.BorderSizePixel = 0
-ActiveMarker.Parent = MainTab
+	return nil
+end
 
-local AutoTab = MainTab:Clone()
-AutoTab.Position = UDim2.new(0, 0, 0, 50)
-AutoTab.Text = "   Automation"
-AutoTab.TextColor3 = Theme.TextDim
-AutoTab.Font = Enum.Font.Gotham
-AutoTab.ActiveMarker:Destroy()
-AutoTab.Parent = Sidebar
+local gui = Instance.new("ScreenGui")
+gui.Name = "MapPromptTester"
+gui.ResetOnSpawn = false
+gui.Parent = playerGui
 
--- ==========================================
--- 5. KONTEN UTAMA
--- ==========================================
-local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -160, 1, -51)
-Content.Position = UDim2.new(0, 160, 0, 51)
-Content.BackgroundTransparency = 1
-Content.Parent = MainFrame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.fromOffset(410, 370)
+frame.Position = UDim2.new(0, 24, 0.5, -185)
+frame.BackgroundColor3 = Color3.fromRGB(24, 25, 31)
+frame.BorderSizePixel = 0
+frame.Parent = gui
 
-local SectionTitle = Instance.new("TextLabel")
-SectionTitle.Size = UDim2.new(1, 0, 0, 30)
-SectionTitle.BackgroundTransparency = 1
-SectionTitle.Text = "Auto Farm Area"
-SectionTitle.TextColor3 = Theme.Text
-SectionTitle.Font = Enum.Font.GothamBold
-SectionTitle.TextSize = 16
-SectionTitle.TextXAlignment = Enum.TextXAlignment.Left
-SectionTitle.Parent = Content
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 10)
+corner.Parent = frame
 
-local RowFrame = Instance.new("Frame")
-RowFrame.Size = UDim2.new(1, -20, 0, 45)
-RowFrame.Position = UDim2.new(0, 0, 0, 40)
-RowFrame.BackgroundTransparency = 1
-RowFrame.Parent = Content
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -48, 0, 42)
+title.Position = UDim2.fromOffset(14, 0)
+title.BackgroundTransparency = 1
+title.Text = "Map Prompt Tester — Studio"
+title.TextColor3 = Color3.fromRGB(240, 240, 245)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 16
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = frame
 
-local RowLabel = Instance.new("TextLabel")
-RowLabel.Size = UDim2.new(0.6, 0, 1, 0)
-RowLabel.BackgroundTransparency = 1
-RowLabel.Text = "Auto Steal Kandang"
-RowLabel.TextColor3 = Theme.Text
-RowLabel.Font = Enum.Font.GothamBold
-RowLabel.TextSize = 13
-RowLabel.TextXAlignment = Enum.TextXAlignment.Left
-RowLabel.Parent = RowFrame
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.fromOffset(32, 30)
+closeButton.Position = UDim2.new(1, -40, 0, 6)
+closeButton.BackgroundColor3 = Color3.fromRGB(55, 57, 66)
+closeButton.Text = "×"
+closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeButton.Font = Enum.Font.GothamBold
+closeButton.TextSize = 20
+closeButton.Parent = frame
 
-local ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0.4, 0, 0, 35)
-ToggleBtn.Position = UDim2.new(0.6, 0, 0.5, -17.5)
-ToggleBtn.BackgroundColor3 = Theme.Element
-ToggleBtn.TextColor3 = Theme.TextDim
-ToggleBtn.Text = "OFF"
-ToggleBtn.Font = Enum.Font.GothamBold
-ToggleBtn.TextSize = 13
-ToggleBtn.Parent = RowFrame
-Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
+local status = Instance.new("TextLabel")
+status.Size = UDim2.new(1, -28, 0, 42)
+status.Position = UDim2.fromOffset(14, 45)
+status.BackgroundTransparency = 1
+status.Text = "Tekan Scan untuk memeriksa prompt di map."
+status.TextColor3 = Color3.fromRGB(190, 193, 203)
+status.Font = Enum.Font.Gotham
+status.TextSize = 12
+status.TextWrapped = true
+status.TextXAlignment = Enum.TextXAlignment.Left
+status.Parent = frame
 
-local SectionMarker = Instance.new("Frame")
-SectionMarker.Size = UDim2.new(0, 3, 0, 16)
-SectionMarker.Position = UDim2.new(0, -10, 0.5, -8)
-SectionMarker.BackgroundColor3 = Theme.Accent
-SectionMarker.BorderSizePixel = 0
-SectionMarker.Parent = SectionTitle
+local scanButton = Instance.new("TextButton")
+scanButton.Size = UDim2.new(1, -28, 0, 34)
+scanButton.Position = UDim2.fromOffset(14, 90)
+scanButton.BackgroundColor3 = Color3.fromRGB(225, 112, 36)
+scanButton.Text = "Scan ulang"
+scanButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+scanButton.Font = Enum.Font.GothamBold
+scanButton.TextSize = 13
+scanButton.Parent = frame
 
--- ==========================================
--- 6. LOGIKA AUTO FARM
--- ==========================================
-local autoFarmActive = false
+local list = Instance.new("ScrollingFrame")
+list.Size = UDim2.new(1, -28, 1, -140)
+list.Position = UDim2.fromOffset(14, 134)
+list.BackgroundColor3 = Color3.fromRGB(32, 34, 41)
+list.BorderSizePixel = 0
+list.ScrollBarThickness = 6
+list.CanvasSize = UDim2.new()
+list.AutomaticCanvasSize = Enum.AutomaticSize.Y
+list.Parent = frame
 
-ToggleBtn.MouseButton1Click:Connect(function()
-    autoFarmActive = not autoFarmActive
-    if autoFarmActive then
-        ToggleBtn.Text = "ON"
-        ToggleBtn.TextColor3 = Theme.Background
-        ToggleBtn.BackgroundColor3 = Theme.Accent
-    else
-        ToggleBtn.Text = "OFF"
-        ToggleBtn.TextColor3 = Theme.TextDim
-        ToggleBtn.BackgroundColor3 = Theme.Element
-    end
+local listCorner = Instance.new("UICorner")
+listCorner.CornerRadius = UDim.new(0, 7)
+listCorner.Parent = list
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 6)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = list
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0, 7)
+padding.PaddingBottom = UDim.new(0, 7)
+padding.PaddingLeft = UDim.new(0, 7)
+padding.PaddingRight = UDim.new(0, 7)
+padding.Parent = list
+
+local function scanMap()
+	clearRows()
+	clearHighlights()
+
+	local found = {}
+
+	for _, object in ipairs(workspace:GetDescendants()) do
+		if object:IsA("ProximityPrompt")
+			and (TARGET_PROMPT_NAME == nil or object.Name == TARGET_PROMPT_NAME) then
+			table.insert(found, object)
+		end
+	end
+
+	table.sort(found, function(a, b)
+		return a:GetFullName() < b:GetFullName()
+	end)
+
+	for index, prompt in ipairs(found) do
+		local target = getTargetPart(prompt)
+
+		if target then
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "MapPromptTestHighlight"
+			highlight.Adornee = target
+			highlight.FillTransparency = 0.72
+			highlight.OutlineColor = prompt.Enabled
+				and Color3.fromRGB(80, 220, 120)
+				or Color3.fromRGB(245, 75, 75)
+			highlight.FillColor = highlight.OutlineColor
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.Parent = workspace
+			table.insert(highlights, highlight)
+		end
+
+		local button = Instance.new("TextButton")
+		button.Size = UDim2.new(1, -2, 0, 48)
+		button.BackgroundColor3 = Color3.fromRGB(46, 48, 57)
+		button.TextColor3 = Color3.fromRGB(235, 236, 240)
+		button.Font = Enum.Font.Gotham
+		button.TextSize = 11
+		button.TextWrapped = true
+		button.TextXAlignment = Enum.TextXAlignment.Left
+		button.LayoutOrder = index
+		button.Parent = list
+
+		local enabledText = prompt.Enabled and "Aktif" or "Nonaktif"
+		button.Text = string.format(
+			"  %02d. %s | %s | Jarak %.1f | Tahan %.1fs",
+			index,
+			prompt:GetFullName(),
+			enabledText,
+			prompt.MaxActivationDistance,
+			prompt.HoldDuration
+		)
+
+		table.insert(rows, button)
+
+		button.MouseButton1Click:Connect(function()
+			local part = getTargetPart(prompt)
+			local character = player.Character
+
+			if not part or not character then
+				status.Text = "Target atau karakter tidak ditemukan."
+				return
+			end
+
+			character:PivotTo(part.CFrame * CFrame.new(0, 3, 0))
+			status.Text = "Dekat dengan " .. prompt:GetFullName()
+				.. " — uji prompt secara normal dengan tombol E."
+		end)
+	end
+
+	status.Text = string.format(
+		"Ditemukan %d prompt%s. Hijau = aktif, merah = nonaktif.",
+		#found,
+		TARGET_PROMPT_NAME and (" bernama " .. TARGET_PROMPT_NAME) or ""
+	)
+end
+
+scanButton.MouseButton1Click:Connect(scanMap)
+
+closeButton.MouseButton1Click:Connect(function()
+	clearHighlights()
+	gui:Destroy()
 end)
 
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if autoFarmActive then
-            pcall(function()
-                local char = player.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                
-                if hrp then
-                    for _, prompt in pairs(workspace:GetDescendants()) do
-                        if not autoFarmActive then break end
-                        
-                        if prompt:IsA("ProximityPrompt") and prompt.Name == "StealPrompt" then
-                            local targetPart = prompt.Parent
-                            
-                            if targetPart and targetPart:IsA("BasePart") then
-                                hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
-                                task.wait(0.15)
-                                fireproximityprompt(prompt)
-                                task.wait(0.3)
-                            end
-                        end
-                    end
-                end
-            end)
-        end
-    end
-end)
+scanMap()
