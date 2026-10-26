@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
+local PathfindingService = game:GetService("PathfindingService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -15,7 +15,7 @@ if playerGui:FindFirstChild("RockstarLynxUI") then
 end
 
 -- ==========================================
--- 1. TEMA WARNA (PERSIS TAMPILAN GAMBAR)
+-- 1. TEMA WARNA (GAYA LYNX DARK-ORANGE)
 -- ==========================================
 local Theme = {
     MainBg       = Color3.fromRGB(20, 11, 7),
@@ -27,18 +27,17 @@ local Theme = {
     Divider      = Color3.fromRGB(52, 28, 16),
     Accent       = Color3.fromRGB(255, 115, 0),
     TextWhite    = Color3.fromRGB(240, 235, 230),
-    TextMuted    = Color3.fromRGB(175, 155, 140),
-    TextDim      = Color3.fromRGB(130, 110, 95)
+    TextMuted    = Color3.fromRGB(175, 155, 140)
 }
 
 -- ==========================================
--- 2. STATE & KONFIGURASI FITUR
+-- 2. DATA & KONFIGURASI STEALTH (SAFE MODE)
 -- ==========================================
 local AllZones = {
-    "Path20", "Path19", "Path18", "Path17", "Path16",
-    "Path15", "Path14", "Path13", "Path12", "Path11",
-    "Path10", "Path9", "Path8", "Path7", "Path6",
-    "Path5", "Path4", "Path3", "Path2", "Path1"
+    "Path1", "Path2", "Path3", "Path4", "Path5",
+    "Path6", "Path7", "Path8", "Path9", "Path10",
+    "Path11", "Path12", "Path13", "Path14", "Path15",
+    "Path16", "Path17", "Path18", "Path19", "Path20"
 }
 
 local AllCageRarities = {
@@ -54,22 +53,21 @@ local CageRank = {
 }
 
 local Config = {
-    SelectedZones = { ["Path20"] = true, ["Path19"] = true },
-    SelectedCages = { ["AstralCage"] = true, ["InfinityCage"] = true, ["DivineCage"] = true },
+    -- Pilih Path yang sudah terbuka oleh speed asli Anda agar tidak kena sensor batas map
+    SelectedZones = { ["Path11"] = true, ["Path12"] = true },
+    SelectedCages = {},
     MinPetSize = "0",
     MinCashPerSec = "0",
-    StealDelay = "0.15",
 
     AutoStealCage = false,
+    AutoTrainTreadmill = false,
     AutoStealDNA = false,
-    HelpFriendMode = false,
 
-    AutoPlaceCage = false,
-    AutoOpenCage = false,
     AutoCollectCash = false,
+    CashCollectInterval = 12,
+    AutoPlaceCage = false,
     AutoEquipBest = false,
     AutoTapBoost = false,
-    AutoClaimRewards = false,
 
     AutoUpgradePlot = false,
     AutoUpgradeTreadmill = false,
@@ -77,7 +75,7 @@ local Config = {
 
     AutoBrewCauldron = false,
     WebhookURL = "",
-    SavedBaseCFrame = nil
+    SavedBasePosition = nil
 }
 
 -- ==========================================
@@ -99,12 +97,10 @@ MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
 
-local MainStroke = Instance.new("UIStroke")
+local MainStroke = Instance.new("UIStroke", MainFrame)
 MainStroke.Color = Theme.Stroke
 MainStroke.Thickness = 1
-MainStroke.Parent = MainFrame
 
--- Top Header Bar
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 48)
 TopBar.BackgroundTransparency = 1
@@ -125,7 +121,7 @@ local PlanetIcon = Instance.new("TextLabel")
 PlanetIcon.Size = UDim2.new(0, 26, 1, 0)
 PlanetIcon.Position = UDim2.new(0, 112, 0, 0)
 PlanetIcon.BackgroundTransparency = 1
-PlanetIcon.Text = "🪐"
+PlanetIcon.Text = "🛡️"
 PlanetIcon.TextColor3 = Theme.Accent
 PlanetIcon.Font = Enum.Font.GothamBold
 PlanetIcon.TextSize = 16
@@ -139,10 +135,10 @@ HeaderPipe.BorderSizePixel = 0
 HeaderPipe.Parent = TopBar
 
 local GameSubTitle = Instance.new("TextLabel")
-GameSubTitle.Size = UDim2.new(0, 230, 1, 0)
+GameSubTitle.Size = UDim2.new(0, 240, 1, 0)
 GameSubTitle.Position = UDim2.new(0, 156, 0, 0)
 GameSubTitle.BackgroundTransparency = 1
-GameSubTitle.Text = "Steal & Escape Cage"
+GameSubTitle.Text = "Stealth Safe Mode (Anti-Detect)"
 GameSubTitle.TextColor3 = Theme.TextWhite
 GameSubTitle.Font = Enum.Font.GothamBold
 GameSubTitle.TextSize = 14
@@ -159,11 +155,6 @@ DiscordLabel.Font = Enum.Font.GothamBold
 DiscordLabel.TextSize = 13
 DiscordLabel.TextXAlignment = Enum.TextXAlignment.Right
 DiscordLabel.Parent = TopBar
-DiscordLabel.MouseButton1Click:Connect(function()
-    if typeof(setclipboard) == "function" then
-        setclipboard("https://discord.gg/rockstar")
-    end
-end)
 
 local MinBtn = Instance.new("TextButton")
 MinBtn.Size = UDim2.new(0, 34, 0, 32)
@@ -186,7 +177,7 @@ TopDivider.BackgroundColor3 = Theme.Divider
 TopDivider.BorderSizePixel = 0
 TopDivider.Parent = MainFrame
 
--- Sistem Drag UI (Support Emulator MuMu & PC)
+-- Drag UI
 local dragging, dragInput, dragStart, startPos
 TopBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -228,7 +219,6 @@ Sidebar.BackgroundTransparency = 0.3
 Sidebar.BorderSizePixel = 0
 Sidebar.Parent = MainFrame
 
--- Search Box
 local SearchFrame = Instance.new("Frame")
 SearchFrame.Size = UDim2.new(1, -20, 0, 36)
 SearchFrame.Position = UDim2.new(0, 10, 0, 10)
@@ -286,7 +276,6 @@ RightArea.Position = UDim2.new(0, 195, 0, 49)
 RightArea.BackgroundTransparency = 1
 RightArea.Parent = MainFrame
 
--- Sub-Header Judul Tab Aktif
 local SubHeader = Instance.new("Frame")
 SubHeader.Size = UDim2.new(1, -15, 0, 42)
 SubHeader.Position = UDim2.new(0, 5, 0, 4)
@@ -326,7 +315,7 @@ PagesHolder.BackgroundTransparency = 1
 PagesHolder.Parent = RightArea
 
 -- ==========================================
--- 6. BUILDER TAB & ELEMEN UI (PERSIS GAMBAR)
+-- 6. BUILDER TAB & ELEMEN UI
 -- ==========================================
 local Tabs = {}
 local SearchableElements = {}
@@ -391,12 +380,8 @@ local function createTab(tabName, iconText, order, isDefault)
     PagePad.PaddingBottom = UDim.new(0, 14)
 
     local tabData = {
-        Name = tabName,
-        Btn = TabBtn,
-        Bar = LeftBar,
-        Icon = IconLbl,
-        Title = TitleLbl,
-        Page = Page
+        Name = tabName, Btn = TabBtn, Bar = LeftBar,
+        Icon = IconLbl, Title = TitleLbl, Page = Page
     }
     table.insert(Tabs, tabData)
 
@@ -416,7 +401,6 @@ local function createTab(tabName, iconText, order, isDefault)
     return Page
 end
 
--- Komponen 1: Kotak Deskripsi / Info Card (Persis Gambar Atas)
 local function createInfoCard(page, text, order)
     local Card = Instance.new("Frame")
     Card.Size = UDim2.new(1, 0, 0, 74)
@@ -444,7 +428,6 @@ local function createInfoCard(page, text, order)
     Desc.Parent = Card
 end
 
--- Komponen 2: Multi-Select Dropdown (Persis Gambar: "Zones (empty = all)" + Kotak Kanan + Panah Oranye)
 local function createMultiDropdown(page, labelText, optionsList, selectedTable, order)
     local Wrapper = Instance.new("Frame")
     Wrapper.Size = UDim2.new(1, 0, 0, 42)
@@ -571,7 +554,6 @@ local function createMultiDropdown(page, labelText, optionsList, selectedTable, 
     end)
 end
 
--- Komponen 3: Input Row (Persis Gambar: "Min Animal Size (x)" + Input Box Kanan)
 local function createInputRow(page, labelText, defaultText, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 40)
@@ -615,7 +597,6 @@ local function createInputRow(page, labelText, defaultText, order, callback)
     end)
 end
 
--- Komponen 4: Toggle Switch Row
 local function createToggleRow(page, labelText, defaultVal, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 40)
@@ -659,7 +640,6 @@ local function createToggleRow(page, labelText, defaultVal, order, callback)
     end)
 end
 
--- Komponen 5: Action Button Row
 local function createActionRow(page, labelText, btnText, order, callback)
     local Row = Instance.new("Frame")
     Row.Size = UDim2.new(1, 0, 0, 40)
@@ -698,7 +678,6 @@ local function createActionRow(page, labelText, btnText, order, callback)
     end)
 end
 
--- Filter Search Feature
 SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
     local q = string.lower(SearchBox.Text)
     for _, item in ipairs(SearchableElements) do
@@ -711,7 +690,7 @@ SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 end)
 
 -- ==========================================
--- 7. MEMBANGUN 7 TAB SESUAI GAMBAR
+-- 7. MEMBANGUN 7 TAB MENU (SAFE MODE)
 -- ==========================================
 local MainPage       = createTab("Main",       "🏠", 1, true)
 local AutomationPage = createTab("Automation", "⏭", 2, false)
@@ -724,70 +703,66 @@ local ConfigPage     = createTab("Config",     "↻", 7, false)
 -- [TAB 1: MAIN]
 createInfoCard(
     MainPage,
-    "Automatically streams & steals Cages in the picked Zones (Paths 1-20) and teleports back to your Plot/SafeZone. Leave Zones or Cage Rarities empty to target all by highest priority.",
+    "SAFE MODE: Uses your character's natural Treadmill WalkSpeed (no WalkSpeed hack, no Noclip, no Prompt tampering) so Anti-Cheat never flags you. Pick only Zones you have unlocked!",
     1
 )
 createMultiDropdown(MainPage, "Zones (empty = all)", AllZones, Config.SelectedZones, 2)
 createMultiDropdown(MainPage, "Cage Rarities (empty = all)", AllCageRarities, Config.SelectedCages, 3)
 createInputRow(MainPage, "Min Animal Size (x)", "0", 4, function(v) Config.MinPetSize = v end)
 createInputRow(MainPage, "Min Cash Per Second ($/s)", "200B", 5, function(v) Config.MinCashPerSec = v end)
-createToggleRow(MainPage, "Auto Steal & Escape Cage", false, 6, function(v)
+createToggleRow(MainPage, "Auto Steal & Escape (Safe Natural Walk)", false, 6, function(v)
     Config.AutoStealCage = v
-    if v and not Config.SavedBaseCFrame then
+    if v and not Config.SavedBasePosition then
         local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-        if hrp then Config.SavedBaseCFrame = hrp.CFrame end
+        if hrp then Config.SavedBasePosition = hrp.Position end
     end
 end)
-createToggleRow(MainPage, "Auto Steal DNA (Other Players' Pets)", false, 7, function(v)
+createToggleRow(MainPage, "Auto Train Speed on My Treadmill (Legit Speed)", false, 7, function(v)
+    Config.AutoTrainTreadmill = v
+end)
+createToggleRow(MainPage, "Auto Steal DNA (Safe Walk)", false, 8, function(v)
     Config.AutoStealDNA = v
 end)
 
 -- [TAB 2: AUTOMATION]
 createInfoCard(
     AutomationPage,
-    "Automates your Plot Barn stalls, places & opens stolen Cages immediately, collects CashPad earnings, and claims index/time rewards.",
+    "Walks naturally onto your Plot's CashPad Button to collect cash, interacts with nearby Barn Stalls, and triggers legitimate TapBoost.",
     1
 )
-createToggleRow(AutomationPage, "Auto Place & Interact Barn Stalls", false, 2, function(v) Config.AutoPlaceCage = v end)
-createToggleRow(AutomationPage, "Auto Instant Open Cages (OpenNow)", false, 3, function(v) Config.AutoOpenCage = v end)
-createToggleRow(AutomationPage, "Auto Collect CashPad", false, 4, function(v) Config.AutoCollectCash = v end)
+createToggleRow(AutomationPage, "Auto Collect CashPad (Walk to Button)", false, 2, function(v)
+    Config.AutoCollectCash = v
+    if v and not Config.SavedBasePosition then
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then Config.SavedBasePosition = hrp.Position end
+    end
+end)
+createToggleRow(AutomationPage, "Auto Place Cages in Barn Stalls (Walk)", false, 3, function(v) Config.AutoPlaceCage = v end)
+createToggleRow(AutomationPage, "Auto TapBoost (Legit Speed Boost)", false, 4, function(v) Config.AutoTapBoost = v end)
 createToggleRow(AutomationPage, "Auto Equip Best Pets", false, 5, function(v) Config.AutoEquipBest = v end)
-createToggleRow(AutomationPage, "Auto TapBoost & Claim All Rewards", false, 6, function(v) Config.AutoClaimRewards = v end)
 
 -- [TAB 3: SHOP]
 createInfoCard(
     ShopPage,
-    "Remotely upgrades your Plot, Treadmill, Barn 2, or teleports directly to World 2 Shops (Sell Vendor, Fuse Machine, Trail & Talisman).",
+    "Upgrades your Plot, Treadmill, or Barn 2 with humanized delays (2.5s interval) so server rate-limits are never triggered.",
     1
 )
 createToggleRow(ShopPage, "Auto Upgrade Plot", false, 2, function(v) Config.AutoUpgradePlot = v end)
 createToggleRow(ShopPage, "Auto Upgrade Treadmill", false, 3, function(v) Config.AutoUpgradeTreadmill = v end)
 createToggleRow(ShopPage, "Auto Upgrade Barn 2", false, 4, function(v) Config.AutoUpgradeBarn2 = v end)
-createActionRow(ShopPage, "Sell All Unlocked Pets", "SELL ALL", 5, function(btn)
-    pcall(function() Remotes.SellAllPets:FireServer() end)
-    btn.Text = "SOLD!"
-    task.wait(1)
-    if btn.Parent then btn.Text = "SELL ALL" end
-end)
 
 -- [TAB 4: EVENT]
 createInfoCard(
     EventPage,
-    "Halloween Part 2 Event automation: Auto Brew at the Witch's Cauldron in World 2 and claim event prizes.",
+    "Walks to the Witch's Cauldron in World 2 and brews potions safely.",
     1
 )
-createToggleRow(EventPage, "Auto Brew Witch's Cauldron", false, 2, function(v) Config.AutoBrewCauldron = v end)
-createActionRow(EventPage, "Teleport to Halloween Shop", "TELEPORT", 3, function()
-    local shop = workspace:FindFirstChild("World2") and workspace.World2:FindFirstChild("Shops") and workspace.World2.Shops:FindFirstChild("HalloweenShop")
-    local zone = shop and shop:FindFirstChild("Zone")
-    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-    if zone and hrp then hrp.CFrame = zone.CFrame * CFrame.new(0, 3, 0) end
-end)
+createToggleRow(EventPage, "Auto Brew Witch's Cauldron (Safe Walk)", false, 2, function(v) Config.AutoBrewCauldron = v end)
 
 -- [TAB 5: WEBHOOK]
 createInfoCard(
     WebhookPage,
-    "Send notifications to your Discord Webhook whenever you steal High-Rarity Cages (Astral, Infinity, Divine, Secret).",
+    "Send notifications to your Discord Webhook whenever you steal High-Rarity Cages.",
     1
 )
 createInputRow(WebhookPage, "Discord Webhook URL", "", 2, function(v) Config.WebhookURL = v end)
@@ -795,14 +770,13 @@ createInputRow(WebhookPage, "Discord Webhook URL", "", 2, function(v) Config.Web
 -- [TAB 6: SETTINGS]
 createInfoCard(
     SettingsPage,
-    "Configure teleport timing, custom Base return coordinates, and slow-mode settings.",
+    "IMPORTANT: Stand on your Plot's CashPad first and click SET BASE so the script knows your exact Plot without guessing.",
     1
 )
-createInputRow(SettingsPage, "Teleport Hold Delay (seconds)", "0.15", 2, function(v) Config.StealDelay = v end)
-createActionRow(SettingsPage, "Set Current Position as Safe Base", "SET BASE", 3, function(btn)
+createActionRow(SettingsPage, "Set Current Position as My Plot / Base", "SET BASE", 2, function(btn)
     local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if hrp then
-        Config.SavedBaseCFrame = hrp.CFrame
+        Config.SavedBasePosition = hrp.Position
         btn.Text = "SAVED!"
         task.wait(1)
         if btn.Parent then btn.Text = "SET BASE" end
@@ -812,18 +786,18 @@ end)
 -- [TAB 7: CONFIG]
 createInfoCard(
     ConfigPage,
-    "Save or reset your Rockstar configuration profile.",
+    "Reset your saved Plot position.",
     1
 )
-createActionRow(ConfigPage, "Reset All Selections to Default", "RESET", 2, function(btn)
-    Config.SavedBaseCFrame = nil
+createActionRow(ConfigPage, "Reset Saved Plot Position", "RESET", 2, function(btn)
+    Config.SavedBasePosition = nil
     btn.Text = "DONE!"
     task.wait(1)
     if btn.Parent then btn.Text = "RESET" end
 end)
 
 -- ==========================================
--- 8. LOGIKA INTI AUTO FARM (HASIL SCAN MAP)
+-- 8. FUNGSI STEALTH / ANTI-DETECT
 -- ==========================================
 local function isTableEmpty(t)
     for _, v in pairs(t) do
@@ -832,55 +806,154 @@ local function isTableEmpty(t)
     return true
 end
 
-local function firePrompt(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") then return end
-    pcall(function()
-        prompt.MaxActivationDistance = 999999
-        prompt.HoldDuration = 0
-        prompt.RequiresLineOfSight = false
-    end)
-    if typeof(fireproximityprompt) == "function" then
-        fireproximityprompt(prompt)
+-- AMAN: Tidak mengubah MaxActivationDistance / HoldDuration milik ProximityPrompt!
+-- Menahan tombol sesuai HoldDuration asli game seperti pemain manusia.
+local function usePromptSafely(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return end
+    local holdTime = prompt.HoldDuration or 0
+
+    prompt:InputHoldBegin()
+    if holdTime > 0 then
+        task.wait(holdTime + 0.08)
     else
-        prompt:InputHoldBegin()
-        task.wait()
-        prompt:InputHoldEnd()
+        task.wait(0.1)
     end
+    prompt:InputHoldEnd()
 end
 
 local function getMyPlot()
     local plots = workspace:FindFirstChild("Hub") and workspace.Hub:FindFirstChild("Plots")
     if not plots then return nil end
+
+    local pName = string.lower(player.Name)
+    local pDisp = string.lower(player.DisplayName)
+
     for _, plot in ipairs(plots:GetChildren()) do
+        for _, attrVal in pairs(plot:GetAttributes()) do
+            local s = string.lower(tostring(attrVal))
+            if s == pName or s == pDisp or attrVal == player.UserId then
+                return plot
+            end
+        end
+
         local ownerDisp = plot:FindFirstChild("OwnerDisplay")
         if ownerDisp then
             for _, d in ipairs(ownerDisp:GetDescendants()) do
                 if d:IsA("TextLabel") then
                     local txt = string.lower(d.Text)
-                    if string.find(txt, string.lower(player.Name)) or string.find(txt, string.lower(player.DisplayName)) then
+                    if string.find(txt, pName, 1, true) or string.find(txt, pDisp, 1, true) then
                         return plot
                     end
                 end
             end
         end
     end
+
+    local refPos = Config.SavedBasePosition
+    if not refPos then
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        refPos = hrp and hrp.Position
+    end
+
+    if refPos then
+        local closestPlot = nil
+        local shortestDist = math.huge
+        for _, plot in ipairs(plots:GetChildren()) do
+            local btn = plot:FindFirstChild("CashPad") and plot.CashPad:FindFirstChild("Button")
+            if btn and btn:IsA("BasePart") then
+                local dist = (btn.Position - refPos).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closestPlot = plot
+                end
+            end
+        end
+        return closestPlot
+    end
+
     return nil
 end
 
-local function getReturnBaseCFrame()
+local function getBasePosition()
+    if Config.SavedBasePosition then
+        return Config.SavedBasePosition
+    end
     local myPlot = getMyPlot()
     if myPlot then
         local btn = myPlot:FindFirstChild("CashPad") and myPlot.CashPad:FindFirstChild("Button")
         if btn and btn:IsA("BasePart") then
-            return btn.CFrame * CFrame.new(0, 3, 0)
+            return btn.Position
         end
     end
-    if Config.SavedBaseCFrame then return Config.SavedBaseCFrame end
     local safeZone = workspace:FindFirstChild("World2") and workspace.World2:FindFirstChild("SafeZone")
     if safeZone and safeZone:IsA("BasePart") then
-        return safeZone.CFrame * CFrame.new(0, 3, 0)
+        return safeZone.Position
     end
     return nil
+end
+
+-- AMAN: Berjalan dengan kecepatan asli karakter (tanpa mengubah WalkSpeed dan tanpa Noclip)
+-- Dilengkapi Pathfinding otomatis jika ada rintangan
+local function naturalWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hrp or not hum then return false end
+
+    stopDist = stopDist or 4.5
+    maxTime = maxTime or 30
+    local startTime = os.clock()
+
+    -- Coba hitung jalur Pathfinding agar karakter memutari tembok secara alami
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2.2,
+        AgentHeight = 5,
+        AgentCanJump = true
+    })
+    local ok, _ = pcall(function()
+        path:ComputeAsync(hrp.Position, targetPos)
+    end)
+
+    if ok and path.Status == Enum.PathStatus.Success then
+        local waypoints = path:GetWaypoints()
+        for _, wp in ipairs(waypoints) do
+            if not ScreenGui.Parent or (os.clock() - startTime) >= maxTime then break end
+            if checkFlagFunc and not checkFlagFunc() then return false end
+
+            if wp.Action == Enum.PathWaypointAction.Jump then
+                hum.Jump = true
+            end
+            hum:MoveTo(wp.Position)
+
+            local wpStart = os.clock()
+            while (os.clock() - wpStart) < 2.5 do
+                if checkFlagFunc and not checkFlagFunc() then return false end
+                if not hrp.Parent or hum.Health <= 0 then return false end
+                local d = Vector3.new(hrp.Position.X - wp.Position.X, 0, hrp.Position.Z - wp.Position.Z).Magnitude
+                if d <= 4 then break end
+                task.wait(0.08)
+            end
+        end
+    end
+
+    -- Langkah akhir menuju titik target
+    while ScreenGui.Parent and (os.clock() - startTime) < maxTime do
+        if checkFlagFunc and not checkFlagFunc() then return false end
+        char = player.Character
+        hrp = char and char:FindFirstChild("HumanoidRootPart")
+        hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum or hum.Health <= 0 then return false end
+
+        local flatDist = Vector3.new(hrp.Position.X - targetPos.X, 0, hrp.Position.Z - targetPos.Z).Magnitude
+        if flatDist <= stopDist then
+            return true
+        end
+
+        hum:MoveTo(targetPos)
+        task.wait(0.1)
+    end
+
+    return false
 end
 
 local function findTargetCage()
@@ -920,99 +993,99 @@ local function findTargetCage()
     return nil, nil
 end
 
-local function getStreamTargetCF(cage, pathFolder)
+local function getCageTargetPosition(cage, pathFolder)
     local root = cage:FindFirstChild("Root")
-    if root and root:IsA("BasePart") then return root.CFrame end
+    if root and root:IsA("BasePart") then return root.Position end
 
     local ok, pivot = pcall(function() return cage:GetPivot() end)
-    if ok and pivot and pivot.Position.Magnitude > 1 then return pivot end
+    if ok and pivot and pivot.Position.Magnitude > 1 then return pivot.Position end
 
     local spots = pathFolder:FindFirstChild("CageSpots")
     local spot = spots and spots:GetChildren()[1]
-    if spot and spot:IsA("BasePart") then return spot.CFrame end
+    if spot and spot:IsA("BasePart") then return spot.Position end
 
     local floor = pathFolder:FindFirstChild("Ground") and pathFolder.Ground:FindFirstChild("Floor")
     if floor then
         local okF, fPivot = pcall(function() return floor:GetPivot() end)
-        if okF and fPivot then return fPivot end
+        if okF and fPivot then return fPivot.Position end
     end
     return nil
 end
 
+-- ==========================================
+-- 9. LOOP UTAMA STEALTH FARM (HUMANIZED)
+-- ==========================================
+local lastCashWalkTime = 0
+local lastSlowActionTime = 0
+
 task.spawn(function()
     while ScreenGui.Parent do
-        task.wait(0.2)
+        -- Jeda acak manusiawi (0.35s - 0.55s)
+        task.wait(0.35 + math.random() * 0.2)
+
         pcall(function()
             local char = player.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            local holdDelay = tonumber(Config.StealDelay) or 0.15
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum or hum.Health <= 0 then return end
 
-            -- 1. AUTO STEAL CAGE & ESCAPE TO BASE
+            -- 1. AUTO COLLECT CASHPAD (BERJALAN ALAMI MENGINJAK TOMBOL CASHPAD)
+            if Config.AutoCollectCash and (os.clock() - lastCashWalkTime) >= Config.CashCollectInterval then
+                local myPlot = getMyPlot()
+                local cashBtn = myPlot and myPlot:FindFirstChild("CashPad") and myPlot.CashPad:FindFirstChild("Button")
+                if cashBtn and cashBtn:IsA("BasePart") then
+                    naturalWalkTo(cashBtn.Position + Vector3.new(0, 0, 7), 3.5, 12, function() return Config.AutoCollectCash end)
+                    task.wait(0.15)
+                    naturalWalkTo(cashBtn.Position, 2.2, 12, function() return Config.AutoCollectCash end)
+                    task.wait(0.5) -- Berdiri sebentar di atas tombol agar server mendeteksi injakan
+                    lastCashWalkTime = os.clock()
+                end
+            end
+
+            -- 2. AUTO TRAIN TREADMILL (MENAIKKAN SPEED SECARA LEGAL)
+            if Config.AutoTrainTreadmill and not Config.AutoStealCage then
+                local myPlot = getMyPlot()
+                local tread = myPlot and myPlot:FindFirstChild("Treadmill")
+                local anchor = tread and tread:FindFirstChild("LabelAnchor")
+                if anchor and anchor:IsA("BasePart") then
+                    naturalWalkTo(anchor.Position, 4, 15, function() return Config.AutoTrainTreadmill end)
+                    if Config.AutoTapBoost then
+                        pcall(function() Remotes.TapBoost:FireServer() end)
+                    end
+                end
+            end
+
+            -- 3. AUTO STEAL CAGE & ESCAPE (NATURAL WALK + SAFE PROMPT HOLD)
             if Config.AutoStealCage then
-                local baseCF = getReturnBaseCFrame() or hrp.CFrame
+                local basePos = getBasePosition() or hrp.Position
                 local cage, pathFolder = findTargetCage()
 
                 if cage and pathFolder then
-                    local targetCF = getStreamTargetCF(cage, pathFolder)
-                    if targetCF then
-                        pcall(function() player:RequestStreamAroundAsync(targetCF.Position, 2) end)
-                        hrp.CFrame = targetCF * CFrame.new(0, 3, 0)
+                    local targetPos = getCageTargetPosition(cage, pathFolder)
+                    if targetPos then
+                        -- Berjalan alami ke area kandang menggunakan speed asli karakter
+                        naturalWalkTo(targetPos, 6, 35, function() return Config.AutoStealCage end)
 
                         local root = cage:FindFirstChild("Root")
-                        local tries = 0
-                        while not root and tries < 6 and Config.AutoStealCage do
-                            task.wait(0.1)
-                            root = cage:FindFirstChild("Root")
-                            tries += 1
-                        end
-
                         if root and root:IsA("BasePart") then
-                            hrp.CFrame = root.CFrame * CFrame.new(0, 2.5, 0)
-                            task.wait(holdDelay)
-                            local stealPrompt = root:FindFirstChild("StealPrompt") or root:FindFirstChildOfClass("ProximityPrompt")
-                            if stealPrompt then
-                                firePrompt(stealPrompt)
-                                task.wait(holdDelay)
-                            end
-                        end
-
-                        hrp.CFrame = baseCF
-                        task.wait(0.25)
-                    end
-                end
-            end
-
-            -- 2. AUTO STEAL DNA
-            if Config.AutoStealDNA then
-                local baseCF = getReturnBaseCFrame() or hrp.CFrame
-                local plots = workspace:FindFirstChild("Hub") and workspace.Hub:FindFirstChild("Plots")
-                local myPlot = getMyPlot()
-                if plots then
-                    for _, plot in ipairs(plots:GetChildren()) do
-                        if not Config.AutoStealDNA then break end
-                        if plot ~= myPlot then
-                            local pets = plot:FindFirstChild("Pets")
-                            if pets then
-                                for _, pet in ipairs(pets:GetChildren()) do
-                                    local root = pet:FindFirstChild("Root")
-                                    local dnaPrompt = root and root:FindFirstChild("DnaPrompt")
-                                    if root and dnaPrompt and dnaPrompt.Enabled then
-                                        hrp.CFrame = root.CFrame * CFrame.new(0, 2.5, 0)
-                                        task.wait(holdDelay)
-                                        firePrompt(dnaPrompt)
-                                        task.wait(0.1)
-                                        hrp.CFrame = baseCF
-                                        break
-                                    end
+                            local reached = naturalWalkTo(root.Position, 5, 10, function() return Config.AutoStealCage end)
+                            if reached then
+                                local stealPrompt = root:FindFirstChild("StealPrompt") or root:FindFirstChildOfClass("ProximityPrompt")
+                                if stealPrompt and stealPrompt.Enabled then
+                                    usePromptSafely(stealPrompt)
+                                    task.wait(0.2)
                                 end
                             end
                         end
+
+                        -- Berlari kembali ke Base / SafeZone secara alami
+                        naturalWalkTo(basePos, 5, 35, function() return Config.AutoStealCage end)
+                        task.wait(0.4)
                     end
                 end
             end
 
-            -- 3. AUTO PLACE STALLS & OPEN CAGES
+            -- 4. AUTO PLACE CAGES DI BARN STALLS (BERJALAN DEKAT STALL)
             if Config.AutoPlaceCage then
                 local myPlot = getMyPlot()
                 if myPlot then
@@ -1023,8 +1096,11 @@ task.spawn(function()
                             for _, stall in ipairs(stalls:GetChildren()) do
                                 local anchor = stall:FindFirstChild("PenPromptAnchor")
                                 local penPrompt = anchor and anchor:FindFirstChild("PenPrompt")
-                                if penPrompt and penPrompt.Enabled then
-                                    firePrompt(penPrompt)
+                                if anchor and penPrompt and penPrompt.Enabled then
+                                    local dist = (hrp.Position - anchor.Position).Magnitude
+                                    if dist <= 10 then
+                                        usePromptSafely(penPrompt)
+                                    end
                                 end
                             end
                         end
@@ -1032,48 +1108,14 @@ task.spawn(function()
                 end
             end
 
-            if Config.AutoOpenCage then
-                pcall(function() Remotes.OpenNow:FireServer() end)
-            end
-
-            -- 4. AUTO COLLECT CASHPAD
-            if Config.AutoCollectCash then
-                local myPlot = getMyPlot()
-                local btn = myPlot and myPlot:FindFirstChild("CashPad") and myPlot.CashPad:FindFirstChild("Button")
-                if btn and btn:IsA("BasePart") then
-                    if typeof(firetouchinterest) == "function" then
-                        firetouchinterest(hrp, btn, 0)
-                        firetouchinterest(hrp, btn, 1)
-                    else
-                        Remotes.CashCollected:FireServer()
-                    end
-                end
-            end
-
-            -- 5. AUTO EQUIP BEST & REWARDS
-            if Config.AutoEquipBest then
-                pcall(function() Remotes.EquipBest:FireServer() end)
-            end
-            if Config.AutoClaimRewards then
-                pcall(function()
-                    Remotes.TapBoost:FireServer()
-                    Remotes.ClaimAllIndexRewards:FireServer()
-                end)
-            end
-
-            -- 6. SHOP UPGRADES
-            if Config.AutoUpgradePlot then pcall(function() Remotes.UpgradePlot:FireServer() end) end
-            if Config.AutoUpgradeTreadmill then pcall(function() Remotes.UpgradeTreadmill:FireServer() end) end
-            if Config.AutoUpgradeBarn2 then pcall(function() Remotes.UpgradeBarn2:FireServer() end) end
-
-            -- 7. EVENT HALLOWEEN CAULDRON BREW
-            if Config.AutoBrewCauldron then
-                pcall(function() Remotes.Brew:FireServer() end)
-                local cauldron = workspace:FindFirstChild("World2") and workspace.World2:FindFirstChild("Shops") and workspace.World2.Shops:FindFirstChild("Cauldron")
-                local brewPrompt = cauldron and cauldron:FindFirstChild("Zone") and cauldron.Zone:FindFirstChild("BrewPrompt")
-                if brewPrompt and brewPrompt.Enabled then
-                    firePrompt(brewPrompt)
-                end
+            -- 5. AKSI BERKALA DENGAN JEDA MANUSIAWI (SETIAP 2.5 DETIK)
+            if (os.clock() - lastSlowActionTime) >= 2.5 then
+                lastSlowActionTime = os.clock()
+                if Config.AutoTapBoost then pcall(function() Remotes.TapBoost:FireServer() end) end
+                if Config.AutoEquipBest then pcall(function() Remotes.EquipBest:FireServer() end) end
+                if Config.AutoUpgradePlot then pcall(function() Remotes.UpgradePlot:FireServer() end) end
+                if Config.AutoUpgradeTreadmill then pcall(function() Remotes.UpgradeTreadmill:FireServer() end) end
+                if Config.AutoUpgradeBarn2 then pcall(function() Remotes.UpgradeBarn2:FireServer() end) end
             end
         end)
     end
