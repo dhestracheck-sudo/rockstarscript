@@ -1,7 +1,7 @@
 -- ==========================================
--- ROCKSTAR SCRIPT HUB - MULTI-GAME LOADER
--- Map 1: Steal & Escape Cage (95168737547508) [100% Pure Legit]
--- Map 2: Panjat untuk Telur Hewan (85738654635245) [Full Knit + Steal Fix]
+-- ROCKSTAR SCRIPT HUB - MULTI-GAME LOADER (AUDITED ANTI-BAN + SPEED)
+-- Map 1: Steal & Escape Cage (95168737547508) [Safe Velocity Boost + Legit Walk]
+-- Map 2: Panjat untuk Telur Hewan (85738654635245) [Grounded Anti-StealBlocked]
 -- Fallback: Universal Map Scanner
 -- ==========================================
 
@@ -11,6 +11,7 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 
 local lp = Players.LocalPlayer
@@ -32,39 +33,73 @@ local function getSafeGuiParent()
 end
 
 -- ==========================================
--- UNIVERSAL PROMPT & REMOTE SCANNER
+-- DEEP AUDITOR: SCAN REMOTES, MODULES & ANTI-CHEAT CONSTANTS
 -- ==========================================
-local function runPromptsAndRemotesScan()
+local LastStealRefusedReason = "Belum ada penolakan terekam"
+
+local function runDeepAuditScan()
     local lines = {}
     local function add(t) table.insert(lines, t) end
 
     add("==========================================")
-    add("ROCKSTAR PROMPTS & REMOTES SCANNER")
+    add("ROCKSTAR DEEP SECURITY & MODULE AUDITOR")
     add("PlaceId : " .. tostring(game.PlaceId))
+    add("Last StealRefused Info : " .. tostring(LastStealRefusedReason))
     add("==========================================\n")
 
-    add("=== [1] PROXIMITY PROMPTS & CLICK DETECTORS ===")
-    local pSeen = {}
-    for _, v in ipairs(Workspace:GetDescendants()) do
-        if v:IsA("ProximityPrompt") then
-            local key = v.Name .. "|" .. v.ActionText .. "|" .. (v.Parent and v.Parent.Name or "")
-            if not pSeen[key] then
-                pSeen[key] = true
-                add("Prompt: " .. v:GetFullName() .. " [Act:'" .. v.ActionText .. "' | Obj:'" .. v.ObjectText .. "' | Hold:" .. tostring(v.HoldDuration) .. "]")
-            end
-        elseif v:IsA("ClickDetector") then
-            local key = v.Name .. "|" .. (v.Parent and v.Parent.Name or "")
-            if not pSeen[key] then
-                pSeen[key] = true
-                add("ClickDetector: " .. v:GetFullName())
+    add("=== [1] PLAYER & CHARACTER ATTRIBUTES ===")
+    local pAttrs = lp:GetAttributes()
+    for k, v in pairs(pAttrs) do
+        add("Player Attr: " .. tostring(k) .. " = " .. tostring(v))
+    end
+    if lp.Character then
+        for k, v in pairs(lp.Character:GetAttributes()) do
+            add("Char Attr: " .. tostring(k) .. " = " .. tostring(v))
+        end
+    end
+
+    add("\n=== [2] REPLICATEDSTORAGE.SRC & SCRIPTS STRUCTURE ===")
+    local srcFolder = ReplicatedStorage:FindFirstChild("src") or ReplicatedStorage:FindFirstChild("Shared")
+    if srcFolder then
+        for _, v in ipairs(srcFolder:GetDescendants()) do
+            if v:IsA("ModuleScript") or v:IsA("LocalScript") then
+                local fullName = v:GetFullName()
+                if not string.find(fullName, "_Index") or string.find(fullName, "Egg") or string.find(fullName, "Steal") or string.find(fullName, "Guard") or string.find(fullName, "Portal") or string.find(fullName, "Base") then
+                    add("[" .. v.ClassName .. "] " .. fullName)
+                    -- Jika executor mendukung decompile / getconstants pada modul Egg/Steal
+                    if (string.find(v.Name, "Egg") or string.find(v.Name, "Steal") or string.find(v.Name, "Placement")) and getscriptbytecode then
+                        pcall(function()
+                            if decompile then
+                                local srcCode = decompile(v)
+                                if srcCode and #srcCode > 0 then
+                                    add("--- DECOMPILED " .. v.Name .. " ---")
+                                    add(string.sub(srcCode, 1, 2500))
+                                    add("--- END DECOMPILED ---")
+                                end
+                            end
+                        end)
+                    end
+                end
             end
         end
     end
 
-    add("\n=== [2] REPLICATEDSTORAGE REMOTES ===")
-    for _, v in ipairs(ReplicatedStorage:GetDescendants()) do
-        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
-            add(string.format("[%s] %s", v.ClassName, v:GetFullName()))
+    local pScripts = lp:FindFirstChild("PlayerScripts")
+    if pScripts then
+        for _, v in ipairs(pScripts:GetDescendants()) do
+            if v:IsA("ModuleScript") or v:IsA("LocalScript") then
+                add("[PlayerScripts " .. v.ClassName .. "] " .. v:GetFullName())
+                if (string.find(v.Name, "Egg") or string.find(v.Name, "Steal") or string.find(v.Name, "Controller")) and decompile then
+                    pcall(function()
+                        local srcCode = decompile(v)
+                        if srcCode and #srcCode > 0 then
+                            add("--- DECOMPILED " .. v.Name .. " ---")
+                            add(string.sub(srcCode, 1, 2500))
+                            add("--- END DECOMPILED ---")
+                        end
+                    end)
+                end
+            end
         end
     end
 
@@ -544,10 +579,11 @@ end
 
 -- ============================================================================
 -- MAP 1: STEAL & ESCAPE CAGE (PlaceId: 95168737547508)
+-- [AUDIT FIX: SAFE PHYSICS VELOCITY BOOST TANPA UBAH HUMANOID.WALKSPEED]
 -- ============================================================================
 if placeId == 95168737547508 then
     local Remotes = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Remotes")
-    local ui = createRockstarWindow("Steal & Escape Cage (Safe Mode)")
+    local ui = createRockstarWindow("Steal & Escape Cage (Audited Speed)")
 
     local tabMain = ui.createTab("Main", "🏠")
     local tabAuto = ui.createTab("Automation", "⚡")
@@ -560,6 +596,8 @@ if placeId == 95168737547508 then
 
     local State = {
         AutoSteal = false,
+        VelocityBoost = false,
+        TurboMultiplier = false,
         AutoCollectCash = false,
         SelectedRarities = {
             ["AstralCage"] = true, ["InfinityCage"] = true, ["DivineCage"] = true,
@@ -580,6 +618,22 @@ if placeId == 95168737547508 then
     }
     local PathOrder = {}
     for i = 20, 1, -1 do table.insert(PathOrder, "Path" .. i) end
+
+    -- SAFE PHYSICS VELOCITY BOOST: Tidak menyentuh Humanoid.WalkSpeed sama sekali!
+    -- Mendorong AssemblyLinearVelocity searah MoveDirection saat kaki melangkah
+    RunService.Heartbeat:Connect(function()
+        if not State.VelocityBoost then return end
+        local char = lp.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hrp and hum and hum.Health > 0 and hum.MoveDirection.Magnitude > 0.1 then
+            local baseSpd = hum.WalkSpeed -- Membaca WalkSpeed asli tanpa mengubahnya
+            local mult = State.TurboMultiplier and 1.85 or 1.40
+            local targetSpd = math.clamp(baseSpd * mult, 28, 320)
+            local dir = hum.MoveDirection.Unit
+            hrp.AssemblyLinearVelocity = Vector3.new(dir.X * targetSpd, hrp.AssemblyLinearVelocity.Y, dir.Z * targetSpd)
+        end
+    end)
 
     local function getMyPlot()
         local plots = Workspace:FindFirstChild("Hub") and Workspace.Hub:FindFirstChild("Plots")
@@ -613,7 +667,7 @@ if placeId == 95168737547508 then
             local flatDist = (Vector3.new(hrp.Position.X, 0, hrp.Position.Z) - Vector3.new(targetPos.X, 0, targetPos.Z)).Magnitude
             if flatDist <= stopDist then return true end
             hum:MoveTo(targetPos)
-            task.wait(0.12)
+            task.wait(0.1)
         end
         return false
     end
@@ -621,17 +675,28 @@ if placeId == 95168737547508 then
     local function holdPromptMap1(prompt)
         if not prompt or not prompt.Parent then return end
         local hold = prompt.HoldDuration or 0
-        pcall(function() prompt:InputHoldBegin() end)
+        pcall(function()
+            prompt.RequiresLineOfSight = false
+            prompt:InputHoldBegin()
+        end)
         task.wait(hold + 0.18)
         pcall(function() prompt:InputHoldEnd() end)
     end
 
-    local cardSteal = ui.createCard(tabMain, "Pure Legit Auto Steal Cage", "100% jalan kaki murni tanpa ubah WalkSpeed / CFrame")
+    local cardSteal = ui.createCard(tabMain, "Audited Auto Steal Cage + Safe Speed", "Tanpa ubah properti WalkSpeed (Lolos Anti-Cheat PenProblem)")
     local statusLbl = ui.addStatusBox(cardSteal, "Status: Idle (100% Anti-Ban Mode)")
     ui.addMultiDropdown(cardSteal, "Filter Rarity", RarityOrder, State.SelectedRarities, 3)
     ui.addMultiDropdown(cardSteal, "Filter Path", PathOrder, State.SelectedPaths, 4)
 
-    ui.addToggle(cardSteal, "Start Legit Auto Steal", false, function(val)
+    ui.addToggle(cardSteal, "Safe Physics Velocity Boost (1.4x Speed)", false, function(val)
+        State.VelocityBoost = val
+    end, 5)
+
+    ui.addToggle(cardSteal, "Turbo Velocity Multiplier (1.85x Speed)", false, function(val)
+        State.TurboMultiplier = val
+    end, 6)
+
+    ui.addToggle(cardSteal, "Start Audited Auto Steal", false, function(val)
         State.AutoSteal = val
         if not val then statusLbl.Text = "Status: Idle" return end
         task.spawn(function()
@@ -664,20 +729,20 @@ if placeId == 95168737547508 then
                 end
 
                 if foundCage and foundPath then
-                    statusLbl.Text = "Walking to " .. foundCage.Name .. " (" .. foundPath.Name .. ")..."
+                    statusLbl.Text = "Running to " .. foundCage.Name .. " (" .. foundPath.Name .. ")..."
                     local targetPos = foundCage:GetPivot().Position
                     pureLegitWalkTo(targetPos, 7, function() return State.AutoSteal end)
 
                     local root = foundCage:FindFirstChild("Root")
                     if root then
-                        pureLegitWalkTo(root.Position, 6, function() return State.AutoSteal end)
+                        pureLegitWalkTo(root.Position, 5.5, function() return State.AutoSteal end)
                         local prompt = root:FindFirstChild("StealPrompt") or foundCage:FindFirstChildWhichIsA("ProximityPrompt", true)
                         if prompt and State.AutoSteal then
                             statusLbl.Text = "Holding E on " .. foundCage.Name .. "..."
                             holdPromptMap1(prompt)
                             local plot = getMyPlot()
                             if plot and State.AutoSteal then
-                                statusLbl.Text = "Walking back to Base..."
+                                statusLbl.Text = "Returning to Base..."
                                 pureLegitWalkTo(plot:GetPivot().Position, 10, function() return State.AutoSteal end)
                             end
                         end
@@ -685,10 +750,10 @@ if placeId == 95168737547508 then
                 else
                     statusLbl.Text = "Scanning selected Paths & Rarities..."
                 end
-                task.wait(0.4)
+                task.wait(0.35)
             end
         end)
-    end, 6)
+    end, 7)
 
     local cardPlot = ui.createCard(tabAuto, "Legit Plot Automation", "Berjalan menghampiri CashPad secara natural")
     ui.addToggle(cardPlot, "Auto Walk to CashPad (Collect Cash)", false, function(val)
@@ -715,16 +780,17 @@ if placeId == 95168737547508 then
         pcall(function() Remotes.UpgradePlot:FireServer() end)
     end, 2)
 
-    local cardCfg = ui.createCard(tabConfig, "Scanner", "Salin Remotes & Prompts")
-    ui.addButton(cardCfg, "SCAN PROMPTS & REMOTES", function()
-        runPromptsAndRemotesScan()
+    local cardCfg = ui.createCard(tabConfig, "Deep Auditor", "Salin struktur modul & anti-cheat")
+    ui.addButton(cardCfg, "🔍 AUDIT MODULES (COPY)", function()
+        runDeepAuditScan()
     end, 1)
 
 -- ============================================================================
 -- MAP 2: [🎃] PANJAT UNTUK TELUR HEWAN 🥚 (PlaceId: 85738654635245)
+-- [AUDIT FIX: GROUNDED FOOT LANDING + COOLDOWN RESET + NO CFRAME LOCK]
 -- ============================================================================
 elseif placeId == 85738654635245 then
-    local ui = createRockstarWindow("Panjat untuk Telur Hewan (Steal Fix)")
+    local ui = createRockstarWindow("Panjat untuk Telur Hewan (Audited)")
 
     local tabMain = ui.createTab("Main", "🥚")
     local tabAuto = ui.createTab("Automation", "⚡")
@@ -736,7 +802,6 @@ elseif placeId == 85738654635245 then
     ui.tabButtons["Main"].BackgroundTransparency = 0
     ui.tabButtons["Main"].TextColor3 = ui.C_TEXT
 
-    -- Ambil Knit Services dari ReplicatedStorage
     local function getKnitService(serviceName)
         local ok, svc = pcall(function()
             return ReplicatedStorage.src.Packages._Index["sleitnick_knit@1.7.0"].knit.Services[serviceName]
@@ -757,42 +822,35 @@ elseif placeId == 85738654635245 then
     local IndexSvc = getKnitService("IndexService")
     local StaminaUpgSvc = getKnitService("StaminaUpgradeService")
 
+    -- Pasang Listener pada EggSpawnService.RE.StealRefused untuk menangkap alasan penolakan server!
+    local StealRefusedCount = 0
+    if EggSpawnSvc and EggSpawnSvc:FindFirstChild("RE") and EggSpawnSvc.RE:FindFirstChild("StealRefused") then
+        EggSpawnSvc.RE.StealRefused.OnClientEvent:Connect(function(a, b, c)
+            StealRefusedCount = StealRefusedCount + 1
+            LastStealRefusedReason = string.format("Arg1=%s | Arg2=%s | Arg3=%s", tostring(a), tostring(b), tostring(c))
+        end)
+    end
+
     local State = {
         AutoStealEgg = false,
+        VelocityBoost = true,
         AutoHatchBase = false,
         AutoClaimRewards = false,
         SavedHomeCFrame = nil,
         SelectedRarities = {
-            ["Astral"] = true,
-            ["Celestial"] = true,
-            ["Radiant"] = true,
-            ["Eternal"] = true,
-            ["Divine"] = true,
-            ["Legendary"] = true,
-            ["Rare"] = false,
-            ["Uncommon"] = false,
-            ["Common"] = false
+            ["Astral"] = true, ["Celestial"] = true, ["Radiant"] = true,
+            ["Eternal"] = true, ["Divine"] = true, ["Legendary"] = true,
+            ["Rare"] = false, ["Uncommon"] = false, ["Common"] = false
         },
-        -- Default: Fokus ke Pulau Utama (Main World) agar 1 dimensi dengan Base
         SelectedBiomes = {
-            ["Forbidden Forest"] = true,
-            ["Realm of Legends"] = true,
-            ["Celestial"] = true,
-            ["Divine Heights"] = true,
-            ["Mystic Isles"] = true,
-            ["PreHistoric"] = true,
-            ["Jungle"] = true,
-            ["Winter"] = true,
-            ["Desert"] = true,
-            ["Crystal Mines"] = false,
-            ["Ocean"] = false,
-            ["Ocean Abyss"] = false,
-            ["Forest"] = false,
-            -- Dimensi Halloween (Centang jika Anda sedang masuk ke Portal Halloween)
-            ["WitchDrops"] = false,
-            ["Witches Castle"] = false,
-            ["Pumpkin Abyss"] = false,
-            ["Bone Field"] = false
+            ["Forbidden Forest"] = true, ["Realm of Legends"] = true,
+            ["Celestial"] = true, ["Divine Heights"] = true,
+            ["Mystic Isles"] = true, ["PreHistoric"] = true,
+            ["Jungle"] = true, ["Winter"] = true, ["Desert"] = true,
+            ["Crystal Mines"] = false, ["Ocean"] = false,
+            ["Ocean Abyss"] = false, ["Forest"] = false,
+            ["WitchDrops"] = false, ["Witches Castle"] = false,
+            ["Pumpkin Abyss"] = false, ["Bone Field"] = false
         }
     }
 
@@ -812,7 +870,6 @@ elseif placeId == 85738654635245 then
         "WitchDrops", "Witches Castle", "Pumpkin Abyss", "Bone Field"
     }
 
-    -- Cari Base milik kita via BaseService atau Workspace.Structures.Bases
     local function getMyBase()
         if BaseSvc and BaseSvc:FindFirstChild("RF") and BaseSvc.RF:FindFirstChild("GetPlayerBase") then
             local ok, res = pcall(function()
@@ -851,105 +908,121 @@ elseif placeId == 85738654635245 then
         end
     end
 
-    -- Smooth Glide mengikuti kecepatan karakter (Anti-StealRefused / Anti-Rubberband)
-    local function smoothGlideTo(targetPos, checkFunc)
+    -- Cari part lantai pulau (Area / BaseMap / SpawnEggs) untuk tempat mendarat kaki secara fisik
+    local function getIslandFloorPart(biomeName)
+        local islands = Workspace:FindFirstChild("Structures") and Workspace.Structures:FindFirstChild("Islands")
+        if not islands then return nil end
+        local isl = islands:FindFirstChild(biomeName)
+        if not isl then return nil end
+        return isl:FindFirstChild("Area") or isl:FindFirstChild("SpawnEggs") or isl:FindFirstChild("BaseMap")
+    end
+
+    -- TRAVEL KE PULAU MENGGUNAKAN PHYSICS VELOCITY (BUKAN TELEPORT INSTAN)
+    local function physicsTravelTo(targetPos, checkFunc)
         local char = lp.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum or hum.Health <= 0 then return false end
 
-        local playerSpeed = 280
+        -- Baca Speed resmi akun dari leaderstats.Speed (batasi di bawah batas kecepatan maksimum akun!)
+        local maxAllowedSpeed = 220
         local ls = lp:FindFirstChild("leaderstats")
         if ls and ls:FindFirstChild("Speed") then
             local sp = tonumber(ls.Speed.Value)
-            if sp and sp > 80 then
-                playerSpeed = math.clamp(sp * 0.9, 200, 650)
+            if sp and sp > 50 then
+                -- Gunakan 75% dari Speed resmi akun agar server tidak mendeteksi overspeed!
+                maxAllowedSpeed = math.clamp(sp * 0.75, 120, 480)
             end
         end
 
-        local startPos = hrp.Position
-        local dist = (targetPos - startPos).Magnitude
-        if dist <= 4 then return true end
-
-        local duration = math.clamp(dist / playerSpeed, 0.25, 5.5)
-        local steps = math.max(math.floor(duration / 0.03), 8)
-        local stepVec = (targetPos - startPos) / steps
-
-        for i = 1, steps do
+        local startTime = os.clock()
+        while os.clock() - startTime < 12 do
             if checkFunc and not checkFunc() then return false end
             char = lp.Character
             hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return false end
+            hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum or hum.Health <= 0 then return false end
 
-            local nextPos = startPos + (stepVec * i)
-            hrp.Velocity = Vector3.zero
-            hrp.AssemblyLinearVelocity = Vector3.zero
-            hrp.CFrame = CFrame.lookAt(nextPos + Vector3.new(0, 1.5, 0), targetPos + Vector3.new(0, 1.5, 0))
-            task.wait(0.03)
+            local diff = targetPos - hrp.Position
+            local dist = diff.Magnitude
+            if dist <= 10 then
+                break
+            end
+
+            local dir = diff.Unit
+            local stepDist = math.min(dist, maxAllowedSpeed * 0.04)
+            -- Berikan AssemblyLinearVelocity searah tujuan agar server melihat kecepatan fisik yang konsisten
+            hrp.AssemblyLinearVelocity = dir * maxAllowedSpeed
+            hrp.CFrame = CFrame.lookAt(hrp.Position + (dir * stepDist), targetPos)
+            task.wait(0.04)
         end
 
+        -- Hentikan dorongan udara & biarkan karakter mendarat di tanah dengan gravitasi normal!
+        if hrp then
+            hrp.AssemblyLinearVelocity = Vector3.new(0, -15, 0)
+        end
         return true
     end
 
-    -- FUNGSI INTI: AMBIL TELUR DENGAN CAMERA LOCK + HOLD 0.65 DETIK (BYPASS STEALREFUSED)
-    local function grabEggSafely(eggModel, hitbox, statusLabel)
+    -- JALAN KAKI ALAMI DI ATAS TANAH PULAU & TUNGGU SERVER ANTI-TP COOLDOWN RESET
+    local function groundedWalkAndSteal(eggModel, hitbox, statusLabel)
         if not eggModel or not eggModel.Parent or not hitbox then return false end
         local char = lp.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return false end
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return false end
 
         unequipAllTools()
 
-        -- 1. Posisikan karakter 2.2 stud di samping telur menghadap ke Hitbox (agar tidak nyangkut/jatuh)
+        -- 1. Mendarat 8 stud dari telur supaya karakter punya ruang untuk berjalan kaki di atas tanah pulau
         local eggPos = hitbox.Position
-        local standPos = eggPos + Vector3.new(2.2, 0.5, 0)
-        local standCF = CFrame.lookAt(standPos, eggPos)
+        local approachOffset = Vector3.new(6, 2, 0)
+        physicsTravelTo(eggPos + approachOffset, function()
+            return State.AutoStealEgg and eggModel.Parent ~= nil
+        end)
 
-        hrp.Velocity = Vector3.zero
-        hrp.AssemblyLinearVelocity = Vector3.zero
-        hrp.CFrame = standCF
-
-        -- 2. Tunggu StealPrompt muncul di dalam Hitbox.PromptAnchor (StreamingEnabled)
-        local prompt = nil
-        local waitStart = os.clock()
-        while os.clock() - waitStart < 1.5 do
-            if not eggModel.Parent then break end
-            hrp.Velocity = Vector3.zero
-            hrp.CFrame = standCF
-            prompt = eggModel:FindFirstChild("StealPrompt", true) or eggModel:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt then break end
-            task.wait(0.05)
+        -- 2. JANGAN KUNCI CFRAME! Biarkan karakter menapak tanah pulau dan berjalan kaki (hum:MoveTo) ke telur
+        -- Ini sangat krusial agar FloorMaterial ~= Air dan Cooldown Anti-Teleport server hilang!
+        if statusLabel then
+            statusLabel.Text = "Menapak lantai pulau & jalan ke telur (Reset Anti-Block)..."
         end
 
-        -- 3. Arahkan Kamera ke Telur & buka visibilitas Prompt tanpa mengubah HoldDuration (tetap 0.5s!)
-        local cam = Workspace.CurrentCamera
+        local walkStart = os.clock()
+        while os.clock() - walkStart < 1.35 do
+            if not State.AutoStealEgg or not eggModel.Parent then return false end
+            char = lp.Character
+            hrp = char and char:FindFirstChild("HumanoidRootPart")
+            hum = char and char:FindFirstChildOfClass("Humanoid")
+            if not hrp or not hum then return false end
+
+            -- Jalan kaki biasa menghampiri titik 2.5 stud dari telur
+            local targetWalkPos = hitbox.Position + Vector3.new(2.2, 0, 0)
+            hum:MoveTo(targetWalkPos)
+
+            -- Arahkan kamera ke telur secara halus
+            local cam = Workspace.CurrentCamera
+            if cam then
+                cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 3, 0), hitbox.Position)
+            end
+            task.wait(0.08)
+        end
+
+        -- 3. Pastikan Prompt Steal sudah terbuka visibilitasnya (Tanpa ubah HoldDuration!)
+        local prompt = eggModel:FindFirstChild("StealPrompt", true) or eggModel:FindFirstChildWhichIsA("ProximityPrompt", true)
         if prompt then
             pcall(function()
                 prompt.RequiresLineOfSight = false
-                prompt.MaxActivationDistance = 22
+                prompt.MaxActivationDistance = 20
                 prompt.Enabled = true
             end)
         end
 
-        if cam then
-            cam.CFrame = CFrame.lookAt(standPos + Vector3.new(0, 2.5, 0), eggPos)
-        end
-
-        -- Tunggu 0.25 detik agar tombol StealPrompt dirender di layar oleh ProximityPromptService
-        for _ = 1, 5 do
-            if not eggModel.Parent or not State.AutoStealEgg then break end
-            hrp.Velocity = Vector3.zero
-            hrp.CFrame = standCF
-            if cam then
-                cam.CFrame = CFrame.lookAt(standPos + Vector3.new(0, 2.5, 0), eggPos)
-            end
-            task.wait(0.05)
-        end
-
-        -- 4. Tekan & Tahan StealPrompt selama 0.65 detik penuh (Server HoldDuration = 0.5s)
+        -- 4. Berdiri diam di atas tanah (TANPA UBAH CFRAME!) dan tahan tombol Steal selama 0.65 detik
         if statusLabel then
-            statusLabel.Text = "Menahan tombol Steal (0.6s)..."
+            statusLabel.Text = "Menahan StealPrompt secara murni (0.65s)..."
         end
+
+        local prevRefused = StealRefusedCount
 
         if prompt then
             pcall(function() prompt:InputHoldBegin() end)
@@ -960,16 +1033,11 @@ elseif placeId == 85738654635245 then
             end)
         end
 
-        local holdTicks = 13 -- 13 x 0.05s = 0.65 detik (di atas 0.5s agar tidak kena StealRefused!)
-        for _ = 1, holdTicks do
+        for _ = 1, 13 do
             if not State.AutoStealEgg then break end
-            if hrp and hrp.Parent then
-                hrp.Velocity = Vector3.zero
-                hrp.AssemblyLinearVelocity = Vector3.zero
-                hrp.CFrame = standCF
-            end
-            if cam then
-                cam.CFrame = CFrame.lookAt(standPos + Vector3.new(0, 2.5, 0), eggPos)
+            local cam = Workspace.CurrentCamera
+            if cam and hrp and hitbox then
+                cam.CFrame = CFrame.lookAt(hrp.Position + Vector3.new(0, 3, 0), hitbox.Position)
             end
             task.wait(0.05)
         end
@@ -983,29 +1051,23 @@ elseif placeId == 85738654635245 then
             end)
         end
 
-        task.wait(0.15)
+        task.wait(0.25)
 
-        -- 5. Backup: Jika telur masih belum terambil setelah hold 0.65s, panggil ClaimEgg Remote
-        if eggModel.Parent and EggSpawnSvc and EggSpawnSvc:FindFirstChild("RF") and EggSpawnSvc.RF:FindFirstChild("ClaimEgg") then
-            local eggId = eggModel:GetAttribute("EggId")
-            pcall(function()
-                if eggId then
-                    EggSpawnSvc.RF.ClaimEgg:InvokeServer(eggId)
-                end
-            end)
-            pcall(function()
-                EggSpawnSvc.RF.ClaimEgg:InvokeServer(eggModel)
-            end)
+        if StealRefusedCount > prevRefused then
+            if statusLabel then
+                statusLabel.Text = "⚠️ Server Info: " .. tostring(LastStealRefusedReason)
+            end
+            task.wait(1.0)
+            return false
         end
 
-        task.wait(0.2)
         return true
     end
 
-    local cardEgg = ui.createCard(tabMain, "Auto Steal Egg (Camera + Hold 0.6s Fix)", "Arahkan kamera ke telur + tahan 0.6s + balik ke Base")
+    local cardEgg = ui.createCard(tabMain, "Audited Auto Steal Egg (Grounded Walk)", "Mendarat di lantai pulau + jalan kaki ke telur (Tanpa CFrame Lock)")
     local statusEggLbl = ui.addStatusBox(cardEgg, "Status: Idle (Siap cari telur)")
 
-    ui.addButton(cardEgg, "📍 SET POSISI BASE SAAT INI (DIREKOMENDASIKAN)", function()
+    ui.addButton(cardEgg, "📍 SET POSISI BASE SAAT INI", function()
         local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
         if hrp then
             State.SavedHomeCFrame = hrp.CFrame
@@ -1016,7 +1078,7 @@ elseif placeId == 85738654635245 then
     ui.addMultiDropdown(cardEgg, "Filter Rarity", RarityOrder, State.SelectedRarities, 4)
     ui.addMultiDropdown(cardEgg, "Filter Biome", BiomeList, State.SelectedBiomes, 5)
 
-    ui.addToggle(cardEgg, "Auto Steal & Place at Base", false, function(val)
+    ui.addToggle(cardEgg, "Auto Steal & Return to Base", false, function(val)
         State.AutoStealEgg = val
         if not val then
             statusEggLbl.Text = "Status: Idle"
@@ -1035,6 +1097,7 @@ elseif placeId == 85738654635245 then
                 local spawned = Workspace:FindFirstChild("SpawnedEggs")
                 local bestEgg = nil
                 local bestHitbox = nil
+                local bestBiome = nil
                 local bestScore = -1
 
                 if spawned then
@@ -1050,6 +1113,7 @@ elseif placeId == 85738654635245 then
                                             bestScore = score
                                             bestEgg = eggModel
                                             bestHitbox = hitbox
+                                            bestBiome = biomeFolder.Name
                                         end
                                     end
                                 end
@@ -1061,48 +1125,41 @@ elseif placeId == 85738654635245 then
                 if bestEgg and bestHitbox then
                     local rName = bestEgg:GetAttribute("Rarity") or ""
                     local eName = bestEgg:GetAttribute("EggName") or bestEgg.Name
-                    statusEggLbl.Text = string.format("Meluncur ke [%s] %s...", rName, eName)
+                    statusEggLbl.Text = string.format("Menuju Pulau %s ([%s] %s)...", tostring(bestBiome), rName, eName)
 
-                    local arrived = smoothGlideTo(bestHitbox.Position, function()
-                        return State.AutoStealEgg and bestEgg.Parent ~= nil
-                    end)
+                    -- Sentuh lantai Area pulau dulu jika ada
+                    local floorPart = getIslandFloorPart(bestBiome)
+                    if floorPart and State.AutoStealEgg then
+                        physicsTravelTo(floorPart.Position + Vector3.new(0, 3, 0), function()
+                            return State.AutoStealEgg and bestEgg.Parent ~= nil
+                        end)
+                        task.wait(0.25)
+                    end
 
-                    if arrived and State.AutoStealEgg and bestEgg.Parent then
-                        grabEggSafely(bestEgg, bestHitbox, statusEggLbl)
+                    if State.AutoStealEgg and bestEgg.Parent then
+                        local okSteal = groundedWalkAndSteal(bestEgg, bestHitbox, statusEggLbl)
 
-                        -- Pulang ke Base untuk menaruh telur
-                        local myBase = getMyBase()
-                        local homePart = myBase and (myBase:FindFirstChild("Home") or myBase:FindFirstChild("BaseOwner"))
-                        local homePos = nil
-                        if State.SavedHomeCFrame then
-                            homePos = State.SavedHomeCFrame.Position
-                        elseif homePart then
-                            homePos = homePart:IsA("BasePart") and homePart.Position or homePart:GetPivot().Position
-                        end
-
-                        if homePos and State.AutoStealEgg then
-                            statusEggLbl.Text = "Membawa telur kembali ke Base..."
-                            smoothGlideTo(homePos, function() return State.AutoStealEgg end)
-                            task.wait(0.35)
-
-                            -- Panggil RequestToPlace & jalan sedikit di sekitar Base agar telur otomatis tertaruh
-                            if EggPlaceSvc and EggPlaceSvc:FindFirstChild("RF") and EggPlaceSvc.RF:FindFirstChild("RequestToPlace") then
-                                pcall(function() EggPlaceSvc.RF.RequestToPlace:InvokeServer() end)
+                        if okSteal and State.AutoStealEgg then
+                            local myBase = getMyBase()
+                            local homePart = myBase and (myBase:FindFirstChild("Home") or myBase:FindFirstChild("BaseOwner"))
+                            local homePos = nil
+                            if State.SavedHomeCFrame then
+                                homePos = State.SavedHomeCFrame.Position
+                            elseif homePart then
+                                homePos = homePart:IsA("BasePart") and homePart.Position or homePart:GetPivot().Position
                             end
-                            if myBase then
-                                local placedFolder = myBase:FindFirstChild("PlacedEggs")
-                                if placedFolder then
-                                    pcall(function() EggPlaceSvc.RF.RequestToPlace:InvokeServer(placedFolder) end)
+
+                            if homePos then
+                                statusEggLbl.Text = "Membawa telur kembali ke Base..."
+                                physicsTravelTo(homePos + Vector3.new(0, 3, 0), function() return State.AutoStealEgg end)
+
+                                -- Jalan kaki di atas Base selama 1 detik agar telur otomatis ditaruh
+                                local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+                                if hum then
+                                    hum:MoveTo(homePos)
                                 end
-                                for _, p in ipairs(myBase:GetDescendants()) do
-                                    if p:IsA("ProximityPrompt") and p.ActionText ~= "Expand Plot" and p.ActionText ~= "Upgrade Treadmill" then
-                                        pcall(function() p:InputHoldBegin() end)
-                                        task.wait(0.35)
-                                        pcall(function() p:InputHoldEnd() end)
-                                    end
-                                end
+                                task.wait(0.8)
                             end
-                            task.wait(0.4)
                         end
                     end
                 else
@@ -1113,8 +1170,8 @@ elseif placeId == 85738654635245 then
         end)
     end, 6)
 
-    -- TAB AUTOMATION (AUTO HATCH & AUTO REWARDS)
-    local cardBase = ui.createCard(tabAuto, "Base & Rewards Automation", "Otomatis tetaskan telur & klaim hadiah via Knit Service")
+    -- TAB AUTOMATION
+    local cardBase = ui.createCard(tabAuto, "Base & Rewards Automation", "Otomatis tetaskan telur & klaim hadiah")
     ui.addToggle(cardBase, "Auto Hatch Ready Eggs at Base", false, function(val)
         State.AutoHatchBase = val
         task.spawn(function()
@@ -1126,7 +1183,6 @@ elseif placeId == 85738654635245 then
                         if egg:GetAttribute("CanHatch") == true then
                             if EggHatchSvc and EggHatchSvc:FindFirstChild("RF") then
                                 pcall(function() EggHatchSvc.RF.Hatch:InvokeServer(egg.Name) end)
-                                pcall(function() EggHatchSvc.RF.Hatch:InvokeServer(egg) end)
                                 pcall(function() EggHatchSvc.RF.CompleteHatch:InvokeServer(egg.Name) end)
                             end
                         end
@@ -1152,7 +1208,7 @@ elseif placeId == 85738654635245 then
         end)
     end, 2)
 
-    -- TAB SHOP & UPGRADES
+    -- TAB SHOP
     local cardShop = ui.createCard(tabShop, "Upgrades & Rebirth", "Upgrade resmi menggunakan Knit Services Map 2")
     ui.addButton(cardShop, "⚡ UPGRADE TREADMILL", function()
         pcall(function() TreadmillSvc.RF.RequestToUpgrade:InvokeServer() end)
@@ -1167,31 +1223,31 @@ elseif placeId == 85738654635245 then
         pcall(function() RebirthSvc.RF.Request:InvokeServer() end)
     end, 4)
 
-    -- TAB ISLANDS (SMOOTH GLIDE KE PULAU)
-    local cardTp = ui.createCard(tabTeleport, "Smooth Glide ke Pulau", "Meluncur aman ke pulau tanpa kena rubberband")
+    -- TAB ISLANDS
+    local cardTp = ui.createCard(tabTeleport, "Physics Travel ke Pulau", "Meluncur dengan kecepatan fisik ke pulau")
     local islandsFolder = Workspace:FindFirstChild("Structures") and Workspace.Structures:FindFirstChild("Islands")
     if islandsFolder then
         for idx, isl in ipairs(islandsFolder:GetChildren()) do
-            ui.addButton(cardTp, "🏝️ GLIDE KE: " .. string.upper(isl.Name), function()
-                local spawnPart = isl:FindFirstChild("SpawnEggs") or isl:FindFirstChild("Area") or isl:FindFirstChildWhichIsA("BasePart", true)
+            ui.addButton(cardTp, "🏝️ TRAVEL KE: " .. string.upper(isl.Name), function()
+                local spawnPart = isl:FindFirstChild("Area") or isl:FindFirstChild("SpawnEggs") or isl:FindFirstChildWhichIsA("BasePart", true)
                 if spawnPart then
-                    smoothGlideTo(spawnPart.Position)
+                    physicsTravelTo(spawnPart.Position + Vector3.new(0, 3, 0))
                 end
             end, idx)
         end
     end
 
-    -- TAB CONFIG
-    local cardCfg = ui.createCard(tabConfig, "Scanner Prompts & Remotes", "Salin semua Remote & Prompt")
-    local scanStatus = ui.addStatusBox(cardCfg, "Klik tombol di bawah untuk salin Prompts & Remotes")
-    ui.addButton(cardCfg, "📋 SCAN PROMPTS & REMOTES (COPY)", function()
-        runPromptsAndRemotesScan()
-        scanStatus.Text = "✅ Berhasil disalin!"
+    -- TAB CONFIG (DEEP AUDITOR)
+    local cardCfg = ui.createCard(tabConfig, "Deep Security & StealRefused Auditor", "Salin alasan StealRefused & kode modul internal Map 2")
+    local scanStatus = ui.addStatusBox(cardCfg, "Klik tombol di bawah untuk Audit Mendalam")
+    ui.addButton(cardCfg, "🔍 AUDIT KNIT & STEALREFUSED (COPY)", function()
+        runDeepAuditScan()
+        scanStatus.Text = "✅ Hasil Audit disalin! Paste ke chat AI."
     end, 5)
 
 -- ============================================================================
--- FALLBACK: UNIVERSAL MAP SCANNER
+-- FALLBACK: UNIVERSAL DEEP AUDITOR
 -- ============================================================================
 else
-    runPromptsAndRemotesScan()
+    runDeepAuditScan()
 end
