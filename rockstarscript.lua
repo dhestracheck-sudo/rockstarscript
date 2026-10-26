@@ -8,13 +8,13 @@ if playerGui:FindFirstChild("RockstarProUI") then
 end
 
 -- ==========================================
--- 1. PENGATURAN TEMA WARNA (GAYA LYNX)
+-- 1. PENGATURAN TEMA WARNA
 -- ==========================================
 local Theme = {
-    Background = Color3.fromRGB(22, 14, 10), -- Coklat gelap kehitaman
-    Sidebar = Color3.fromRGB(15, 9, 6),      -- Lebih gelap untuk sidebar
-    Accent = Color3.fromRGB(255, 120, 0),    -- Oranye khas
-    Element = Color3.fromRGB(35, 22, 15),    -- Coklat kotak input/tombol
+    Background = Color3.fromRGB(22, 14, 10),
+    Sidebar = Color3.fromRGB(15, 9, 6),
+    Accent = Color3.fromRGB(255, 120, 0),
+    Element = Color3.fromRGB(35, 22, 15),
     Text = Color3.fromRGB(230, 230, 230),
     TextDim = Color3.fromRGB(150, 150, 150)
 }
@@ -64,7 +64,7 @@ Separator.BorderSizePixel = 0
 Separator.Parent = TopBar
 
 -- ==========================================
--- 4. SIDEBAR (BILAH SISI)
+-- 4. SIDEBAR
 -- ==========================================
 local Sidebar = Instance.new("Frame")
 Sidebar.Size = UDim2.new(0, 150, 1, -41)
@@ -74,7 +74,6 @@ Sidebar.BorderSizePixel = 0
 Sidebar.Parent = MainFrame
 Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
 
--- Menutupi sudut kanan atas/bawah sidebar agar menyatu dengan konten
 local SidebarPatch = Instance.new("Frame")
 SidebarPatch.Size = UDim2.new(0, 10, 1, 0)
 SidebarPatch.Position = UDim2.new(1, -10, 0, 0)
@@ -82,7 +81,6 @@ SidebarPatch.BackgroundColor3 = Theme.Sidebar
 SidebarPatch.BorderSizePixel = 0
 SidebarPatch.Parent = Sidebar
 
--- Tab "Main" (Aktif)
 local MainTab = Instance.new("TextLabel")
 MainTab.Size = UDim2.new(1, 0, 0, 40)
 MainTab.Position = UDim2.new(0, 0, 0, 10)
@@ -101,7 +99,6 @@ ActiveMarker.BackgroundColor3 = Theme.Accent
 ActiveMarker.BorderSizePixel = 0
 ActiveMarker.Parent = MainTab
 
--- Tab Tiruan (Hanya Visual)
 local AutoTab = MainTab:Clone()
 AutoTab.Position = UDim2.new(0, 0, 0, 50)
 AutoTab.Text = "   Automation"
@@ -111,7 +108,7 @@ AutoTab.ActiveMarker:Destroy()
 AutoTab.Parent = Sidebar
 
 -- ==========================================
--- 5. KONTEN UTAMA (TOMBOL & PENGATURAN)
+-- 5. KONTEN UTAMA
 -- ==========================================
 local Content = Instance.new("Frame")
 Content.Size = UDim2.new(1, -160, 1, -51)
@@ -129,7 +126,6 @@ SectionTitle.TextSize = 16
 SectionTitle.TextXAlignment = Enum.TextXAlignment.Left
 SectionTitle.Parent = Content
 
--- Baris Pengaturan "Auto Steal Kandang"
 local RowFrame = Instance.new("Frame")
 RowFrame.Size = UDim2.new(1, -20, 0, 45)
 RowFrame.Position = UDim2.new(0, 0, 0, 40)
@@ -139,7 +135,7 @@ RowFrame.Parent = Content
 local RowLabel = Instance.new("TextLabel")
 RowLabel.Size = UDim2.new(0.6, 0, 1, 0)
 RowLabel.BackgroundTransparency = 1
-RowLabel.Text = "Auto Steal Kandang (Proximity)"
+RowLabel.Text = "Auto Steal Kandang"
 RowLabel.TextColor3 = Theme.Text
 RowLabel.Font = Enum.Font.GothamBold
 RowLabel.TextSize = 13
@@ -157,7 +153,6 @@ ToggleBtn.TextSize = 13
 ToggleBtn.Parent = RowFrame
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
 
--- Garis Oranye Kiri pada Judul Section (Meniru gambar referensi)
 local SectionMarker = Instance.new("Frame")
 SectionMarker.Size = UDim2.new(0, 3, 0, 16)
 SectionMarker.Position = UDim2.new(0, -10, 0.5, -8)
@@ -175,7 +170,7 @@ ToggleBtn.MouseButton1Click:Connect(function()
     if autoFarmActive then
         ToggleBtn.Text = "ON"
         ToggleBtn.TextColor3 = Theme.Background
-        ToggleBtn.BackgroundColor3 = Theme.Accent -- Berubah jadi oranye saat aktif
+        ToggleBtn.BackgroundColor3 = Theme.Accent
     else
         ToggleBtn.Text = "OFF"
         ToggleBtn.TextColor3 = Theme.TextDim
@@ -195,7 +190,6 @@ task.spawn(function()
                     for _, prompt in pairs(workspace:GetDescendants()) do
                         if not autoFarmActive then break end
                         
-                        -- Mengeksekusi prompt bernama "StealPrompt" pada kandang
                         if prompt:IsA("ProximityPrompt") and prompt.Name == "StealPrompt" then
                             local targetPart = prompt.Parent
                             
