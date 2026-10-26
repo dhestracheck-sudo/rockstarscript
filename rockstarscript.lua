@@ -8,7 +8,7 @@ if playerGui:FindFirstChild("RockstarProUI") then
 end
 
 -- ==========================================
--- 1. TEMA WARNA (PROFESSIONAL DARK-ORANGE)
+-- 1. TEMA WARNA
 -- ==========================================
 local Theme = {
     Background = Color3.fromRGB(22, 14, 10),
@@ -38,7 +38,7 @@ MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
 
 -- ==========================================
--- 3. TOP BAR & LOGO
+-- 3. TOP BAR & SIDEBAR
 -- ==========================================
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 40)
@@ -63,9 +63,6 @@ Separator.BackgroundColor3 = Color3.fromRGB(40, 25, 18)
 Separator.BorderSizePixel = 0
 Separator.Parent = TopBar
 
--- ==========================================
--- 4. SIDEBAR
--- ==========================================
 local Sidebar = Instance.new("Frame")
 Sidebar.Size = UDim2.new(0, 150, 1, -41)
 Sidebar.Position = UDim2.new(0, 0, 0, 41)
@@ -111,7 +108,7 @@ AutoTab.TextXAlignment = Enum.TextXAlignment.Left
 AutoTab.Parent = Sidebar
 
 -- ==========================================
--- 5. KONTEN UTAMA
+-- 4. KONTEN UTAMA
 -- ==========================================
 local Content = Instance.new("Frame")
 Content.Size = UDim2.new(1, -160, 1, -51)
@@ -123,7 +120,7 @@ local SectionTitle = Instance.new("TextLabel")
 SectionTitle.Size = UDim2.new(1, 0, 0, 30)
 SectionTitle.Position = UDim2.new(0, 10, 0, 0)
 SectionTitle.BackgroundTransparency = 1
-SectionTitle.Text = "Auto Steal Kandang"
+SectionTitle.Text = "Manage Cages & Base"
 SectionTitle.TextColor3 = Theme.Text
 SectionTitle.Font = Enum.Font.GothamBold
 SectionTitle.TextSize = 16
@@ -137,7 +134,7 @@ SectionMarker.BackgroundColor3 = Theme.Accent
 SectionMarker.BorderSizePixel = 0
 SectionMarker.Parent = SectionTitle
 
--- Baris Tombol Auto Steal
+-- Baris Tombol Angkat Kandang
 local RowFrame = Instance.new("Frame")
 RowFrame.Size = UDim2.new(1, -30, 0, 45)
 RowFrame.Position = UDim2.new(0, 10, 0, 40)
@@ -150,7 +147,7 @@ local RowLabel = Instance.new("TextLabel")
 RowLabel.Size = UDim2.new(0.6, 0, 1, 0)
 RowLabel.Position = UDim2.new(0, 15, 0, 0)
 RowLabel.BackgroundTransparency = 1
-RowLabel.Text = "Auto Steal Semua Kandang"
+RowLabel.Text = "Auto Lift & Bring to Base"
 RowLabel.TextColor3 = Theme.Text
 RowLabel.Font = Enum.Font.GothamBold
 RowLabel.TextSize = 13
@@ -169,13 +166,13 @@ ToggleBtn.Parent = RowFrame
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
 
 -- ==========================================
--- 6. LOGIKA AUTO FARM BERDASARKAN PATH GAMBAR
+-- 5. LOGIKA ANGKAT & BAWA KANDANG KE BASE
 -- ==========================================
-local autoFarmActive = false
+local autoLiftActive = false
 
 ToggleBtn.MouseButton1Click:Connect(function()
-    autoFarmActive = not autoFarmActive
-    if autoFarmActive then
+    autoLiftActive = not autoLiftActive
+    if autoLiftActive then
         ToggleBtn.Text = "ON"
         ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         ToggleBtn.BackgroundColor3 = Theme.Accent
@@ -188,32 +185,27 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.1)
-        if autoFarmActive then
+        task.wait(0.3)
+        if autoLiftActive then
             pcall(function()
                 local char = player.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 
                 if hrp then
-                    -- Menyusuri struktur path persis seperti di gambar: Workspace.Paths.Path20.Cages
+                    -- Target jalur kandang di map Anda
                     local pathsFolder = workspace:FindFirstChild("Paths")
                     local path20 = pathsFolder and pathsFolder:FindFirstChild("Path20")
                     local cages = path20 and path20:FindFirstChild("Cages")
                     
                     if cages then
-                        for _, cageObject in pairs(cages:GetChildren()) do
-                            if not autoFarmActive then break end
+                        for _, cage in pairs(cages:GetChildren()) do
+                            if not autoLiftActive then break end
                             
-                            -- Mendeteksi Root dan StealPrompt di dalam setiap kandang
-                            local rootPart = cageObject:FindFirstChild("Root")
-                            local stealPrompt = rootPart and rootPart:FindFirstChild("StealPrompt")
+                            local rootPart = cage:FindFirstChild("Root") or cage:FindFirstChildWhichIsA("BasePart")
                             
-                            if stealPrompt and stealPrompt:IsA("ProximityPrompt") and rootPart:IsA("BasePart") then
-                                -- Teleport mendekati kandang lalu eksekusi prompt pengambilan item
-                                hrp.CFrame = rootPart.CFrame * CFrame.new(0, 3, 0)
-                                task.wait(0.15)
-                                fireproximityprompt(stealPrompt)
-                                task.wait(0.3)
+                            if rootPart then
+                                -- Pindahkan posisi kandang langsung mengikuti posisi karakter / base Anda
+                                rootPart.CFrame = hrp.CFrame * CFrame.new(0, 0, -5)
                             end
                         end
                     end
