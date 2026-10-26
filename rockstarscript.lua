@@ -1,135 +1,224 @@
-assert(game:GetService("RunService"):IsStudio(), "Jalankan hanya di Roblox Studio")
+if not game:IsLoaded() then game.Loaded:Wait() end
 
-local workspace = game:GetService("Workspace")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 
-local function allDescendants(root)
-	local items = {root}
-	for _, item in ipairs(root:GetDescendants()) do
-		table.insert(items, item)
-	end
-	return items
+if playerGui:FindFirstChild("RockstarProUI") then
+    playerGui.RockstarProUI:Destroy()
 end
 
-local function hasZoneWord(name)
-	name = string.lower(name)
-	for _, word in ipairs({"zone", "area", "world", "island", "last", "final", "steal", "kandang"}) do
-		if string.find(name, word, 1, true) then
-			return true
-		end
-	end
-	return false
-end
-
-local function getAttributes(instance)
-	local result = {}
-	for key, value in pairs(instance:GetAttributes()) do
-		table.insert(result, key .. "=" .. tostring(value))
-	end
-	table.sort(result)
-	return #result > 0 and table.concat(result, ", ") or "-"
-end
-
-local function findZoneAncestor(instance)
-	local parent = instance.Parent
-	while parent and parent ~= workspace do
-		if (parent:IsA("Model") or parent:IsA("Folder")) and hasZoneWord(parent.Name) then
-			return parent:GetFullName()
-		end
-		parent = parent.Parent
-	end
-	return "-"
-end
-
-local function printList(title, items, limit)
-	table.sort(items, function(a, b)
-		return a:GetFullName() < b:GetFullName()
-	end)
-
-	print("\n=== " .. title .. " (" .. #items .. ") ===")
-	for index, item in ipairs(items) do
-		if index > limit then
-			print("... sisanya tidak ditampilkan")
-			break
-		end
-		print(item:GetFullName() .. " [" .. item.ClassName .. "]")
-	end
-end
-
-local worldItems = allDescendants(workspace)
-
-local zones = {}
-local prompts = {}
-for _, item in ipairs(worldItems) do
-	if (item:IsA("Model") or item:IsA("Folder")) and hasZoneWord(item.Name) then
-		table.insert(zones, item)
-	end
-	if item:IsA("ProximityPrompt") then
-		table.insert(prompts, item)
-	end
-end
-
-printList("KANDIDAT ZONA DI WORKSPACE", zones, 150)
-
-table.sort(prompts, function(a, b)
-	return a:GetFullName() < b:GetFullName()
-end)
-print("\n=== PROXIMITY PROMPTS (" .. #prompts .. ") ===")
-for index, prompt in ipairs(prompts) do
-	if index > 200 then
-		print("... sisanya tidak ditampilkan")
-		break
-	end
-
-	local parent = prompt.Parent
-	local part = parent
-	if part and part:IsA("Attachment") then
-		part = part.Parent
-	end
-
-	local position = "-"
-	if part and part:IsA("BasePart") then
-		position = tostring(part.Position)
-	end
-
-	print(string.format(
-		"%s | zone=%s | enabled=%s | jarak=%.1f | tahan=%.1f | LOS=%s | posisi=%s | attrs=%s",
-		prompt:GetFullName(),
-		findZoneAncestor(prompt),
-		tostring(prompt.Enabled),
-		prompt.MaxActivationDistance,
-		prompt.HoldDuration,
-		tostring(prompt.RequiresLineOfSight),
-		position,
-		getAttributes(prompt)
-	))
-end
-
-local remotes = {}
-for _, item in ipairs(ReplicatedStorage:GetDescendants()) do
-	if item:IsA("RemoteEvent") or item:IsA("RemoteFunction") then
-		table.insert(remotes, item)
-	end
-end
-printList("REMOTE DI REPLICATEDSTORAGE (nama/path saja)", remotes, 150)
-
-local scriptRoots = {
-	game:GetService("ServerScriptService"),
-	game:GetService("ServerStorage"),
-	game:GetService("StarterPlayer"),
-	game:GetService("StarterGui"),
-	ReplicatedStorage,
-	workspace,
+-- ==========================================
+-- 1. TEMA WARNA (PROFESSIONAL DARK-ORANGE)
+-- ==========================================
+local Theme = {
+    Background = Color3.fromRGB(22, 14, 10),
+    Sidebar = Color3.fromRGB(15, 9, 6),
+    Accent = Color3.fromRGB(255, 120, 0),
+    Element = Color3.fromRGB(35, 22, 15),
+    Text = Color3.fromRGB(230, 230, 230),
+    TextDim = Color3.fromRGB(150, 150, 150)
 }
 
-local scripts = {}
-for _, root in ipairs(scriptRoots) do
-	for _, item in ipairs(root:GetDescendants()) do
-		if item:IsA("Script") or item:IsA("LocalScript") or item:IsA("ModuleScript") then
-			table.insert(scripts, item)
-		end
-	end
-end
-printList("SCRIPT YANG MUNGKIN MENGATUR ZONA/PROMPT (nama/path saja)", scripts, 200)
+-- ==========================================
+-- 2. PEMBUATAN UI UTAMA
+-- ==========================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RockstarProUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = playerGui
 
-print("\n=== SELESAI: kirim isi Output ini untuk ditinjau ===")
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 600, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -300, 0.5, -190)
+MainFrame.BackgroundColor3 = Theme.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+-- ==========================================
+-- 3. TOP BAR & LOGO
+-- ==========================================
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundTransparency = 1
+TopBar.Parent = MainFrame
+
+local LogoText = Instance.new("TextLabel")
+LogoText.Size = UDim2.new(0, 150, 1, 0)
+LogoText.Position = UDim2.new(0, 15, 0, 0)
+LogoText.BackgroundTransparency = 1
+LogoText.Text = "Rockstar Store"
+LogoText.TextColor3 = Theme.Accent
+LogoText.Font = Enum.Font.GothamBold
+LogoText.TextSize = 18
+LogoText.TextXAlignment = Enum.TextXAlignment.Left
+LogoText.Parent = TopBar
+
+local Separator = Instance.new("Frame")
+Separator.Size = UDim2.new(1, 0, 0, 1)
+Separator.Position = UDim2.new(0, 0, 1, 0)
+Separator.BackgroundColor3 = Color3.fromRGB(40, 25, 18)
+Separator.BorderSizePixel = 0
+Separator.Parent = TopBar
+
+-- ==========================================
+-- 4. SIDEBAR
+-- ==========================================
+local Sidebar = Instance.new("Frame")
+Sidebar.Size = UDim2.new(0, 150, 1, -41)
+Sidebar.Position = UDim2.new(0, 0, 0, 41)
+Sidebar.BackgroundColor3 = Theme.Sidebar
+Sidebar.BorderSizePixel = 0
+Sidebar.Parent = MainFrame
+Instance.new("UICorner", Sidebar).CornerRadius = UDim.new(0, 8)
+
+local SidebarPatch = Instance.new("Frame")
+SidebarPatch.Size = UDim2.new(0, 10, 1, 0)
+SidebarPatch.Position = UDim2.new(1, -10, 0, 0)
+SidebarPatch.BackgroundColor3 = Theme.Sidebar
+SidebarPatch.BorderSizePixel = 0
+SidebarPatch.Parent = Sidebar
+
+local MainTab = Instance.new("TextLabel")
+MainTab.Size = UDim2.new(1, 0, 0, 40)
+MainTab.Position = UDim2.new(0, 0, 0, 10)
+MainTab.BackgroundTransparency = 1
+MainTab.Text = "   Main"
+MainTab.TextColor3 = Theme.Text
+MainTab.Font = Enum.Font.GothamBold
+MainTab.TextSize = 14
+MainTab.TextXAlignment = Enum.TextXAlignment.Left
+MainTab.Parent = Sidebar
+
+local ActiveMarker = Instance.new("Frame")
+ActiveMarker.Size = UDim2.new(0, 3, 0, 20)
+ActiveMarker.Position = UDim2.new(0, 0, 0.5, -10)
+ActiveMarker.BackgroundColor3 = Theme.Accent
+ActiveMarker.BorderSizePixel = 0
+ActiveMarker.Parent = MainTab
+
+local AutoTab = Instance.new("TextLabel")
+AutoTab.Size = UDim2.new(1, 0, 0, 40)
+AutoTab.Position = UDim2.new(0, 0, 0, 50)
+AutoTab.BackgroundTransparency = 1
+AutoTab.Text = "   Automation"
+AutoTab.TextColor3 = Theme.TextDim
+AutoTab.Font = Enum.Font.Gotham
+AutoTab.TextSize = 14
+AutoTab.TextXAlignment = Enum.TextXAlignment.Left
+AutoTab.Parent = Sidebar
+
+-- ==========================================
+-- 5. KONTEN UTAMA
+-- ==========================================
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, -160, 1, -51)
+Content.Position = UDim2.new(0, 160, 0, 51)
+Content.BackgroundTransparency = 1
+Content.Parent = MainFrame
+
+local SectionTitle = Instance.new("TextLabel")
+SectionTitle.Size = UDim2.new(1, 0, 0, 30)
+SectionTitle.Position = UDim2.new(0, 10, 0, 0)
+SectionTitle.BackgroundTransparency = 1
+SectionTitle.Text = "Auto Steal Kandang"
+SectionTitle.TextColor3 = Theme.Text
+SectionTitle.Font = Enum.Font.GothamBold
+SectionTitle.TextSize = 16
+SectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+SectionTitle.Parent = Content
+
+local SectionMarker = Instance.new("Frame")
+SectionMarker.Size = UDim2.new(0, 3, 0, 16)
+SectionMarker.Position = UDim2.new(0, -10, 0.5, -8)
+SectionMarker.BackgroundColor3 = Theme.Accent
+SectionMarker.BorderSizePixel = 0
+SectionMarker.Parent = SectionTitle
+
+-- Baris Tombol Auto Steal
+local RowFrame = Instance.new("Frame")
+RowFrame.Size = UDim2.new(1, -30, 0, 45)
+RowFrame.Position = UDim2.new(0, 10, 0, 40)
+RowFrame.BackgroundColor3 = Theme.Element
+RowFrame.BorderSizePixel = 0
+RowFrame.Parent = Content
+Instance.new("UICorner", RowFrame).CornerRadius = UDim.new(0, 6)
+
+local RowLabel = Instance.new("TextLabel")
+RowLabel.Size = UDim2.new(0.6, 0, 1, 0)
+RowLabel.Position = UDim2.new(0, 15, 0, 0)
+RowLabel.BackgroundTransparency = 1
+RowLabel.Text = "Auto Steal Semua Kandang"
+RowLabel.TextColor3 = Theme.Text
+RowLabel.Font = Enum.Font.GothamBold
+RowLabel.TextSize = 13
+RowLabel.TextXAlignment = Enum.TextXAlignment.Left
+RowLabel.Parent = RowFrame
+
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 80, 0, 30)
+ToggleBtn.Position = UDim2.new(1, -90, 0.5, -15)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 35, 25)
+ToggleBtn.TextColor3 = Theme.TextDim
+ToggleBtn.Text = "OFF"
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.TextSize = 13
+ToggleBtn.Parent = RowFrame
+Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
+
+-- ==========================================
+-- 6. LOGIKA AUTO FARM BERDASARKAN PATH GAMBAR
+-- ==========================================
+local autoFarmActive = false
+
+ToggleBtn.MouseButton1Click:Connect(function()
+    autoFarmActive = not autoFarmActive
+    if autoFarmActive then
+        ToggleBtn.Text = "ON"
+        ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        ToggleBtn.BackgroundColor3 = Theme.Accent
+    else
+        ToggleBtn.Text = "OFF"
+        ToggleBtn.TextColor3 = Theme.TextDim
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(50, 35, 25)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if autoFarmActive then
+            pcall(function()
+                local char = player.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if hrp then
+                    -- Menyusuri struktur path persis seperti di gambar: Workspace.Paths.Path20.Cages
+                    local pathsFolder = workspace:FindFirstChild("Paths")
+                    local path20 = pathsFolder and pathsFolder:FindFirstChild("Path20")
+                    local cages = path20 and path20:FindFirstChild("Cages")
+                    
+                    if cages then
+                        for _, cageObject in pairs(cages:GetChildren()) do
+                            if not autoFarmActive then break end
+                            
+                            -- Mendeteksi Root dan StealPrompt di dalam setiap kandang
+                            local rootPart = cageObject:FindFirstChild("Root")
+                            local stealPrompt = rootPart and rootPart:FindFirstChild("StealPrompt")
+                            
+                            if stealPrompt and stealPrompt:IsA("ProximityPrompt") and rootPart:IsA("BasePart") then
+                                -- Teleport mendekati kandang lalu eksekusi prompt pengambilan item
+                                hrp.CFrame = rootPart.CFrame * CFrame.new(0, 3, 0)
+                                task.wait(0.15)
+                                fireproximityprompt(stealPrompt)
+                                task.wait(0.3)
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
