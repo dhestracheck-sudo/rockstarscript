@@ -8,7 +8,7 @@ if playerGui:FindFirstChild("RockstarProUI") then
 end
 
 -- ==========================================
--- 1. TEMA WARNA
+-- 1. TEMA WARNA (DARK ORANGE)
 -- ==========================================
 local Theme = {
     Background = Color3.fromRGB(22, 14, 10),
@@ -120,7 +120,7 @@ local SectionTitle = Instance.new("TextLabel")
 SectionTitle.Size = UDim2.new(1, 0, 0, 30)
 SectionTitle.Position = UDim2.new(0, 10, 0, 0)
 SectionTitle.BackgroundTransparency = 1
-SectionTitle.Text = "Manage Cages & Base"
+SectionTitle.Text = "Auto Steal & Teleport Cage"
 SectionTitle.TextColor3 = Theme.Text
 SectionTitle.Font = Enum.Font.GothamBold
 SectionTitle.TextSize = 16
@@ -134,7 +134,7 @@ SectionMarker.BackgroundColor3 = Theme.Accent
 SectionMarker.BorderSizePixel = 0
 SectionMarker.Parent = SectionTitle
 
--- Baris Tombol Angkat Kandang
+-- Baris Tombol Fitur Utama
 local RowFrame = Instance.new("Frame")
 RowFrame.Size = UDim2.new(1, -30, 0, 45)
 RowFrame.Position = UDim2.new(0, 10, 0, 40)
@@ -147,7 +147,7 @@ local RowLabel = Instance.new("TextLabel")
 RowLabel.Size = UDim2.new(0.6, 0, 1, 0)
 RowLabel.Position = UDim2.new(0, 15, 0, 0)
 RowLabel.BackgroundTransparency = 1
-RowLabel.Text = "Auto Lift & Bring to Base"
+RowLabel.Text = "Auto Steal & Teleport to Base"
 RowLabel.TextColor3 = Theme.Text
 RowLabel.Font = Enum.Font.GothamBold
 RowLabel.TextSize = 13
@@ -166,13 +166,13 @@ ToggleBtn.Parent = RowFrame
 Instance.new("UICorner", ToggleBtn).CornerRadius = UDim.new(0, 6)
 
 -- ==========================================
--- 5. LOGIKA ANGKAT & BAWA KANDANG KE BASE
+-- 5. LOGIKA UTAMA: BYPASS STEAL & TELEPORT KANDANG
 -- ==========================================
-local autoLiftActive = false
+local autoFarmActive = false
 
 ToggleBtn.MouseButton1Click:Connect(function()
-    autoLiftActive = not autoLiftActive
-    if autoLiftActive then
+    autoFarmActive = not autoFarmActive
+    if autoFarmActive then
         ToggleBtn.Text = "ON"
         ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
         ToggleBtn.BackgroundColor3 = Theme.Accent
@@ -186,26 +186,34 @@ end)
 task.spawn(function()
     while true do
         task.wait(0.3)
-        if autoLiftActive then
+        if autoFarmActive then
             pcall(function()
                 local char = player.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 
                 if hrp then
-                    -- Target jalur kandang di map Anda
+                    -- Menyusuri jalur map sesuai struktur kandang
                     local pathsFolder = workspace:FindFirstChild("Paths")
                     local path20 = pathsFolder and pathsFolder:FindFirstChild("Path20")
                     local cages = path20 and path20:FindFirstChild("Cages")
                     
                     if cages then
                         for _, cage in pairs(cages:GetChildren()) do
-                            if not autoLiftActive then break end
+                            if not autoFarmActive then break end
                             
-                            local rootPart = cage:FindFirstChild("Root") or cage:FindFirstChildWhichIsA("BasePart")
+                            local rootPart = cage:FindFirstChild("Root")
+                            local stealPrompt = rootPart and rootPart:FindFirstChild("StealPrompt")
                             
-                            if rootPart then
-                                -- Pindahkan posisi kandang langsung mengikuti posisi karakter / base Anda
-                                rootPart.CFrame = hrp.CFrame * CFrame.new(0, 0, -5)
+                            if rootPart and rootPart:IsA("BasePart") then
+                                -- 1. Picu ProximityPrompt jarak jauh jika ada
+                                if stealPrompt and stealPrompt:IsA("ProximityPrompt") then
+                                    stealPrompt.MaxActivationDistance = 999999
+                                    stealPrompt.HoldDuration = 0
+                                    fireproximityprompt(stealPrompt)
+                                end
+                                
+                                -- 2. Teleportasikan objek kandang langsung ke posisi Anda (Base)
+                                rootPart.CFrame = hrp.CFrame * CFrame.new(0, 0, -4)
                             end
                         end
                     end
