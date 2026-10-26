@@ -5,6 +5,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -59,21 +60,21 @@ local Config = {
     SelectedZones = { ["Path11"] = true, ["Path12"] = true },
     SelectedCages = {},
 
-    CustomSpeed = 300,          -- Bebas diatur tanpa batas clamp!
-    UseCustomSpeed = false,     -- Jika OFF, pakai Speed asli Treadmill (50.000+) tanpa ketahan!
-    DisableSlowMode = true,     -- Otomatis matikan SlowMode bawaan game
-    ResetOnZoneChange = true,   -- Auto reset karakter saat ganti Zona
+    CustomSpeed = 500,
+    UseCustomSpeed = false,
+    DisableSlowMode = true,
+    ResetOnZoneChange = true,
 
     MinPetSize = "0",
     MinCashPerSec = "200B",
 
     AutoStealCage = false,
-    AutoPlaceBestCage = false,  -- Instan tanpa jalan
-    AutoOpenCage = false,       -- Instan tanpa jalan
-    AutoCollectCash = false,    -- Instan tanpa jalan
+    AutoPlaceBestCage = false,  -- Sistem Tarik PenPromptAnchor (Tanpa Walk!)
+    AutoOpenCage = false,       -- Sistem Tarik Prompt + OpenCage (Tanpa Walk!)
+    AutoCollectCash = false,    -- Sistem Tarik CashPad.Button (Tanpa Walk!)
 
-    AutoUpgradeBase = false,    -- Auto Upgrade Plot + Barn 2
-    AutoUpgradeTreadmill = false,-- Auto Upgrade Treadmill
+    AutoUpgradeBase = false,
+    AutoUpgradeTreadmill = false,
 
     AutoTrainTreadmill = false,
     AutoStealDNA = false,
@@ -159,7 +160,7 @@ local GameSubTitle = Instance.new("TextLabel")
 GameSubTitle.Size = UDim2.new(0, 240, 1, 0)
 GameSubTitle.Position = UDim2.new(0, 156, 0, 0)
 GameSubTitle.BackgroundTransparency = 1
-GameSubTitle.Text = "Steal & Escape Cage (Uncapped Speed)"
+GameSubTitle.Text = "Steal & Escape Cage"
 GameSubTitle.TextColor3 = Theme.TextWhite
 GameSubTitle.Font = Enum.Font.GothamBold
 GameSubTitle.TextSize = 14
@@ -727,7 +728,7 @@ local ConfigPage     = createTab("Config",     "↻", 7, false)
 -- [TAB 1: MAIN]
 createInfoCard(
     MainPage,
-    "Direct Uncapped Speed Run (No 4-stud Pathfinding brakes & Auto-Disables Game SlowMode!). Supports your full 50,000+ Treadmill Speed or Custom Speed Override.",
+    "Uncapped Speed Run + Bring-Attachment System for Auto Place & Auto Open Cage (brings PenPromptAnchor directly to your character so prompts trigger 100% without walking!).",
     1
 )
 
@@ -744,11 +745,11 @@ createToggleRow(MainPage, "Auto Steal & Escape Cage (Full Speed)", false, 4, fun
     if not v then abortCurrentWalk(false) end
 end)
 
-createToggleRow(MainPage, "Auto Place Best Cage (No Walk / Instant)", false, 5, function(v)
+createToggleRow(MainPage, "Auto Place Best Cage (Bring Prompt / No Walk)", false, 5, function(v)
     Config.AutoPlaceBestCage = v
 end)
 
-createToggleRow(MainPage, "Auto Open Cage (No Walk / Instant)", false, 6, function(v)
+createToggleRow(MainPage, "Auto Open Cage (Bring Prompt / No Walk)", false, 6, function(v)
     Config.AutoOpenCage = v
 end)
 
@@ -775,7 +776,7 @@ end)
 -- [TAB 2: AUTOMATION]
 createInfoCard(
     AutomationPage,
-    "All Plot, Upgrade, and Barn features run automatically in the background from anywhere on the map without walking.",
+    "All Plot, Upgrade, and Barn features run automatically in the background from anywhere on the map.",
     1
 )
 createToggleRow(AutomationPage, "Auto Place Best Cage (Instant)", false, 2, function(v) Config.AutoPlaceBestCage = v end)
@@ -788,7 +789,6 @@ createToggleRow(AutomationPage, "Auto TapBoost & Disable SlowMode", true, 7, fun
     Config.DisableSlowMode = v
 end)
 createToggleRow(AutomationPage, "Auto Equip Best Pets", false, 8, function(v) Config.AutoEquipBest = v end)
-createToggleRow(AutomationPage, "Auto Train Speed on My Treadmill", false, 9, function(v) Config.AutoTrainTreadmill = v end)
 
 -- [TAB 3: SHOP]
 createInfoCard(
@@ -873,7 +873,7 @@ RunService.Heartbeat:Connect(function()
 end)
 
 -- ==========================================
--- 9. FUNGSI HELPER
+-- 9. FUNGSI HELPER & AUTO EQUIP HOTBAR CAGE
 -- ==========================================
 local function isTableEmpty(t)
     for _, v in pairs(t) do
@@ -882,71 +882,125 @@ local function isTableEmpty(t)
     return true
 end
 
-local function usePromptSafely(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return end
-    if typeof(fireproximityprompt) == "function" then
-        pcall(fireproximityprompt, prompt)
-    end
-    local holdTime = prompt.HoldDuration or 0
-    prompt:InputHoldBegin()
-    if holdTime > 0 then
-        task.wait(holdTime + 0.05)
-    else
-        task.wait(0.08)
-    end
-    prompt:InputHoldEnd()
-end
-
-local function firePromptRemote(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return end
-    if typeof(fireproximityprompt) == "function" then
-        pcall(fireproximityprompt, prompt)
-    else
-        prompt:InputHoldBegin()
-        task.wait()
-        prompt:InputHoldEnd()
-    end
-end
-
-local function equipBestCageInBackpack()
+-- Memilih Cage Terbaik di Backpack ATAU di Custom Hotbar UI bawah layar
+local function selectBestCageToHold()
     local char = player.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local backpack = player:FindFirstChild("Backpack")
-    if not hum or not backpack then return nil end
 
-    local bestTool = nil
-    local bestScore = -1
+    -- 1. Cek jika menggunakan Tool di Backpack
+    if hum and backpack then
+        local bestTool = nil
+        local bestScore = -1
+        for _, item in ipairs(char:GetChildren()) do
+            if item:IsA("Tool") then
+                for k, score in pairs(CageRank) do
+                    if string.find(string.lower(item.Name), string.lower(k)) and score > bestScore then
+                        bestScore = score
+                        bestTool = item
+                    end
+                end
+            end
+        end
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item:IsA("Tool") then
+                for k, score in pairs(CageRank) do
+                    if string.find(string.lower(item.Name), string.lower(k)) and score > bestScore then
+                        bestScore = score
+                        bestTool = item
+                    end
+                end
+            end
+        end
+        if bestTool and bestTool.Parent == backpack then
+            pcall(function() hum:EquipTool(bestTool) end)
+            return
+        end
+    end
 
-    for _, item in ipairs(char:GetChildren()) do
-        if item:IsA("Tool") then
-            for k, score in pairs(CageRank) do
-                if string.find(string.lower(item.Name), string.lower(k)) and score > bestScore then
-                    bestScore = score
-                    bestTool = item
+    -- 2. Cek jika game menggunakan Custom Hotbar UI di PlayerGui
+    local bestGuiBtn = nil
+    local bestGuiScore = -1
+    for _, gui in ipairs(playerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui.Name ~= "RockstarLynxUI" and gui.Enabled then
+            for _, desc in ipairs(gui:GetDescendants()) do
+                if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                    local txt = string.lower(desc.Text or "")
+                    if string.find(txt, "cage") then
+                        local score = 1
+                        for k, r in pairs(CageRank) do
+                            if string.find(txt, string.lower(k)) and r > score then
+                                score = r
+                            end
+                        end
+                        local clickable = desc:IsA("GuiButton") and desc or desc:FindFirstAncestorWhichIsA("GuiButton")
+                        if clickable and score > bestGuiScore then
+                            bestGuiScore = score
+                            bestGuiBtn = clickable
+                        end
+                    end
                 end
             end
         end
     end
 
-    for _, item in ipairs(backpack:GetChildren()) do
-        if item:IsA("Tool") then
-            local matchedScore = 0
-            for k, score in pairs(CageRank) do
-                if string.find(string.lower(item.Name), string.lower(k)) and score > matchedScore then
-                    matchedScore = score
-                end
-            end
-            if matchedScore > bestScore then
-                bestScore = matchedScore
-                bestTool = item
-            end
+    if bestGuiBtn then
+        if typeof(firesignal) == "function" then
+            pcall(function() firesignal(bestGuiBtn.MouseButton1Click) end)
+            pcall(function() firesignal(bestGuiBtn.Activated) end)
         end
     end
+end
 
-    if bestTool and bestTool.Parent == backpack then
-        pcall(function() hum:EquipTool(bestTool) end)
+-- Fungsi Tarik ProximityPrompt (Attachment / BasePart) Tepat ke Karakter Lalu Picu!
+local function bringAndTriggerPrompt(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return false end
+    local char = player.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    local parent = prompt.Parent
+    local savedAttachmentPos = nil
+    local savedPartCF = nil
+
+    -- Tarik Attachment (seperti PenPromptAnchor) atau Part langsung ke posisi karakter (0 stud!)
+    pcall(function()
+        if parent:IsA("Attachment") then
+            savedAttachmentPos = parent.Position
+            parent.WorldPosition = hrp.Position + Vector3.new(0, 1, 0)
+        elseif parent:IsA("BasePart") then
+            savedPartCF = parent.CFrame
+            parent.CanCollide = false
+            parent.CFrame = hrp.CFrame
+        end
+        prompt.HoldDuration = 0
+        prompt.MaxActivationDistance = 40
+        prompt.RequiresLineOfSight = false
+    end)
+
+    -- Tunggu 1 frame agar ProximityPromptService mendeteksi prompt sudah berada di depan karakter
+    RunService.Heartbeat:Wait()
+    task.wait(0.05)
+
+    if typeof(fireproximityprompt) == "function" then
+        pcall(fireproximityprompt, prompt)
     end
-    return bestTool
+    pcall(function()
+        prompt:InputHoldBegin()
+        task.wait(0.06)
+        prompt:InputHoldEnd()
+    end)
+
+    -- Kembalikan posisi Attachment / Part ke tempat semula
+    pcall(function()
+        if parent:IsA("Attachment") and savedAttachmentPos then
+            parent.Position = savedAttachmentPos
+        elseif parent:IsA("BasePart") and savedPartCF then
+            parent.CFrame = savedPartCF
+        end
+    end)
+
+    return true
 end
 
 local function getMyPlot()
@@ -1020,7 +1074,6 @@ local function getBasePosition()
     return nil
 end
 
--- LARI LURUS KECEPATAN PENUH (TANPA REM PATHFINDING 4 STUD!)
 local function fastDirectWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
     local mySession = WalkSessionId
     local char = player.Character
@@ -1032,7 +1085,6 @@ local function fastDirectWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
     maxTime = maxTime or 25
     local startTime = os.clock()
 
-    -- Matikan SlowMode bawaan game sebelum lari agar speed 50.000 keluar penuh!
     if Config.DisableSlowMode then
         pcall(function() Remotes.SetSlowMode:FireServer(false) end)
     end
@@ -1047,7 +1099,6 @@ local function fastDirectWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
         local flatDiff = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
         local flatDist = flatDiff.Magnitude
 
-        -- Anti-Overshoot: Jika jarak sudah dekat (atau kecepatan sangat tinggi), langsung rem tepat di titik target
         local dynamicStopDist = math.max(stopDist, math.min(hum.WalkSpeed * 0.08, 14))
         if flatDist <= dynamicStopDist then
             hum:MoveTo(hrp.Position)
@@ -1120,26 +1171,25 @@ end
 
 -- ==========================================
 -- 10. LOOP BACKGROUND INSTAN (TANPA WALK!)
--- Collect Cash, Place Best Cage, Open Cage, Upgrade Base & Treadmill
+-- Sistem Tarik PenPromptAnchor & CashPad.Button ke Karakter
 -- ==========================================
 local originalCashPadCF = nil
 
 task.spawn(function()
     while ScreenGui.Parent do
-        task.wait(0.7)
+        task.wait(0.6)
         pcall(function()
             local char = player.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
 
-            -- Pastikan SlowMode selalu mati agar lari tetap kencang
             if Config.DisableSlowMode then
                 pcall(function() Remotes.SetSlowMode:FireServer(false) end)
             end
 
             local myPlot = getMyPlot()
 
-            -- [1] AUTO COLLECT CASH (TANPA WALK)
+            -- [1] AUTO COLLECT CASH (TARIK CASHPAD BUTTON KE KARAKTER)
             if Config.AutoCollectCash and myPlot then
                 local cashBtn = myPlot:FindFirstChild("CashPad") and myPlot.CashPad:FindFirstChild("Button")
                 if cashBtn and cashBtn:IsA("BasePart") then
@@ -1152,7 +1202,6 @@ task.spawn(function()
                         pcall(firetouchinterest, hrp, cashBtn, 0)
                         pcall(firetouchinterest, hrp, cashBtn, 1)
                     end
-                    pcall(function() Remotes.CashCollected:FireServer() end)
                     task.wait(0.12)
                     if originalCashPadCF then
                         cashBtn.CFrame = originalCashPadCF
@@ -1160,72 +1209,49 @@ task.spawn(function()
                 end
             end
 
-            -- [2] AUTO PLACE BEST CAGE (TANPA WALK)
-            if Config.AutoPlaceBestCage and myPlot then
-                local bestTool = equipBestCageInBackpack()
+            -- [2] AUTO PLACE BEST CAGE & AUTO OPEN CAGE (TARIK PENPROMPTANCHOR SATU PER SATU)
+            if (Config.AutoPlaceBestCage or Config.AutoOpenCage) and myPlot then
+                if Config.AutoPlaceBestCage then
+                    selectBestCageToHold()
+                end
+                if Config.AutoOpenCage then
+                    pcall(function() Remotes.OpenNow:FireServer() end)
+                    local plotCages = myPlot:FindFirstChild("Cages")
+                    if plotCages then
+                        for _, cageModel in ipairs(plotCages:GetChildren()) do
+                            local cleanId = string.gsub(cageModel.Name, "^Away_", "")
+                            pcall(function() Remotes.OpenCage:FireServer(cageModel.Name) end)
+                            pcall(function() Remotes.OpenCage:FireServer(cleanId) end)
+                            local cPrompt = cageModel:FindFirstChildWhichIsA("ProximityPrompt", true)
+                            if cPrompt and cPrompt.Enabled then
+                                bringAndTriggerPrompt(cPrompt)
+                            end
+                        end
+                    end
+                end
+
+                -- Tarik PenPromptAnchor di Barn & Barn2 yang aktif ke tubuh karakter satu per satu
                 for _, barnName in ipairs({"Barn", "Barn2"}) do
                     local barn = myPlot:FindFirstChild(barnName)
                     local stalls = barn and barn:FindFirstChild("Stalls")
                     if stalls then
                         for _, stall in ipairs(stalls:GetChildren()) do
-                            local stallNum = tonumber(string.match(stall.Name, "%d+"))
+                            if not Config.AutoPlaceBestCage and not Config.AutoOpenCage then break end
                             local anchor = stall:FindFirstChild("PenPromptAnchor")
                             local penPrompt = anchor and anchor:FindFirstChild("PenPrompt")
                             if penPrompt and penPrompt.Enabled then
-                                firePromptRemote(penPrompt)
-                            end
-                            if stallNum then
-                                pcall(function() Remotes.PlaceCage:FireServer(stallNum) end)
-                                if bestTool then
-                                    pcall(function() Remotes.PlaceCage:FireServer(stallNum, bestTool.Name) end)
+                                if Config.AutoPlaceBestCage then
+                                    selectBestCageToHold()
                                 end
-                            end
-                            pcall(function() Remotes.PlaceCage:FireServer(stall.Name) end)
-                        end
-                    end
-                end
-            end
-
-            -- [3] AUTO OPEN CAGE (TANPA WALK)
-            if Config.AutoOpenCage and myPlot then
-                pcall(function() Remotes.OpenNow:FireServer() end)
-
-                local plotCages = myPlot:FindFirstChild("Cages")
-                if plotCages then
-                    for _, cageModel in ipairs(plotCages:GetChildren()) do
-                        local cleanId = string.gsub(cageModel.Name, "^Away_", "")
-                        pcall(function() Remotes.OpenCage:FireServer(cageModel.Name) end)
-                        pcall(function() Remotes.OpenCage:FireServer(cleanId) end)
-
-                        local prompt = cageModel:FindFirstChildWhichIsA("ProximityPrompt", true)
-                        if prompt and prompt.Enabled then
-                            firePromptRemote(prompt)
-                        end
-                    end
-                end
-
-                for _, barnName in ipairs({"Barn", "Barn2"}) do
-                    local barn = myPlot:FindFirstChild(barnName)
-                    local stalls = barn and barn:FindFirstChild("Stalls")
-                    if stalls then
-                        for _, stall in ipairs(stalls:GetChildren()) do
-                            local stallNum = tonumber(string.match(stall.Name, "%d+"))
-                            if stallNum then
-                                pcall(function() Remotes.OpenCage:FireServer(stallNum) end)
-                            end
-                            pcall(function() Remotes.OpenCage:FireServer(stall.Name) end)
-
-                            local anchor = stall:FindFirstChild("PenPromptAnchor")
-                            local penPrompt = anchor and anchor:FindFirstChild("PenPrompt")
-                            if penPrompt and penPrompt.Enabled then
-                                firePromptRemote(penPrompt)
+                                bringAndTriggerPrompt(penPrompt)
+                                task.wait(0.08)
                             end
                         end
                     end
                 end
             end
 
-            -- [4] AUTO UPGRADE BASE (PLOT & BARN 2) & TREADMILL
+            -- [3] AUTO UPGRADE BASE & TREADMILL
             if Config.AutoUpgradeBase then
                 pcall(function()
                     Remotes.UpgradePlot:FireServer()
@@ -1238,7 +1264,7 @@ task.spawn(function()
                 end)
             end
 
-            -- [5] TAPBOOST, EQUIPBEST, BREW
+            -- [4] TAPBOOST, EQUIPBEST, BREW
             if Config.AutoTapBoost then pcall(function() Remotes.TapBoost:FireServer() end) end
             if Config.AutoEquipBest then pcall(function() Remotes.EquipBest:FireServer() end) end
             if Config.AutoBrewCauldron then pcall(function() Remotes.Brew:FireServer() end) end
@@ -1274,7 +1300,7 @@ task.spawn(function()
                             if reached then
                                 local stealPrompt = root:FindFirstChild("StealPrompt") or root:FindFirstChildOfClass("ProximityPrompt")
                                 if stealPrompt and stealPrompt.Enabled then
-                                    usePromptSafely(stealPrompt)
+                                    bringAndTriggerPrompt(stealPrompt)
                                     task.wait(0.12)
                                 end
                             end
