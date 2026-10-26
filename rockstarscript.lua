@@ -5,8 +5,8 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "rockstarscript | Zona Terakhir",
-   LoadingTitle = "Auto Farm Zona Terakhir",
+   Name = "rockstarscript | Pro Zone & Rarity",
+   LoadingTitle = "Advanced Auto Farm Panel",
    LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = { Enabled = false },
    Discord = { Enabled = false },
@@ -14,77 +14,100 @@ local Window = Rayfield:CreateWindow({
 })
 
 Rayfield:Notify({
-   Title = "Filter Zona Aktif",
-   Content = "Script dikhususkan untuk zona terakhir.",
+   Title = "Panel Siap!",
+   Content = "Pilih zona dan rarity kandang yang ingin diambil.",
    Duration = 4,
 })
 
 local MainTab = Window:CreateTab("Auto Farm", 4483362458)
-local MainSection = MainTab:CreateSection("Target Zona Terakhir Saja")
+MainTab:CreateSection("Pengaturan Filter Target")
 
-local autoFarmLast = false
+-- Fungsi mendeteksi folder/zona secara otomatis di workspace
+local function getZones()
+   local zones = {"Semua Zona", "Black Hole"}
+   pcall(function()
+      for _, child in pairs(workspace:GetChildren()) do
+         if (child:IsA("Folder") or child:IsA("Model")) and child.Name ~= "Black Hole" then
+            table.insert(zones, child.Name)
+         end
+      end
+   end)
+   return zones
+end
+
+local selectedZone = "Semua Zona"
+local selectedRarity = "Semua Rarity"
+local autoFarmActive = false
+
+-- Dropdown Pilihan Zona
+local ZoneDropdown = MainTab:CreateDropdown({
+   Name = "Pilih Zona Map",
+   Options = getZones(),
+   CurrentOption = "Semua Zona",
+   Flag = "ZoneDropdown",
+   Callback = function(Option)
+      selectedZone = Option
+   end,
+})
+
+-- Dropdown Pilihan Rarity Kandang
+MainTab:CreateDropdown({
+   Name = "Pilih Rarity Kandang",
+   Options = {"Semua Rarity", "Common", "Rare", "Epic", "Legendary", "Mythic", "Secret", "Godly"},
+   CurrentOption = "Semua Rarity",
+   Flag = "RarityDropdown",
+   Callback = function(Option)
+      selectedRarity = Option
+   end,
+})
+
+MainTab:CreateButton({
+   Name = "Refresh Daftar Zona",
+   Callback = function()
+      ZoneDropdown:Refresh(getZones())
+      Rayfield:Notify({
+         Title = "Berhasil",
+         Content = "Daftar zona berhasil diperbarui!",
+         Duration = 2,
+      })
+   end,
+})
+
+MainTab:CreateSection("Eksekusi Filter")
 
 MainTab:CreateToggle({
-   Name = "Auto Farm Zona Terakhir",
+   Name = "Mulai Auto Farm (Zona & Rarity)",
    CurrentValue = false,
-   Flag = "AutoFarmLastZone",
+   Flag = "AutoFarmZoneRarity",
    Callback = function(Value)
-      autoFarmLast = Value
+      autoFarmActive = Value
       task.spawn(function()
-         -- Cari titik terjauh/zona terakhir berdasarkan posisi koordinat (Z atau Magnitude dari pusat)
-         local function getTargetPrompts()
-            local prompts = {}
-            local maxDistance = 0
-            
-            -- Kumpulkan semua prompt dan cari posisi terjauh sebagai indikasi zona terakhir
-            for _, prompt in pairs(workspace:GetDescendants()) do
-               if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                  local part = prompt.Parent
-                  if part and part:IsA("Attachment") then part = part.Parent end
-                  if part and part:IsA("BasePart") then
-                     local dist = part.Position.Magnitude
-                     if dist > maxDistance then
-                        maxDistance = dist
-                     end
-                     table.insert(prompts, {Prompt = prompt, Part = part, Dist = dist})
-                  end
-               end
-            end
-            
-            -- Filter hanya ambil prompt yang berada di radius zona terjauh (15% dari jarak maksimal)
-            local lastZonePrompts = {}
-            for _, data in pairs(prompts) do
-               if data.Dist >= (maxDistance - 150) then -- Toleransi jarak zona terakhir
-                  table.insert(lastZonePrompts, data)
-               end
-            end
-            
-            return lastZonePrompts
-         end
-
-         while autoFarmLast do
-            task.wait(0.2)
+         while autoFarmActive do
+            task.wait(0.1)
             pcall(function()
                local player = game.Players.LocalPlayer
                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                
                if hrp then
-                  local targetList = getTargetPrompts()
-                  for _, target in pairs(targetList) do
-                     if not autoFarmLast then break end
+                  for _, prompt in pairs(workspace:GetDescendants()) do
+                     if not autoFarmActive then break end
                      
-                     if target.Prompt and target.Prompt.Enabled and target.Part then
-                        -- Teleport presisi hanya ke titik di zona terakhir
-                        hrp.CFrame = target.Part.CFrame * CFrame.new(0, 3, 0)
-                        task.wait(0.05)
+                     if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                        local currentParent = prompt.Parent
+                        local matchZone = false
+                        local matchRarity = false
                         
-                        fireproximityprompt(target.Prompt)
-                        task.wait(0.25)
-                     end
-                  end
-               end
-            end)
-         end
-      end)
-   end,
-})
+                        -- 1. Validasi Zona
+                        if selectedZone == "Semua Zona" then
+                           matchZone = true
+                        else
+                           local foundZone = false
+                           local tempParent = currentParent
+                           while tempParent and tempParent ~= workspace do
+                              if string.find(string.lower(tempParent.Name), string.lower(selectedZone)) then
+                                 foundZone = true
+                                 break
+                              end
+                              tempParent = tempParent.Parent
+                           end
+                           matchZone = found
