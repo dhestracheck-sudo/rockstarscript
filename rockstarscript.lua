@@ -5,7 +5,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
-local PathfindingService = game:GetService("PathfindingService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -59,28 +58,29 @@ local CageRank = {
 local Config = {
     SelectedZones = { ["Path11"] = true, ["Path12"] = true },
     SelectedCages = {},
-    SafeGlideBoost = 25,       -- Dorongan kecepatan aman tanpa ubah WalkSpeed
-    EnableSafeBoost = true,
-    ResetOnZoneChange = true,  -- Auto reset karakter saat ganti Zona
+
+    CustomSpeed = 300,          -- Bebas diatur tanpa batas clamp!
+    UseCustomSpeed = false,     -- Jika OFF, pakai Speed asli Treadmill (50.000+) tanpa ketahan!
+    DisableSlowMode = true,     -- Otomatis matikan SlowMode bawaan game
+    ResetOnZoneChange = true,   -- Auto reset karakter saat ganti Zona
 
     MinPetSize = "0",
     MinCashPerSec = "200B",
 
     AutoStealCage = false,
-    AutoPlaceBestCage = false, -- Instan tanpa jalan
-    AutoOpenCage = false,      -- Instan tanpa jalan
-    AutoCollectCash = false,   -- Instan tanpa jalan
+    AutoPlaceBestCage = false,  -- Instan tanpa jalan
+    AutoOpenCage = false,       -- Instan tanpa jalan
+    AutoCollectCash = false,    -- Instan tanpa jalan
+
+    AutoUpgradeBase = false,    -- Auto Upgrade Plot + Barn 2
+    AutoUpgradeTreadmill = false,-- Auto Upgrade Treadmill
 
     AutoTrainTreadmill = false,
     AutoStealDNA = false,
     AutoEquipBest = false,
     AutoTapBoost = true,
-
-    AutoUpgradePlot = false,
-    AutoUpgradeTreadmill = false,
-    AutoUpgradeBarn2 = false,
-
     AutoBrewCauldron = false,
+
     WebhookURL = "",
     SavedBasePosition = nil
 }
@@ -159,7 +159,7 @@ local GameSubTitle = Instance.new("TextLabel")
 GameSubTitle.Size = UDim2.new(0, 240, 1, 0)
 GameSubTitle.Position = UDim2.new(0, 156, 0, 0)
 GameSubTitle.BackgroundTransparency = 1
-GameSubTitle.Text = "Steal & Escape Cage"
+GameSubTitle.Text = "Steal & Escape Cage (Uncapped Speed)"
 GameSubTitle.TextColor3 = Theme.TextWhite
 GameSubTitle.Font = Enum.Font.GothamBold
 GameSubTitle.TextSize = 14
@@ -727,7 +727,7 @@ local ConfigPage     = createTab("Config",     "↻", 7, false)
 -- [TAB 1: MAIN]
 createInfoCard(
     MainPage,
-    "Steals Cages in picked Zones using Safe Glide Speed Boost. Auto Place Best Cage, Auto Open Cage, and Auto Collect Cash all work 100% remotely without walking!",
+    "Direct Uncapped Speed Run (No 4-stud Pathfinding brakes & Auto-Disables Game SlowMode!). Supports your full 50,000+ Treadmill Speed or Custom Speed Override.",
     1
 )
 
@@ -739,67 +739,66 @@ createMultiDropdown(MainPage, "Cage Rarities (empty = all)", AllCageRarities, Co
     abortCurrentWalk(false)
 end)
 
-createInputRow(MainPage, "Safe Speed Boost (0 - 45, Rec: 25)", "25", 4, function(v)
-    Config.SafeGlideBoost = math.clamp(tonumber(v) or 25, 0, 60)
-end)
-createInputRow(MainPage, "Min Cash Per Second ($/s)", "200B", 5, function(v) Config.MinCashPerSec = v end)
-
-createToggleRow(MainPage, "Enable Safe Speed Boost (Bypass WalkSpeed)", true, 6, function(v)
-    Config.EnableSafeBoost = v
-end)
-
-createToggleRow(MainPage, "Auto Steal & Escape Cage", false, 7, function(v)
+createToggleRow(MainPage, "Auto Steal & Escape Cage (Full Speed)", false, 4, function(v)
     Config.AutoStealCage = v
     if not v then abortCurrentWalk(false) end
 end)
 
-createToggleRow(MainPage, "Auto Place Best Cage (No Walk / Instant)", false, 8, function(v)
+createToggleRow(MainPage, "Auto Place Best Cage (No Walk / Instant)", false, 5, function(v)
     Config.AutoPlaceBestCage = v
 end)
 
-createToggleRow(MainPage, "Auto Open Cage (No Walk / Instant)", false, 9, function(v)
+createToggleRow(MainPage, "Auto Open Cage (No Walk / Instant)", false, 6, function(v)
     Config.AutoOpenCage = v
 end)
 
-createToggleRow(MainPage, "Auto Collect Cash (No Walk / Instant)", false, 10, function(v)
+createToggleRow(MainPage, "Auto Collect Cash (No Walk / Instant)", false, 7, function(v)
     Config.AutoCollectCash = v
+end)
+
+createToggleRow(MainPage, "Auto Upgrade Base (Plot & Barn 2)", false, 8, function(v)
+    Config.AutoUpgradeBase = v
+end)
+
+createToggleRow(MainPage, "Auto Upgrade Treadmill", false, 9, function(v)
+    Config.AutoUpgradeTreadmill = v
+end)
+
+createInputRow(MainPage, "Custom Speed Value (Uncapped)", "500", 10, function(v)
+    Config.CustomSpeed = tonumber(v) or 500
+end)
+
+createToggleRow(MainPage, "Enable Custom Speed Override", false, 11, function(v)
+    Config.UseCustomSpeed = v
 end)
 
 -- [TAB 2: AUTOMATION]
 createInfoCard(
     AutomationPage,
-    "All Plot & Barn features below run automatically in the background from anywhere on the map without walking.",
+    "All Plot, Upgrade, and Barn features run automatically in the background from anywhere on the map without walking.",
     1
 )
-createToggleRow(AutomationPage, "Auto Place Best Cage (Remote Instant)", false, 2, function(v)
-    Config.AutoPlaceBestCage = v
-end)
-createToggleRow(AutomationPage, "Auto Open Cages (Remote Instant)", false, 3, function(v)
-    Config.AutoOpenCage = v
-end)
-createToggleRow(AutomationPage, "Auto Collect CashPad (Remote Instant)", false, 4, function(v)
-    Config.AutoCollectCash = v
-end)
-createToggleRow(AutomationPage, "Auto TapBoost (Legit Speed Multiplier)", true, 5, function(v)
+createToggleRow(AutomationPage, "Auto Place Best Cage (Instant)", false, 2, function(v) Config.AutoPlaceBestCage = v end)
+createToggleRow(AutomationPage, "Auto Open Cages (Instant)", false, 3, function(v) Config.AutoOpenCage = v end)
+createToggleRow(AutomationPage, "Auto Collect CashPad (Instant)", false, 4, function(v) Config.AutoCollectCash = v end)
+createToggleRow(AutomationPage, "Auto Upgrade Base (Plot & Barn 2)", false, 5, function(v) Config.AutoUpgradeBase = v end)
+createToggleRow(AutomationPage, "Auto Upgrade Treadmill", false, 6, function(v) Config.AutoUpgradeTreadmill = v end)
+createToggleRow(AutomationPage, "Auto TapBoost & Disable SlowMode", true, 7, function(v)
     Config.AutoTapBoost = v
+    Config.DisableSlowMode = v
 end)
-createToggleRow(AutomationPage, "Auto Equip Best Pets", false, 6, function(v)
-    Config.AutoEquipBest = v
-end)
-createToggleRow(AutomationPage, "Auto Train Speed on My Treadmill", false, 7, function(v)
-    Config.AutoTrainTreadmill = v
-end)
+createToggleRow(AutomationPage, "Auto Equip Best Pets", false, 8, function(v) Config.AutoEquipBest = v end)
+createToggleRow(AutomationPage, "Auto Train Speed on My Treadmill", false, 9, function(v) Config.AutoTrainTreadmill = v end)
 
 -- [TAB 3: SHOP]
 createInfoCard(
     ShopPage,
-    "Upgrades your Plot, Treadmill, or Barn 2 remotely.",
+    "Remotely upgrades your Base Plot, Barn 2, and Treadmill or sells unlocked pets.",
     1
 )
-createToggleRow(ShopPage, "Auto Upgrade Plot", false, 2, function(v) Config.AutoUpgradePlot = v end)
+createToggleRow(ShopPage, "Auto Upgrade Base (Plot & Barn 2)", false, 2, function(v) Config.AutoUpgradeBase = v end)
 createToggleRow(ShopPage, "Auto Upgrade Treadmill", false, 3, function(v) Config.AutoUpgradeTreadmill = v end)
-createToggleRow(ShopPage, "Auto Upgrade Barn 2", false, 4, function(v) Config.AutoUpgradeBarn2 = v end)
-createActionRow(ShopPage, "Sell All Unlocked Pets", "SELL ALL", 5, function(btn)
+createActionRow(ShopPage, "Sell All Unlocked Pets", "SELL ALL", 4, function(btn)
     pcall(function() Remotes.SellAllPets:FireServer() end)
     btn.Text = "SOLD!"
     task.wait(1)
@@ -855,18 +854,21 @@ createActionRow(ConfigPage, "Reset Saved Plot Position", "RESET", 2, function(bt
 end)
 
 -- ==========================================
--- 8. SAFE SPEED BOOST (TANPA UBAH WALKSPEED!)
+-- 8. KECEPATAN PENUH TANPA REM (UNCAPPED SPEED)
 -- ==========================================
-RunService.Heartbeat:Connect(function(dt)
+RunService.Heartbeat:Connect(function()
     if not ScreenGui.Parent then return end
-    if not Config.EnableSafeBoost or Config.SafeGlideBoost <= 0 then return end
+    if not Config.UseCustomSpeed then return end
 
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hrp and hum and hum.Health > 0 and hum.MoveDirection.Magnitude > 0.05 then
-        local step = hum.MoveDirection * Config.SafeGlideBoost * dt
-        hrp.CFrame = hrp.CFrame + Vector3.new(step.X, 0, step.Z)
+    if hrp and hum and hum.Health > 0 then
+        hum.WalkSpeed = Config.CustomSpeed
+        if hum.MoveDirection.Magnitude > 0.05 then
+            local vel = hum.MoveDirection * Config.CustomSpeed
+            hrp.AssemblyLinearVelocity = Vector3.new(vel.X, hrp.AssemblyLinearVelocity.Y, vel.Z)
+        end
     end
 end)
 
@@ -882,12 +884,15 @@ end
 
 local function usePromptSafely(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return end
+    if typeof(fireproximityprompt) == "function" then
+        pcall(fireproximityprompt, prompt)
+    end
     local holdTime = prompt.HoldDuration or 0
     prompt:InputHoldBegin()
     if holdTime > 0 then
-        task.wait(holdTime + 0.08)
+        task.wait(holdTime + 0.05)
     else
-        task.wait(0.1)
+        task.wait(0.08)
     end
     prompt:InputHoldEnd()
 end
@@ -1015,48 +1020,21 @@ local function getBasePosition()
     return nil
 end
 
-local function naturalWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
+-- LARI LURUS KECEPATAN PENUH (TANPA REM PATHFINDING 4 STUD!)
+local function fastDirectWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
     local mySession = WalkSessionId
     local char = player.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum or hum.Health <= 0 then return false end
 
-    stopDist = stopDist or 4.5
-    maxTime = maxTime or 30
+    stopDist = stopDist or 6
+    maxTime = maxTime or 25
     local startTime = os.clock()
 
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2.2,
-        AgentHeight = 5,
-        AgentCanJump = true
-    })
-    local ok, _ = pcall(function()
-        path:ComputeAsync(hrp.Position, targetPos)
-    end)
-
-    if ok and path.Status == Enum.PathStatus.Success then
-        local waypoints = path:GetWaypoints()
-        for _, wp in ipairs(waypoints) do
-            if not ScreenGui.Parent or mySession ~= WalkSessionId or (os.clock() - startTime) >= maxTime then
-                return false
-            end
-            if checkFlagFunc and not checkFlagFunc() then return false end
-
-            if wp.Action == Enum.PathWaypointAction.Jump then
-                hum.Jump = true
-            end
-            hum:MoveTo(wp.Position)
-
-            local wpStart = os.clock()
-            while (os.clock() - wpStart) < 2.2 do
-                if mySession ~= WalkSessionId or (checkFlagFunc and not checkFlagFunc()) then return false end
-                if not hrp.Parent or hum.Health <= 0 then return false end
-                local d = Vector3.new(hrp.Position.X - wp.Position.X, 0, hrp.Position.Z - wp.Position.Z).Magnitude
-                if d <= 4.2 then break end
-                task.wait(0.06)
-            end
-        end
+    -- Matikan SlowMode bawaan game sebelum lari agar speed 50.000 keluar penuh!
+    if Config.DisableSlowMode then
+        pcall(function() Remotes.SetSlowMode:FireServer(false) end)
     end
 
     while ScreenGui.Parent and mySession == WalkSessionId and (os.clock() - startTime) < maxTime do
@@ -1066,13 +1044,19 @@ local function naturalWalkTo(targetPos, stopDist, maxTime, checkFlagFunc)
         hum = char and char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum or hum.Health <= 0 then return false end
 
-        local flatDist = Vector3.new(hrp.Position.X - targetPos.X, 0, hrp.Position.Z - targetPos.Z).Magnitude
-        if flatDist <= stopDist then
+        local flatDiff = Vector3.new(targetPos.X - hrp.Position.X, 0, targetPos.Z - hrp.Position.Z)
+        local flatDist = flatDiff.Magnitude
+
+        -- Anti-Overshoot: Jika jarak sudah dekat (atau kecepatan sangat tinggi), langsung rem tepat di titik target
+        local dynamicStopDist = math.max(stopDist, math.min(hum.WalkSpeed * 0.08, 14))
+        if flatDist <= dynamicStopDist then
+            hum:MoveTo(hrp.Position)
+            hrp.AssemblyLinearVelocity = Vector3.new(0, hrp.AssemblyLinearVelocity.Y, 0)
             return true
         end
 
         hum:MoveTo(targetPos)
-        task.wait(0.08)
+        RunService.Heartbeat:Wait()
     end
 
     return false
@@ -1136,28 +1120,32 @@ end
 
 -- ==========================================
 -- 10. LOOP BACKGROUND INSTAN (TANPA WALK!)
--- Untuk Auto Collect Cash, Auto Place Cage, Auto Open Cage
+-- Collect Cash, Place Best Cage, Open Cage, Upgrade Base & Treadmill
 -- ==========================================
 local originalCashPadCF = nil
 
 task.spawn(function()
     while ScreenGui.Parent do
-        task.wait(0.8)
+        task.wait(0.7)
         pcall(function()
             local char = player.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if not hrp then return end
 
+            -- Pastikan SlowMode selalu mati agar lari tetap kencang
+            if Config.DisableSlowMode then
+                pcall(function() Remotes.SetSlowMode:FireServer(false) end)
+            end
+
             local myPlot = getMyPlot()
 
-            -- [1] AUTO COLLECT CASH (TANPA WALK - TARIK TOMBOL CASHPAD KE KARAKTER)
+            -- [1] AUTO COLLECT CASH (TANPA WALK)
             if Config.AutoCollectCash and myPlot then
                 local cashBtn = myPlot:FindFirstChild("CashPad") and myPlot.CashPad:FindFirstChild("Button")
                 if cashBtn and cashBtn:IsA("BasePart") then
                     if not originalCashPadCF then
                         originalCashPadCF = cashBtn.CFrame
                     end
-                    -- Sentuhkan CashPad.Button langsung ke karakter tanpa karakter harus jalan
                     cashBtn.CanCollide = false
                     cashBtn.CFrame = hrp.CFrame
                     if typeof(firetouchinterest) == "function" then
@@ -1165,14 +1153,14 @@ task.spawn(function()
                         pcall(firetouchinterest, hrp, cashBtn, 1)
                     end
                     pcall(function() Remotes.CashCollected:FireServer() end)
-                    task.wait(0.15)
+                    task.wait(0.12)
                     if originalCashPadCF then
                         cashBtn.CFrame = originalCashPadCF
                     end
                 end
             end
 
-            -- [2] AUTO PLACE BEST CAGE (TANPA WALK - LANGSUNG REMOTE & PROMPT)
+            -- [2] AUTO PLACE BEST CAGE (TANPA WALK)
             if Config.AutoPlaceBestCage and myPlot then
                 local bestTool = equipBestCageInBackpack()
                 for _, barnName in ipairs({"Barn", "Barn2"}) do
@@ -1198,11 +1186,10 @@ task.spawn(function()
                 end
             end
 
-            -- [3] AUTO OPEN CAGE (TANPA WALK - LANGSUNG REMOTE & PROMPT)
+            -- [3] AUTO OPEN CAGE (TANPA WALK)
             if Config.AutoOpenCage and myPlot then
                 pcall(function() Remotes.OpenNow:FireServer() end)
 
-                -- Buka semua kandang di folder Plot.Cages berdasarkan UUID
                 local plotCages = myPlot:FindFirstChild("Cages")
                 if plotCages then
                     for _, cageModel in ipairs(plotCages:GetChildren()) do
@@ -1217,7 +1204,6 @@ task.spawn(function()
                     end
                 end
 
-                -- Picu juga PenPrompt & OpenCage per Stall di Barn & Barn2
                 for _, barnName in ipairs({"Barn", "Barn2"}) do
                     local barn = myPlot:FindFirstChild(barnName)
                     local stalls = barn and barn:FindFirstChild("Stalls")
@@ -1239,30 +1225,39 @@ task.spawn(function()
                 end
             end
 
-            -- [4] FITUR BACKGROUND LAINNYA (TAPBOOST, EQUIPBEST, UPGRADES, BREW)
+            -- [4] AUTO UPGRADE BASE (PLOT & BARN 2) & TREADMILL
+            if Config.AutoUpgradeBase then
+                pcall(function()
+                    Remotes.UpgradePlot:FireServer()
+                    Remotes.UpgradeBarn2:FireServer()
+                end)
+            end
+            if Config.AutoUpgradeTreadmill then
+                pcall(function()
+                    Remotes.UpgradeTreadmill:FireServer()
+                end)
+            end
+
+            -- [5] TAPBOOST, EQUIPBEST, BREW
             if Config.AutoTapBoost then pcall(function() Remotes.TapBoost:FireServer() end) end
             if Config.AutoEquipBest then pcall(function() Remotes.EquipBest:FireServer() end) end
-            if Config.AutoUpgradePlot then pcall(function() Remotes.UpgradePlot:FireServer() end) end
-            if Config.AutoUpgradeTreadmill then pcall(function() Remotes.UpgradeTreadmill:FireServer() end) end
-            if Config.AutoUpgradeBarn2 then pcall(function() Remotes.UpgradeBarn2:FireServer() end) end
             if Config.AutoBrewCauldron then pcall(function() Remotes.Brew:FireServer() end) end
         end)
     end
 end)
 
 -- ==========================================
--- 11. LOOP UTAMA GERAKAN (HANYA UNTUK STEAL CAGE & TREADMILL)
+-- 11. LOOP UTAMA LARI CEPAT (STEAL CAGE & TREADMILL)
 -- ==========================================
 task.spawn(function()
     while ScreenGui.Parent do
-        task.wait(0.25)
+        task.wait(0.15)
         pcall(function()
             local char = player.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             if not hrp or not hum or hum.Health <= 0 then return end
 
-            -- AUTO STEAL CAGE & ESCAPE
             if Config.AutoStealCage then
                 local mySession = WalkSessionId
                 local basePos = getBasePosition() or hrp.Position
@@ -1271,23 +1266,23 @@ task.spawn(function()
                 if cage and pathFolder and mySession == WalkSessionId then
                     local targetPos = getCageTargetPosition(cage, pathFolder)
                     if targetPos then
-                        naturalWalkTo(targetPos, 6, 35, function() return Config.AutoStealCage end)
+                        fastDirectWalkTo(targetPos, 8, 25, function() return Config.AutoStealCage end)
 
                         local root = cage:FindFirstChild("Root")
                         if root and root:IsA("BasePart") and mySession == WalkSessionId then
-                            local reached = naturalWalkTo(root.Position, 5, 10, function() return Config.AutoStealCage end)
+                            local reached = fastDirectWalkTo(root.Position, 6, 8, function() return Config.AutoStealCage end)
                             if reached then
                                 local stealPrompt = root:FindFirstChild("StealPrompt") or root:FindFirstChildOfClass("ProximityPrompt")
                                 if stealPrompt and stealPrompt.Enabled then
                                     usePromptSafely(stealPrompt)
-                                    task.wait(0.2)
+                                    task.wait(0.12)
                                 end
                             end
                         end
 
                         if mySession == WalkSessionId then
-                            naturalWalkTo(basePos, 5, 35, function() return Config.AutoStealCage end)
-                            task.wait(0.3)
+                            fastDirectWalkTo(basePos, 6, 25, function() return Config.AutoStealCage end)
+                            task.wait(0.2)
                         end
                     end
                 end
@@ -1296,7 +1291,7 @@ task.spawn(function()
                 local tread = myPlot and myPlot:FindFirstChild("Treadmill")
                 local anchor = tread and tread:FindFirstChild("LabelAnchor")
                 if anchor and anchor:IsA("BasePart") then
-                    naturalWalkTo(anchor.Position, 4, 15, function() return Config.AutoTrainTreadmill end)
+                    fastDirectWalkTo(anchor.Position, 4, 15, function() return Config.AutoTrainTreadmill end)
                 end
             end
         end)
