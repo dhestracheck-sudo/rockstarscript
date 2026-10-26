@@ -2,152 +2,94 @@ if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
-
-local Window = Rayfield:CreateWindow({
-   Name = "rockstarscript | Pro Zone & Rarity",
-   LoadingTitle = "Advanced Auto Farm Panel",
-   LoadingSubtitle = "by dhestracheck-sudo",
-   ConfigurationSaving = { Enabled = false },
-   Discord = { Enabled = false },
-   KeySystem = false
-})
-
-Rayfield:Notify({
-   Title = "Panel Siap!",
-   Content = "Pilih zona dan rarity kandang yang ingin diambil.",
-   Duration = 4,
-})
-
-local MainTab = Window:CreateTab("Auto Farm", 4483362458)
-MainTab:CreateSection("Pengaturan Filter Target")
-
--- Fungsi mendeteksi folder/zona secara otomatis di workspace
-local function getZones()
-   local zones = {"Semua Zona", "Black Hole"}
-   pcall(function()
-      for _, child in pairs(workspace:GetChildren()) do
-         if (child:IsA("Folder") or child:IsA("Model")) and child.Name ~= "Black Hole" then
-            table.insert(zones, child.Name)
-         end
-      end
-   end)
-   return zones
+-- Hapus UI lama jika script dijalankan ulang
+local coreGui = game:GetService("CoreGui")
+if coreGui:FindFirstChild("RockstarNativeUI") then
+    coreGui.RockstarNativeUI:Destroy()
 end
 
-local selectedZone = "Semua Zona"
-local selectedRarity = "Semua Rarity"
+-- Membuat ScreenGui Utama
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RockstarNativeUI"
+ScreenGui.Parent = coreGui
+
+-- Membuat Tombol Melayang (Floating Toggle Button)
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 180, 0, 45)
+ToggleButton.Position = UDim2.new(0, 40, 0, 40)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 13
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.Text = "Auto Farm: OFF"
+ToggleButton.Draggable = true -- Tombol bisa digeser-geser di layar
+ToggleButton.Active = true
+ToggleButton.Parent = ScreenGui
+
+-- Desain sudut tombol melengkung rapi
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = ToggleButton
+
 local autoFarmActive = false
 
--- Dropdown Pilihan Zona
-local ZoneDropdown = MainTab:CreateDropdown({
-   Name = "Pilih Zona Map",
-   Options = getZones(),
-   CurrentOption = "Semua Zona",
-   Flag = "ZoneDropdown",
-   Callback = function(Option)
-      selectedZone = Option
-   end,
-})
+-- Fungsi tombol ketika diklik
+ToggleButton.MouseButton1Click:Connect(function()
+    autoFarmActive = not autoFarmActive
+    if autoFarmActive then
+        ToggleButton.Text = "Auto Farm: ON (Black Hole)"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 160, 80)
+    else
+        ToggleButton.Text = "Auto Farm: OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    end
+end)
 
--- Dropdown Pilihan Rarity Kandang
-MainTab:CreateDropdown({
-   Name = "Pilih Rarity Kandang",
-   Options = {"Semua Rarity", "Common", "Rare", "Epic", "Legendary", "Mythic", "Secret", "Godly"},
-   CurrentOption = "Semua Rarity",
-   Flag = "RarityDropdown",
-   Callback = function(Option)
-      selectedRarity = Option
-   end,
-})
-
-MainTab:CreateButton({
-   Name = "Refresh Daftar Zona",
-   Callback = function()
-      ZoneDropdown:Refresh(getZones())
-      Rayfield:Notify({
-         Title = "Berhasil",
-         Content = "Daftar zona berhasil diperbarui!",
-         Duration = 2,
-      })
-   end,
-})
-
-MainTab:CreateSection("Eksekusi Filter")
-
-MainTab:CreateToggle({
-   Name = "Mulai Auto Farm (Zona & Rarity)",
-   CurrentValue = false,
-   Flag = "AutoFarmZoneRarity",
-   Callback = function(Value)
-      autoFarmActive = Value
-      task.spawn(function()
-         while autoFarmActive do
-            task.wait(0.1)
+-- Logika Utama Auto Farm Khusus Zona Black Hole
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if autoFarmActive then
             pcall(function()
-               local player = game.Players.LocalPlayer
-               local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-               
-               if hrp then
-                  for _, prompt in pairs(workspace:GetDescendants()) do
-                     if not autoFarmActive then break end
-                     
-                     if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                        local currentParent = prompt.Parent
-                        local matchZone = false
-                        local matchRarity = false
+                local player = game.Players.LocalPlayer
+                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+                
+                if hrp then
+                    for _, prompt in pairs(workspace:GetDescendants()) do
+                        if not autoFarmActive then break end
                         
-                        -- 1. Validasi Zona
-                        if selectedZone == "Semua Zona" then
-                           matchZone = true
-                        else
-                           local foundZone = false
-                           local tempParent = currentParent
-                           while tempParent and tempParent ~= workspace do
-                              if string.find(string.lower(tempParent.Name), string.lower(selectedZone)) then
-                                 foundZone = true
-                                 break
-                              end
-                              tempParent = tempParent.Parent
-                           end
-                           matchZone = foundZone
+                        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                            -- Validasi wajib berada di dalam zona Black Hole
+                            local isInBlackHole = false
+                            local currentParent = prompt.Parent
+                            
+                            while currentParent and currentParent ~= workspace do
+                                local nameLower = string.lower(currentParent.Name)
+                                if string.find(nameLower, "black") or string.find(nameLower, "hole") then
+                                    isInBlackHole = true
+                                    break
+                                end
+                                currentParent = currentParent.Parent
+                            end
+                            
+                            -- Jika di zona Black Hole, teleport dan eksekusi
+                            if isInBlackHole then
+                                local targetPart = prompt.Parent
+                                if targetPart and targetPart:IsA("Attachment") then
+                                    targetPart = targetPart.Parent
+                                end
+                                
+                                if targetPart and targetPart:IsA("BasePart") then
+                                    hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+                                    task.wait(0.05)
+                                    fireproximityprompt(prompt)
+                                    task.wait(0.2)
+                                end
+                            end
                         end
-                        
-                        -- 2. Validasi Rarity
-                        if selectedRarity == "Semua Rarity" then
-                           matchRarity = true
-                        else
-                           local foundRarity = false
-                           local tempParent = currentParent
-                           while tempParent and tempParent ~= workspace do
-                              if string.find(string.lower(tempParent.Name), string.lower(selectedRarity)) then
-                                 foundRarity = true
-                                 break
-                              end
-                              tempParent = tempParent.Parent
-                           end
-                           matchRarity = foundRarity
-                        end
-                        
-                        -- Jika Zona dan Rarity sesuai filter, lakukan eksekusi
-                        if matchZone and matchRarity then
-                           local targetPart = prompt.Parent
-                           if targetPart and targetPart:IsA("Attachment") then
-                              targetPart = targetPart.Parent
-                           end
-                           
-                           if targetPart and targetPart:IsA("BasePart") then
-                              hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
-                              task.wait(0.05)
-                              fireproximityprompt(prompt)
-                              task.wait(0.2)
-                           end
-                        end
-                     end
-                  end
-               end
+                    end
+                end
             end)
-         end
-      end)
-   end,
-})
+        end
+    end
+end)
