@@ -1,6 +1,6 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB (BLUE EDITION) v3.0 - BREAK AND STEAL AN EGG
--- Auto-Learn Remote Hook + Full Steal-to-Plot Cycle + Deep Mechanic Scanner
+-- ★ ROCKSTAR HUB (BLUE EDITION) v3.1 - BREAK AND STEAL AN EGG
+-- Crash-Free Engine + Fixed Auto Break, Auto Steal-to-Base & Auto Treadmill
 -- ============================================================================
 
 local Players = game:GetService("Players")
@@ -18,86 +18,10 @@ if PlayerGui:FindFirstChild("RockstarBlueHub") then
 end
 
 -- ============================================================================
--- PENYIMPANAN ARGUMEN REMOTE OTOMATIS (AUTO-LEARN & SPY)
--- ============================================================================
-local LearnedRemoteArgs = {}
-local RemoteLogHistory = {}
-
--- Hook metamethod __namecall agar ketika pemain melakukan aksi 1x,
--- script langsung tahu argumen asli yang diminta server!
-pcall(function()
-    local mt = getrawmetatable and getrawmetatable(game)
-    if mt and setreadonly then
-        local oldNamecall = mt.__namecall
-        setreadonly(mt, false)
-        mt.__namecall = newcclosure(function(self, ...)
-            local method = getnamecallmethod()
-            if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
-                local args = {...}
-                LearnedRemoteArgs[self.Name] = args
-                if #RemoteLogHistory < 60 then
-                    local safeArgs = {}
-                    for i, v in ipairs(args) do
-                        if typeof(v) == "Instance" then
-                            safeArgs[i] = "Instance:" .. v:GetFullName()
-                        elseif typeof(v) == "Vector3" or typeof(v) == "CFrame" then
-                            safeArgs[i] = tostring(v)
-                        elseif type(v) == "table" then
-                            local ok, enc = pcall(function() return HttpService:JSONEncode(v) end)
-                            safeArgs[i] = ok and enc or "Table"
-                        else
-                            safeArgs[i] = tostring(v) .. " (" .. typeof(v) .. ")"
-                        end
-                    end
-                    RemoteLogHistory[self.Name] = {
-                        Method = method,
-                        Path = self:GetFullName(),
-                        Args = safeArgs
-                    }
-                end
-            end
-            return oldNamecall(self, ...)
-        end)
-        setreadonly(mt, true)
-    end
-end)
-
--- Fungsi pintar memanggil Remote (menggunakan argumen asli jika sudah terekam)
-local function SmartFireRemote(remoteName, fallbackArgsList)
-    local remote = ReplicatedStorage:FindFirstChild(remoteName, true)
-    if not remote then return end
-
-    if LearnedRemoteArgs[remoteName] then
-        if remote:IsA("RemoteEvent") then
-            pcall(function() remote:FireServer(unpack(LearnedRemoteArgs[remoteName])) end)
-        elseif remote:IsA("RemoteFunction") then
-            pcall(function() remote:InvokeServer(unpack(LearnedRemoteArgs[remoteName])) end)
-        end
-        return
-    end
-
-    if fallbackArgsList and #fallbackArgsList > 0 then
-        for _, argSet in ipairs(fallbackArgsList) do
-            if remote:IsA("RemoteEvent") then
-                pcall(function() remote:FireServer(unpack(argSet)) end)
-            elseif remote:IsA("RemoteFunction") then
-                pcall(function() remote:InvokeServer(unpack(argSet)) end)
-            end
-        end
-    else
-        if remote:IsA("RemoteEvent") then
-            pcall(function() remote:FireServer() end)
-        elseif remote:IsA("RemoteFunction") then
-            pcall(function() remote:InvokeServer() end)
-        end
-    end
-end
-
--- ============================================================================
 -- CONFIG & DATA ZONA
 -- ============================================================================
 local Config = {
-    SelectedZone = "Haunted Graveyard",
+    SelectedZone = "Zone 1 - Chicken",
     SelectedEgg = "All Eggs",
     SelectedRarity = "All Rarities",
     MinAnimalSize = 0,
@@ -125,12 +49,20 @@ local Config = {
     AutoHalloweenHeist = false,
     AutoHalloweenDoors = false,
     SelectedHalloweenItem = "Halloween Scythe",
-    MyPlotPos = nil,
+    MyBasePos = nil,
+    MyTreadmillPos = nil,
     AntiAFK = true
 }
 
+-- Simpan posisi awal saat script dijalankan (biasanya pemain berada di dekat Base miliknya)
+pcall(function()
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        Config.MyBasePos = root.Position
+    end
+end)
+
 local ZoneList = {
-    "Haunted Graveyard",
     "Zone 1 - Chicken",
     "Zone 2 - Sphinx",
     "Zone 3 - Ice Yeti",
@@ -140,7 +72,8 @@ local ZoneList = {
     "Zone 7 - Mole Titan",
     "Zone 8 - Griffin",
     "Zone 9 - 3Hydra",
-    "Zone 10 - Alien Guardian"
+    "Zone 10 - Alien Guardian",
+    "Haunted Graveyard"
 }
 
 local ZoneCoords = {
@@ -247,7 +180,7 @@ TopPipe.BackgroundColor3 = Theme.Border
 TopPipe.BorderSizePixel = 0
 
 local GameTitle = Instance.new("TextLabel", TopBar)
-GameTitle.Size = UDim2.new(0, 220, 1, 0)
+GameTitle.Size = UDim2.new(0, 210, 1, 0)
 GameTitle.Position = UDim2.new(0, 154, 0, 0)
 GameTitle.BackgroundTransparency = 1
 GameTitle.Text = "Break and Steal an Egg"
@@ -257,11 +190,11 @@ GameTitle.TextSize = 14
 GameTitle.TextXAlignment = Enum.TextXAlignment.Left
 
 local StatusBadge = Instance.new("TextLabel", TopBar)
-StatusBadge.Size = UDim2.new(0, 220, 1, 0)
-StatusBadge.Position = UDim2.new(1, -270, 0, 0)
+StatusBadge.Size = UDim2.new(0, 230, 1, 0)
+StatusBadge.Position = UDim2.new(1, -280, 0, 0)
 StatusBadge.BackgroundTransparency = 1
-StatusBadge.Text = "👾  |  discord.gg/rockstar"
-StatusBadge.TextColor3 = Theme.Accent
+StatusBadge.Text = "⚡ Status: Ready"
+StatusBadge.TextColor3 = Theme.AccentBright
 StatusBadge.Font = Enum.Font.GothamBold
 StatusBadge.TextSize = 12
 StatusBadge.TextXAlignment = Enum.TextXAlignment.Right
@@ -740,9 +673,9 @@ SearchInput:GetPropertyChangedSignal("Text"):Connect(function()
 end)
 
 -- ============================================================================
--- HELPER DETEKSI PLOT/BASE PEMAIN & OBJEK MAP
+-- HELPER POSISI, BASE PLOT, TREADMILL, DAN TELUR
 -- ============================================================================
-local function GetObjectPos(obj)
+local function GetPos(obj)
     if not obj then return nil end
     if obj:IsA("BasePart") then return obj.Position end
     if obj:IsA("Model") then
@@ -754,27 +687,126 @@ local function GetObjectPos(obj)
     return nil
 end
 
-local function FindMyPlot()
+local function FindMyPlotModel()
     local plots = workspace:FindFirstChild("Plots")
     if not plots then return nil end
     for _, base in ipairs(plots:GetChildren()) do
-        -- Cek Attribute Owner / UserId
-        for k, v in pairs(base:GetAttributes()) do
+        for _, v in pairs(base:GetAttributes()) do
             if tostring(v) == LocalPlayer.Name or tostring(v) == tostring(LocalPlayer.UserId) then
                 return base
             end
         end
-        -- Cek StringValue / ObjectValue / TextLabel di dalam Base
         for _, d in ipairs(base:GetDescendants()) do
-            if (d:IsA("StringValue") or d:IsA("TextLabel")) and (string.find(tostring(d.Value or d.Text), LocalPlayer.Name, 1, true) or string.find(tostring(d.Value or d.Text), LocalPlayer.DisplayName, 1, true)) then
-                return base
-            end
-            if d:IsA("ObjectValue") and d.Value == LocalPlayer then
+            if (d:IsA("StringValue") or d:IsA("TextLabel")) then
+                local txt = tostring(d:IsA("StringValue") and d.Value or d.Text)
+                if string.find(txt, LocalPlayer.Name, 1, true) or string.find(txt, LocalPlayer.DisplayName, 1, true) then
+                    return base
+                end
+            elseif d:IsA("ObjectValue") and d.Value == LocalPlayer then
                 return base
             end
         end
     end
+    -- Fallback: cari Base terdekat dari posisi awal spawn
+    if Config.MyBasePos then
+        local bestBase, bestDist = nil, math.huge
+        for _, base in ipairs(plots:GetChildren()) do
+            local p = GetPos(base)
+            if p and (p - Config.MyBasePos).Magnitude < bestDist then
+                bestDist = (p - Config.MyBasePos).Magnitude
+                bestBase = base
+            end
+        end
+        return bestBase
+    end
     return nil
+end
+
+local function FindMyTreadmillPart()
+    local myPlot = FindMyPlotModel()
+    if myPlot then
+        for _, d in ipairs(myPlot:GetDescendants()) do
+            if d:IsA("BasePart") and string.find(string.lower(d.Name), "treadmill") then
+                return d
+            end
+            if d:IsA("Model") and string.find(string.lower(d.Name), "treadmill") then
+                local p = d.PrimaryPart or d:FindFirstChildWhichIsA("BasePart", true)
+                if p then return p end
+            end
+        end
+    end
+    local vfx = workspace:FindFirstChild("TreadmillSpawnVFX")
+    if vfx and vfx:IsA("BasePart") then return vfx end
+    return nil
+end
+
+local function EquipToolByKeyword(kw)
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return nil end
+
+    for _, t in ipairs(char:GetChildren()) do
+        if t:IsA("Tool") and string.find(string.lower(t.Name), string.lower(kw), 1, true) then
+            return t
+        end
+    end
+    local bp = LocalPlayer:FindFirstChild("Backpack")
+    if bp then
+        for _, t in ipairs(bp:GetChildren()) do
+            if t:IsA("Tool") and string.find(string.lower(t.Name), string.lower(kw), 1, true) then
+                hum:EquipTool(t)
+                return t
+            end
+        end
+        local anyTool = bp:FindFirstChildOfClass("Tool")
+        if anyTool then
+            hum:EquipTool(anyTool)
+            return anyTool
+        end
+    end
+    return nil
+end
+
+-- Cari Telur di Workspace.Eggs maupun di dalam Workspace.Build.ZoneBuilds
+local function FindBestEgg()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    if not root then return nil, nil end
+
+    local list = {}
+    local eggsFolder = workspace:FindFirstChild("Eggs")
+    if eggsFolder then
+        for _, e in ipairs(eggsFolder:GetChildren()) do
+            table.insert(list, e)
+        end
+    end
+
+    -- Cek juga di dalam ZoneBuilds kalau telur di-parent ke dalam Zone
+    local build = workspace:FindFirstChild("Build")
+    if build and build:FindFirstChild("ZoneBuilds") then
+        for _, z in ipairs(build.ZoneBuilds:GetChildren()) do
+            for _, child in ipairs(z:GetChildren()) do
+                if string.find(string.lower(child.Name), "egg") then
+                    table.insert(list, child)
+                end
+            end
+        end
+    end
+
+    local bestEgg, bestPos, bestDist = nil, nil, math.huge
+    for _, egg in ipairs(list) do
+        local p = GetPos(egg)
+        if p then
+            local d = (p - root.Position).Magnitude
+            if d < bestDist then
+                bestDist = d
+                bestEgg = egg
+                bestPos = p
+            end
+        end
+    end
+    return bestEgg, bestPos
 end
 
 -- ============================================================================
@@ -791,14 +823,21 @@ local ConfigTab     = CreateTab("Config", "🔄")
 -- 1. TAB MAIN
 local SecSupport = MainTab:AddSection("Support Features", false)
 SecSupport:AddToggle("Anti-AFK Protection", true, function(v) Config.AntiAFK = v end)
-SecSupport:AddButton("📍 Set Posisi Berdiri Saat Ini Sebagai Base/Plot Saya", function()
+SecSupport:AddButton("📍 Simpan Posisi Berdiri Sebagai Base Plot Saya", function()
     local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if root then
-        Config.MyPlotPos = root.Position
-        StatusBadge.Text = "✅ Base Pos Saved!"
+        Config.MyBasePos = root.Position
+        StatusBadge.Text = "✅ Posisi Base Disimpan!"
     end
 end)
-SecSupport:AddDropdown("Quick Teleport Zone", ZoneList, "Haunted Graveyard", function(z)
+SecSupport:AddButton("🏃 Simpan Posisi Berdiri Sebagai Treadmill Saya", function()
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then
+        Config.MyTreadmillPos = root.Position
+        StatusBadge.Text = "✅ Posisi Treadmill Disimpan!"
+    end
+end)
+SecSupport:AddDropdown("Quick Teleport Zone", ZoneList, "Zone 1 - Chicken", function(z)
     local pos = ZoneCoords[z]
     if pos and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
         LocalPlayer.Character.HumanoidRootPart.CFrame = CFrame.new(pos)
@@ -809,20 +848,22 @@ local SecBatAura = MainTab:AddSection("Bat Aura", false)
 SecBatAura:AddToggle("Enable Bat Hit Aura", false, function(v) Config.BatAura = v end)
 SecBatAura:AddDropdown("Select Bat Tool", BatList, "GalaxyBat", function(v) Config.SelectedBat = v end)
 SecBatAura:AddButton("Unlock Selected Bat", function()
-    SmartFireRemote("BatUnlockRemote", {{Config.SelectedBat}, {1}})
+    if ReplicatedStorage:FindFirstChild("BatUnlockRemote") then
+        pcall(function() ReplicatedStorage.BatUnlockRemote:FireServer(Config.SelectedBat) end)
+    end
 end)
 
-local SecAutoFarm = MainTab:AddSection("Auto Farm Eggs", false)
+local SecAutoFarm = MainTab:AddSection("Auto Farm Eggs", true)
 SecAutoFarm:AddInfoBox(
     "otherwise breaks eggs in the picked Zones and steals what hatches. Min Size / Min $/s use the values over the animal's head (e.g. 2.5, 150M, 13.2B). Help Friend drops animals in the Forest Zone instead of banking them."
 )
-SecAutoFarm:AddDropdown("Zones (empty = all)", ZoneList, "Haunted Graveyard", function(v) Config.SelectedZone = v end)
-SecAutoFarm:AddDropdown("Egg Types (empty = all)", {"Skull Egg,...", "Titanic Egg", "Crystal Egg", "All Eggs"}, "Skull Egg,...", function(v) Config.SelectedEgg = v end)
-SecAutoFarm:AddDropdown("Animal Rarities (empty = all)", {"Void, Omega, Inferno...", "Secret, Mythical", "All Rarities"}, "Void, Omega, Inferno...", function(v) Config.SelectedRarity = v end)
+SecAutoFarm:AddDropdown("Zones (empty = all)", ZoneList, "Zone 1 - Chicken", function(v) Config.SelectedZone = v end)
+SecAutoFarm:AddDropdown("Egg Types (empty = all)", {"Skull Egg,...", "Titanic Egg", "Crystal Egg", "All Eggs"}, "All Eggs", function(v) Config.SelectedEgg = v end)
+SecAutoFarm:AddDropdown("Animal Rarities (empty = all)", {"Void, Omega, Inferno...", "Secret, Mythical", "All Rarities"}, "All Rarities", function(v) Config.SelectedRarity = v end)
 SecAutoFarm:AddInput("Min Animal Size (x)", "0", function(v) Config.MinAnimalSize = tonumber(v) or 0 end)
 SecAutoFarm:AddInput("Min Cash Per Second ($/s)", "200B", function(v) Config.MinCashPerSec = v end)
-SecAutoFarm:AddToggle("Enable Auto Farm Eggs & Steal", false, function(v) Config.AutoFarmEggs = v end)
-SecAutoFarm:AddToggle("Auto Steal Hatched Animals Only", false, function(v) Config.AutoStealAnimals = v end)
+SecAutoFarm:AddToggle("Auto Farm & Break Eggs", false, function(v) Config.AutoFarmEggs = v end)
+SecAutoFarm:AddToggle("Auto Steal Hatched Animals", false, function(v) Config.AutoStealAnimals = v end)
 SecAutoFarm:AddToggle("Help Friend (Drop in Forest Zone)", false, function(v) Config.HelpFriendDrop = v end)
 
 local SecTreadmill = MainTab:AddSection("Auto Treadmill", false)
@@ -832,13 +873,14 @@ SecTreadmill:AddToggle("Auto Unlock Treadmill", false, function(v) Config.AutoUn
 local SecSellPets = MainTab:AddSection("Auto Sell Pets", false)
 SecSellPets:AddToggle("Auto Sell Backpack Pets", false, function(v) Config.AutoSellPets = v end)
 SecSellPets:AddButton("Sell All Pets Now", function()
-    SmartFireRemote("BackpackSellRemote", {{}, {"All"}, {true}})
+    local r = ReplicatedStorage:FindFirstChild("BackpackSellRemote")
+    if r then pcall(function() r:InvokeServer() end) end
 end)
 
 -- 2. TAB AUTOMATION
 local SecClaim = AutomationTab:AddSection("Claim & Index", false)
 SecClaim:AddToggle("Auto Claim Group, Offline & Discord Rewards", false, function(v) Config.AutoClaimRewards = v end)
-SecClaim:AddToggle("Auto Claim Index Rewards", false, function(v) Config.AutoIndex = v end)
+SecClaim:AddToggle("Auto Claim Animal Index", false, function(v) Config.AutoIndex = v end)
 
 local SecAnimalsEggs = AutomationTab:AddSection("Animals & Eggs", false)
 SecAnimalsEggs:AddToggle("Auto Place Animals on Plot", false, function(v) Config.AutoPlaceAnimals = v end)
@@ -855,21 +897,23 @@ local SecPickaxeShop = ShopTab:AddSection("Pickaxe Shop", false)
 SecPickaxeShop:AddDropdown("Select Pickaxe", PickaxeList, "21: Haunted Pickaxe", function(v) Config.SelectedPickaxe = v end)
 SecPickaxeShop:AddToggle("Auto Buy Selected Pickaxe", false, function(v) Config.AutoBuyPickaxe = v end)
 SecPickaxeShop:AddButton("Buy Selected Pickaxe Now", function()
-    local idStr, nameOnly = string.match(Config.SelectedPickaxe, "^(%d+):%s*(.+)$")
-    local idNum = tonumber(idStr) or 21
-    SmartFireRemote("PickaxeShopRequest", {
-        {Config.SelectedPickaxe},
-        {idNum},
-        {nameOnly or Config.SelectedPickaxe},
-        {"Buy", idNum},
-        {"Buy", Config.SelectedPickaxe}
-    })
+    local r = ReplicatedStorage:FindFirstChild("PickaxeShopRequest")
+    if r then
+        local idStr, nameOnly = string.match(Config.SelectedPickaxe, "^(%d+):%s*(.+)$")
+        pcall(function() r:FireServer(Config.SelectedPickaxe) end)
+        if idStr then pcall(function() r:FireServer(tonumber(idStr)) end) end
+        if nameOnly then pcall(function() r:FireServer(nameOnly) end) end
+    end
 end)
 
 local SecTrailsShop = ShopTab:AddSection("Trails Shop", false)
-SecTrailsShop:AddInput("Trail Name / ID", "1", function(v) Config.SelectedTrail = v end)
+SecTrailsShop:AddInput("Trail ID / Name", "1", function(v) Config.SelectedTrail = v end)
 SecTrailsShop:AddButton("Buy Trail Now", function()
-    SmartFireRemote("TrailShopRequest", {{Config.SelectedTrail}, {tonumber(Config.SelectedTrail) or 1}})
+    local r = ReplicatedStorage:FindFirstChild("TrailShopRequest")
+    if r then
+        pcall(function() r:FireServer(Config.SelectedTrail) end)
+        pcall(function() r:FireServer(tonumber(Config.SelectedTrail) or 1) end)
+    end
 end)
 
 -- 4. TAB EVENT
@@ -882,8 +926,9 @@ local SecHalloweenShop = EventTab:AddSection("Halloween Shop (1B Speed)", false)
 SecHalloweenShop:AddDropdown("Halloween Item", {"Halloween Scythe", "Halloween Shovel", "21: Haunted Pickaxe", "CandyBat"}, "Halloween Scythe", function(v)
     Config.SelectedHalloweenItem = v
 end)
-SecHalloweenShop:AddButton("Buy Halloween Shop Item", function()
-    SmartFireRemote("HalloweenShopRequest", {{Config.SelectedHalloweenItem}, {"Buy", Config.SelectedHalloweenItem}})
+SecHalloweenShop:AddButton("Buy Halloween Item", function()
+    local r = ReplicatedStorage:FindFirstChild("HalloweenShopRequest")
+    if r then pcall(function() r:InvokeServer(Config.SelectedHalloweenItem) end) end
 end)
 
 -- 5. TAB WEBHOOK
@@ -906,300 +951,250 @@ SecSettings:AddButton("Rejoin Server", function()
     game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
 end)
 
--- ============================================================================
--- 7. TAB CONFIG & DEEP MECHANIC SCANNER (UNTUK CEK ISI PLOT, TELUR & REMOTE)
--- ============================================================================
-local SecConfig = ConfigTab:AddSection("Deep Mechanic & Remote Scanner", true)
-SecConfig:AddInfoBox(
-    "CARA PAKai: Pukul telur 1x manual, beli item 1x, atau injak treadmill 1x, lalu klik tombol '🔬 Deep Scan' di bawah dan kirimkan hasilnya ke chat agar semua argumen Remote 100% akurat!"
-)
-local ScanOutputBox = SecConfig:AddInput("Hasil Deep Scan JSON", "")
+-- 7. TAB CONFIG & SAFE INSPECTOR (TANPA HOOK CRASH)
+local SecConfig = ConfigTab:AddSection("Safe Inspector (Cek Struktur Plot & Telur)", true)
+local ScanBox = SecConfig:AddInput("JSON Output", "")
 
-SecConfig:AddButton("🔬 Deep Scan Plot, Zone, Eggs & Recorded Remotes", function()
-    local deepData = {
-        RecordedRemoteCalls = RemoteLogHistory,
-        PlotBase1Structure = {},
-        Zone1Structure = {},
-        EggsFolderContents = {},
-        AnimalPickupsContents = {}
-    }
-
-    -- 1. Scan isi Base_1 di Workspace.Plots
+SecConfig:AddButton("📋 Copy Detail Isi Base_1, Eggs & Zone1 (Aman Tanpa Crash)", function()
+    local info = {Base1 = {}, Eggs = {}, Zone1 = {}}
     local plots = workspace:FindFirstChild("Plots")
     if plots and plots:FindFirstChild("Base_1") then
-        for _, d in ipairs(plots.Base_1:GetDescendants()) do
-            if d:IsA("ProximityPrompt") or d:IsA("ClickDetector") or d:IsA("Model") or d:IsA("Folder") or d:IsA("TouchTransmitter") then
-                if #deepData.PlotBase1Structure < 45 then
-                    table.insert(deepData.PlotBase1Structure, d:GetFullName() .. " [" .. d.ClassName .. "]")
+        for _, c in ipairs(plots.Base_1:GetDescendants()) do
+            if c:IsA("Model") or c:IsA("Folder") or c:IsA("ProximityPrompt") or c:IsA("BasePart") then
+                if #info.Base1 < 50 then
+                    table.insert(info.Base1, c.Name .. " [" .. c.ClassName .. "]")
                 end
             end
         end
     end
-
-    -- 2. Scan isi Zone1 & ZoneBuilds
-    local build = workspace:FindFirstChild("Build")
-    if build then
-        for _, folderName in ipairs({"ZoneBuilds", "ZoneHitboxes", "Splitters"}) do
-            local f = build:FindFirstChild(folderName)
-            if f then
-                for _, sub in ipairs(f:GetChildren()) do
-                    local subChildren = {}
-                    for i, c in ipairs(sub:GetChildren()) do
-                        if i <= 10 then
-                            table.insert(subChildren, c.Name .. "(" .. c.ClassName .. ")")
-                        end
-                    end
-                    table.insert(deepData.Zone1Structure, {
-                        Folder = folderName,
-                        Name = sub.Name,
-                        Children = subChildren
-                    })
-                end
-            end
-        end
-    end
-
-    -- 3. Scan isi Workspace.Eggs
     local eggs = workspace:FindFirstChild("Eggs")
     if eggs then
         for i, e in ipairs(eggs:GetChildren()) do
-            if i <= 20 then
-                local ch = {}
-                for _, c in ipairs(e:GetChildren()) do
-                    table.insert(ch, c.Name .. "(" .. c.ClassName .. ")")
-                end
-                table.insert(deepData.EggsFolderContents, {
-                    Name = e.Name,
-                    Class = e.ClassName,
-                    Pos = tostring(GetObjectPos(e)),
-                    Attributes = e:GetAttributes(),
-                    Children = ch
-                })
-            end
-        end
-    end
-
-    -- 4. Scan isi AnimalPickups
-    local pickups = workspace:FindFirstChild("AnimalPickups")
-    if pickups then
-        for i, a in ipairs(pickups:GetChildren()) do
             if i <= 15 then
-                table.insert(deepData.AnimalPickupsContents, {
-                    Name = a.Name,
-                    Class = a.ClassName,
-                    Attributes = a:GetAttributes()
-                })
+                table.insert(info.Eggs, {Name = e.Name, Class = e.ClassName, Pos = tostring(GetPos(e)), Attr = e:GetAttributes()})
             end
         end
     end
-
-    local encoded = HttpService:JSONEncode(deepData)
-    ScanOutputBox.Text = encoded
-    StatusBadge.Text = "✅ Deep Scan Copied!"
-    if typeof(setclipboard) == "function" then
-        pcall(setclipboard, encoded)
+    local build = workspace:FindFirstChild("Build")
+    if build and build:FindFirstChild("ZoneBuilds") and build.ZoneBuilds:FindFirstChild("Zone1") then
+        for _, c in ipairs(build.ZoneBuilds.Zone1:GetDescendants()) do
+            if #info.Zone1 < 40 then
+                table.insert(info.Zone1, c.Name .. " [" .. c.ClassName .. "]")
+            end
+        end
     end
+    local json = HttpService:JSONEncode(info)
+    ScanBox.Text = json
+    StatusBadge.Text = "✅ Data Copied!"
+    if typeof(setclipboard) == "function" then pcall(setclipboard, json) end
 end)
 
 -- ============================================================================
--- ENGINE OTOMATISASI UTAMA
+-- ENGINE EKSEKUSI BEBAS ERROR (AUTO BREAK, AUTO STEAL, AUTO TREADMILL)
 -- ============================================================================
-local function EquipBestTool(keyword)
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return nil end
-
-    for _, t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and string.find(string.lower(t.Name), string.lower(keyword), 1, true) then
-            return t
-        end
-    end
-    local bp = LocalPlayer:FindFirstChild("Backpack")
-    if bp then
-        for _, t in ipairs(bp:GetChildren()) do
-            if t:IsA("Tool") and string.find(string.lower(t.Name), string.lower(keyword), 1, true) then
-                hum:EquipTool(t)
-                return t
-            end
-        end
-        local firstTool = bp:FindFirstChildOfClass("Tool")
-        if firstTool then
-            hum:EquipTool(firstTool)
-            return firstTool
-        end
-    end
-    return nil
-end
-
-local function IsCarryingAnimal()
-    local carried = workspace:FindFirstChild("CarriedAnimals")
-    if carried then
-        for _, c in ipairs(carried:GetChildren()) do
-            if string.find(string.lower(c.Name), string.lower(LocalPlayer.Name), 1, true) or c:GetAttribute("Owner") == LocalPlayer.Name or c:GetAttribute("OwnerId") == LocalPlayer.UserId then
-                return true
-            end
-        end
-    end
-    local char = LocalPlayer.Character
-    if char and (char:GetAttribute("Carrying") or char:FindFirstChild("CarriedAnimal")) then
-        return true
-    end
-    return false
-end
-
 task.spawn(function()
-    while task.wait(0.2) do
+    while task.wait(0.22) do
         if not ScreenGui.Parent then break end
+
         local char = LocalPlayer.Character
         local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
 
-        -- 1. Cek jika sedang menggendong hewan -> Bawa ke Plot untuk Bank atau Drop
-        if (Config.AutoFarmEggs or Config.AutoStealAnimals) and root and IsCarryingAnimal() then
-            if Config.HelpFriendDrop then
-                StatusBadge.Text = "🤝 Dropping in Forest Zone..."
-                root.CFrame = CFrame.new(ZoneCoords["Zone 1 - Chicken"])
-                task.wait(0.25)
-                SmartFireRemote("DropCarriedRemote", {{}})
-            else
-                local myPlot = FindMyPlot()
-                local plotPos = Config.MyPlotPos or GetObjectPos(myPlot) or Vector3.new(-29.6, 4.0, 87.8)
-                StatusBadge.Text = "🏦 Banking Animal to Plot..."
-                root.CFrame = CFrame.new(plotPos + Vector3.new(0, 3, 0))
-                task.wait(0.3)
-                SmartFireRemote("PlaceAnimalRemote", {{}})
-            end
-        end
-
-        -- 2. Auto Steal PromptAnchor
-        if (Config.AutoFarmEggs or Config.AutoStealAnimals) and root then
+        -- --------------------------------------------------------------------
+        -- 1. AUTO STEAL HATCHED ANIMALS (PromptAnchor -> StealPrompt -> Base)
+        -- --------------------------------------------------------------------
+        if (Config.AutoStealAnimals or Config.AutoFarmEggs) and root then
+            local stolenNow = false
             for _, obj in ipairs(workspace:GetChildren()) do
                 if obj.Name == "PromptAnchor" and obj:IsA("BasePart") then
                     local prompt = obj:FindFirstChildWhichIsA("ProximityPrompt", true)
                     if prompt and prompt.Enabled then
-                        StatusBadge.Text = "🐾 Stealing Hatched Animal..."
-                        root.CFrame = CFrame.new(obj.Position + Vector3.new(0, 2, 0))
-                        task.wait(0.15)
+                        StatusBadge.Text = "🐾 Stealing: " .. tostring(prompt.ActionText)
+                        -- Teleport tegak lurus ke atas PromptAnchor
+                        root.CFrame = CFrame.new(obj.Position.X, obj.Position.Y + 3, obj.Position.Z)
+                        -- Tunggu 0.35 detik agar posisi kita ter-validasi di server
+                        task.wait(0.35)
+
+                        pcall(function() prompt.HoldDuration = 0 end)
                         if typeof(fireproximityprompt) == "function" then
                             pcall(fireproximityprompt, prompt)
-                        else
-                            pcall(function()
-                                prompt:InputHoldBegin()
-                                task.wait(prompt.HoldDuration + 0.05)
-                                prompt:InputHoldEnd()
-                            end)
                         end
+                        pcall(function()
+                            prompt:InputHoldBegin()
+                            task.wait(0.15)
+                            prompt:InputHoldEnd()
+                        end)
+
+                        task.wait(0.35)
+                        stolenNow = true
                         break
+                    end
+                end
+            end
+
+            -- Jika baru saja mencuri hewan, bawa pulang ke Base/Plot atau Drop di Forest
+            if stolenNow and root then
+                if Config.HelpFriendDrop then
+                    StatusBadge.Text = "🤝 Dropping in Zone 1..."
+                    root.CFrame = CFrame.new(ZoneCoords["Zone 1 - Chicken"])
+                    task.wait(0.35)
+                    if ReplicatedStorage:FindFirstChild("DropCarriedRemote") then
+                        pcall(function() ReplicatedStorage.DropCarriedRemote:FireServer() end)
+                    end
+                else
+                    local myPlot = FindMyPlotModel()
+                    local basePos = Config.MyBasePos or GetPos(myPlot) or Vector3.new(-29.6, 4.0, 87.8)
+                    StatusBadge.Text = "🏦 Banking Animal at Base..."
+                    root.CFrame = CFrame.new(basePos.X, basePos.Y + 3, basePos.Z)
+                    task.wait(0.6)
+                    if ReplicatedStorage:FindFirstChild("PlaceAnimalRemote") then
+                        pcall(function() ReplicatedStorage.PlaceAnimalRemote:FireServer() end)
                     end
                 end
             end
         end
 
-        -- 3. Auto Farm / Break Eggs
-        if Config.AutoFarmEggs and root then
-            local tool = EquipBestTool("Pickaxe")
-            local eggsFolder = workspace:FindFirstChild("Eggs")
-            local targetEgg = nil
-            local targetPos = nil
+        -- --------------------------------------------------------------------
+        -- 2. AUTO BREAK EGGS (Equip Pickaxe -> Pindah ke Telur -> Swing & Touch)
+        -- --------------------------------------------------------------------
+        if Config.AutoFarmEggs and root and hum then
+            local tool = EquipToolByKeyword("Pickaxe")
+            local targetEgg, eggPos = FindBestEgg()
 
-            if eggsFolder then
-                for _, e in ipairs(eggsFolder:GetChildren()) do
-                    local p = GetObjectPos(e)
-                    if p then
-                        targetEgg = e
-                        targetPos = p
-                        break
+            if targetEgg and eggPos then
+                StatusBadge.Text = "⛏ Breaking: " .. targetEgg.Name
+                -- Teleport tegak lurus di sebelah telur hanya jika jarak > 7 stud (agar tidak jitter/jatuh)
+                local standPos = Vector3.new(eggPos.X, eggPos.Y + 2, eggPos.Z + 3.5)
+                if (root.Position - standPos).Magnitude > 7 then
+                    root.CFrame = CFrame.new(standPos)
+                    task.wait(0.2)
+                end
+
+                -- Ayunkan Pickaxe
+                if tool then
+                    pcall(function() tool:Activate() end)
+                    -- Sentuhkan Handle Pickaxe ke bagian telur (jika mendukung firetouchinterest)
+                    local handle = tool:FindFirstChild("Handle")
+                    local eggPart = targetEgg:IsA("BasePart") and targetEgg or targetEgg:FindFirstChildWhichIsA("BasePart", true)
+                    if handle and eggPart and typeof(firetouchinterest) == "function" then
+                        pcall(function()
+                            firetouchinterest(handle, eggPart, 0)
+                            firetouchinterest(handle, eggPart, 1)
+                        end)
                     end
                 end
-            end
 
-            if targetEgg and targetPos then
-                StatusBadge.Text = "⛏ Breaking: " .. targetEgg.Name
-                root.CFrame = CFrame.new(targetPos + Vector3.new(0, 1.5, 3), targetPos)
-                if tool then pcall(function() tool:Activate() end) end
+                -- Simulasi Klik Kiri
                 pcall(function()
                     VirtualUser:CaptureController()
                     VirtualUser:ClickButton1(Vector2.new(0, 0))
                 end)
-                SmartFireRemote("EggHitRequest", {
-                    {targetEgg},
-                    {targetEgg.Name},
-                    {targetEgg, targetPos}
-                })
+
+                -- Kirim Remote EggHitRequest & EggHitLanded
+                local hitReq = ReplicatedStorage:FindFirstChild("EggHitRequest")
+                if hitReq then
+                    pcall(function() hitReq:FireServer(targetEgg) end)
+                    pcall(function() hitReq:FireServer(targetEgg.Name) end)
+                    pcall(function() hitReq:FireServer() end)
+                end
+                local hitLanded = ReplicatedStorage:FindFirstChild("EggHitLanded")
+                if hitLanded then
+                    pcall(function() hitLanded:FireServer(targetEgg) end)
+                end
             else
-                -- Pindah ke Zona yang dipilih agar telur ter-load
+                -- Jika belum ada telur yang ter-stream, pindah ke Zona yang dipilih
                 local zPos = ZoneCoords[Config.SelectedZone] or ZoneCoords["Zone 1 - Chicken"]
-                if zPos and (root.Position - zPos).Magnitude > 45 then
-                    StatusBadge.Text = "🚀 Teleporting to Zone..."
+                if zPos and (root.Position - zPos).Magnitude > 40 then
+                    StatusBadge.Text = "🚀 Moving to " .. Config.SelectedZone
                     root.CFrame = CFrame.new(zPos)
-                    task.wait(0.35)
+                    task.wait(0.4)
+                else
+                    StatusBadge.Text = "🔍 Waiting for Eggs..."
                 end
             end
         end
 
-        -- 4. Bat Aura
+        -- --------------------------------------------------------------------
+        -- 3. AUTO TREADMILL (Berdiri di Atas Treadmill + SpeedGainRemote)
+        -- --------------------------------------------------------------------
+        if Config.AutoTreadmill and root then
+            StatusBadge.Text = "🏃 Running on Treadmill..."
+            local tmPart = FindMyTreadmillPart()
+            local tmPos = Config.MyTreadmillPos or (tmPart and tmPart.Position) or Vector3.new(-61.8, 3.5, -2.8)
+
+            if (root.Position - tmPos).Magnitude > 6 then
+                root.CFrame = CFrame.new(tmPos.X, tmPos.Y + 3, tmPos.Z)
+                task.wait(0.25)
+            end
+
+            if tmPart and typeof(firetouchinterest) == "function" then
+                pcall(function()
+                    firetouchinterest(root, tmPart, 0)
+                    firetouchinterest(root, tmPart, 1)
+                end)
+            end
+
+            if ReplicatedStorage:FindFirstChild("TreadmillSessionRemote") then
+                pcall(function() ReplicatedStorage.TreadmillSessionRemote:FireServer(true) end)
+                pcall(function() ReplicatedStorage.TreadmillSessionRemote:FireServer() end)
+            end
+            if ReplicatedStorage:FindFirstChild("SpeedGainRemote") then
+                pcall(function() ReplicatedStorage.SpeedGainRemote:FireServer() end)
+                pcall(function() ReplicatedStorage.SpeedGainRemote:FireServer(1) end)
+            end
+        end
+
+        -- --------------------------------------------------------------------
+        -- 4. FITUR LAINNYA
+        -- --------------------------------------------------------------------
         if Config.BatAura then
-            local bat = EquipBestTool("Bat")
+            local bat = EquipToolByKeyword("Bat")
             if bat then pcall(function() bat:Activate() end) end
-            SmartFireRemote("BatHitRequest", {{}})
+            if ReplicatedStorage:FindFirstChild("BatHitRequest") then
+                pcall(function() ReplicatedStorage.BatHitRequest:FireServer() end)
+            end
         end
 
-        -- 5. Auto Treadmill
-        if Config.AutoTreadmill then
-            SmartFireRemote("TreadmillSessionRemote", {{true}, {"Start"}})
-            SmartFireRemote("SpeedGainRemote", {{}})
+        if Config.AutoUnlockTreadmill and ReplicatedStorage:FindFirstChild("UnlockTreadmillRequest") then
+            pcall(function() ReplicatedStorage.UnlockTreadmillRequest:FireServer() end)
         end
 
-        if Config.AutoUnlockTreadmill then
-            SmartFireRemote("UnlockTreadmillRequest", {{1}, {true}})
+        if Config.AutoSellPets and ReplicatedStorage:FindFirstChild("BackpackSellRemote") then
+            pcall(function() ReplicatedStorage.BackpackSellRemote:InvokeServer() end)
         end
 
-        -- 6. Auto Sell Pets
-        if Config.AutoSellPets then
-            SmartFireRemote("BackpackSellRemote", {{}, {"All"}})
-        end
-
-        -- 7. Automation Tab Loops
         if Config.AutoClaimRewards then
-            SmartFireRemote("GroupRewardRemote", {{}})
-            SmartFireRemote("OfflineRewardRemote", {{}})
-            SmartFireRemote("DiscordRewardRemote", {{}})
-        end
-        if Config.AutoIndex then
-            SmartFireRemote("IndexRemote", {{"ClaimAll"}, {}})
-        end
-        if Config.AutoPlaceAnimals then
-            SmartFireRemote("PlaceAnimalRemote", {{}})
-        end
-        if Config.AutoMergeMachine then
-            SmartFireRemote("MergeMachineRemote", {{}})
-        end
-        if Config.AutoFuseMachine then
-            SmartFireRemote("FuseMachineRequest", {{}})
-        end
-        if Config.AutoUpgradePlot then
-            SmartFireRemote("UpgradePlotRequest", {{}})
-        end
-        if Config.AutoUpgradeTreadmill then
-            SmartFireRemote("UpgradeTreadmillRequest", {{1}, {}})
-        end
-        if Config.AutoMasterySwing then
-            SmartFireRemote("MasteryPickaxeSwing", {{}})
+            if ReplicatedStorage:FindFirstChild("GroupRewardRemote") then pcall(function() ReplicatedStorage.GroupRewardRemote:FireServer() end) end
+            if ReplicatedStorage:FindFirstChild("OfflineRewardRemote") then pcall(function() ReplicatedStorage.OfflineRewardRemote:FireServer() end) end
+            if ReplicatedStorage:FindFirstChild("DiscordRewardRemote") then pcall(function() ReplicatedStorage.DiscordRewardRemote:FireServer() end) end
         end
 
-        -- 8. Shop & Event Loops
-        if Config.AutoBuyPickaxe then
-            local idStr = string.match(Config.SelectedPickaxe, "^(%d+):")
-            SmartFireRemote("PickaxeShopRequest", {{Config.SelectedPickaxe}, {tonumber(idStr) or 21}})
+        if Config.AutoPlaceAnimals and ReplicatedStorage:FindFirstChild("PlaceAnimalRemote") then
+            pcall(function() ReplicatedStorage.PlaceAnimalRemote:FireServer() end)
         end
-        if Config.AutoHalloweenCandy then
-            SmartFireRemote("HalloweenCandyDrops", {{}})
+        if Config.AutoMergeMachine and ReplicatedStorage:FindFirstChild("MergeMachineRemote") then
+            pcall(function() ReplicatedStorage.MergeMachineRemote:FireServer() end)
         end
-        if Config.AutoHalloweenHeist then
-            SmartFireRemote("HalloweenCandyHeist", {{}})
+        if Config.AutoFuseMachine and ReplicatedStorage:FindFirstChild("FuseMachineRequest") then
+            pcall(function() ReplicatedStorage.FuseMachineRequest:FireServer() end)
         end
-        if Config.AutoHalloweenDoors then
-            SmartFireRemote("HalloweenDoors", {{}})
+        if Config.AutoUpgradePlot and ReplicatedStorage:FindFirstChild("UpgradePlotRequest") then
+            pcall(function() ReplicatedStorage.UpgradePlotRequest:FireServer() end)
+        end
+        if Config.AutoUpgradeTreadmill and ReplicatedStorage:FindFirstChild("UpgradeTreadmillRequest") then
+            pcall(function() ReplicatedStorage.UpgradeTreadmillRequest:FireServer() end)
+        end
+        if Config.AutoMasterySwing and ReplicatedStorage:FindFirstChild("MasteryPickaxeSwing") then
+            pcall(function() ReplicatedStorage.MasteryPickaxeSwing:FireServer() end)
+        end
+        if Config.AutoHalloweenCandy and ReplicatedStorage:FindFirstChild("HalloweenCandyDrops") then
+            pcall(function() ReplicatedStorage.HalloweenCandyDrops:FireServer() end)
+        end
+        if Config.AutoHalloweenHeist and ReplicatedStorage:FindFirstChild("HalloweenCandyHeist") then
+            pcall(function() ReplicatedStorage.HalloweenCandyHeist:FireServer() end)
+        end
+        if Config.AutoHalloweenDoors and ReplicatedStorage:FindFirstChild("HalloweenDoors") then
+            pcall(function() ReplicatedStorage.HalloweenDoors:FireServer() end)
         end
     end
 end)
