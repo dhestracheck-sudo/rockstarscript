@@ -1,4 +1,4 @@
--- Cek apakah game sudah dimuat sepenuhnya
+-- Cek apakah game sudah dimuat
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -6,8 +6,8 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "rockstarscript | Pro Inspector",
-   LoadingTitle = "rockstarscript Professional Scanner",
+   Name = "rockstarscript | Test Exploiter",
+   LoadingTitle = "Auto Steal & Farm Tester",
    LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = { Enabled = false },
    Discord = { Enabled = false },
@@ -15,66 +15,63 @@ local Window = Rayfield:CreateWindow({
 })
 
 Rayfield:Notify({
-   Title = "Pro Scanner Siap!",
-   Content = "Sistem pemindaian mendalam berhasil dimuat.",
-   Duration = 4,
+   Title = "Tester Berhasil Dimuat!",
+   Content = "Gunakan menu di bawah untuk menguji keamanan map.",
+   Duration = 5,
 })
 
-local MainTab = Window:CreateTab("Pro Scanner", 4483362458)
-local MainSection = MainTab:CreateSection("Analisis Komprehensif Map & Objek")
+local MainTab = Window:CreateTab("Auto Steal Test", 4483362458)
+local MainSection = MainTab:CreateSection("Simulasi Serangan Auto Steal")
 
-MainTab:CreateButton({
-   Name = "Jalankan Pemindaian Profesional",
-   Callback = function()
+local autoStealActive = false
+
+MainTab:CreateToggle({
+   Name = "Mulai Auto Steal / Farm Egg",
+   CurrentValue = false,
+   Flag = "AutoStealToggle",
+   Callback = function(Value)
+      autoStealActive = Value
       task.spawn(function()
-         Rayfield:Notify({
-            Title = "Memindai...",
-            Content = "Sedang menganalisis seluruh struktur Workspace...",
-            Duration = 3,
-         })
-
-         local promptCount = 0
-         local uniqueParents = {}
-         local workspaceFolders = {}
-
-         pcall(function()
-            -- Scan seluruh isi workspace secara aman
-            for _, obj in ipairs(workspace:GetDescendants()) do
-               if obj:IsA("ProximityPrompt") then
-                  promptCount += 1
-                  local parent = obj.Parent
-                  if parent then
-                     local parentName = parent.Name
-                     uniqueParents[parentName] = (uniqueParents[parentName] or 0) + 1
+         while autoStealActive do
+            task.wait(0.1)
+            pcall(function()
+               local player = game.Players.LocalPlayer
+               local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+               
+               if hrp then
+                  -- Menelusuri seluruh ProximityPrompt di dalam map
+                  for _, prompt in pairs(workspace:GetDescendants()) do
+                     if not autoStealActive then break end
+                     
+                     if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                        local targetPart = prompt.Parent
+                        
+                        -- Sesuaikan jika wadahnya berupa Attachment atau BasePart
+                        if targetPart and targetPart:IsA("Attachment") then
+                           targetPart = targetPart.Parent
+                        end
+                        
+                        if targetPart and targetPart:IsA("BasePart") then
+                           -- Teleport karakter ke dekat objek untuk mensimulasikan pencurian
+                           hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
+                           task.wait(0.05)
+                           
+                           -- Pemicu interaksi prompt
+                           fireproximityprompt(prompt)
+                           
+                           Rayfield:Notify({
+                              Title = "Mencoba Mengambil...",
+                              Content = "Target: " .. tostring(targetPart.Name),
+                              Duration = 1,
+                           })
+                           
+                           task.wait(0.2)
+                        end
+                     end
                   end
                end
-            end
-
-            for _, child in ipairs(workspace:GetChildren()) do
-               if child:IsA("Folder") or child:IsA("Model") then
-                  workspaceFolders[child.Name] = child.ClassName
-               end
-            end
-         end)
-
-         -- Cetak laporan lengkap dan rapi ke Console (F9 / Console Executor)
-         print("\n================ [ROCKSTAR SCRIPT PRO REPORT] ================")
-         print("Total ProximityPrompt Ditemukan: " .. promptCount)
-         print("\n--- Daftar Parent / Wadah Prompt Unik ---")
-         for name, count in pairs(uniqueParents) do
-            print(string.format("Nama Parent: '%s' | Ditemukan: %d buah", name, count))
+            end)
          end
-         print("\n--- Folder / Model Utama di Workspace ---")
-         for fName, fType in pairs(workspaceFolders) do
-            print(string.format("Nama: '%s' [%s]", fName, fType))
-         end
-         print("============================================================\n")
-
-         Rayfield:Notify({
-            Title = "Scan Selesai!",
-            Content = "Total Prompt: " .. promptCount .. ". Buka Console untuk lihat detail!",
-            Duration = 6,
-         })
       end)
    end,
 })
