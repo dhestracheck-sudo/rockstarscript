@@ -7,7 +7,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "rockstarscript",
-   LoadingTitle = "rockstarscript Auto Farm Presisi",
+   LoadingTitle = "rockstarscript Map Inspector",
    LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = { Enabled = false },
    Discord = { Enabled = false },
@@ -15,52 +15,61 @@ local Window = Rayfield:CreateWindow({
 })
 
 Rayfield:Notify({
-   Title = "Auto Farm Siap!",
-   Content = "Menargetkan semua PromptPoint di map.",
+   Title = "Map Inspector Siap!",
+   Content = "Klik tombol di tab untuk menganalisis struktur map.",
    Duration = 5,
 })
 
-local MainTab = Window:CreateTab("Auto Farm Zona", 4483362458)
-local MainSection = MainTab:CreateSection("Pencari & Auto Farm Berdasarkan Scan")
+local MainTab = Window:CreateTab("Map Analysis", 4483362458)
+local MainSection = MainTab:CreateSection("Analisis Struktur Map")
 
-local autoFarm = false
-MainTab:CreateToggle({
-   Name = "Auto Farm PromptPoint",
-   CurrentValue = false,
-   Flag = "AutoFarmPromptPoint",
-   Callback = function(Value)
-      autoFarm = Value
-      task.spawn(function()
-         while autoFarm do
-            task.wait(0.1)
-            pcall(function()
-               local player = game.Players.LocalPlayer
-               local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-               
-               if hrp then
-                  -- Menelusuri seluruh objek berdasarkan data scan asli (PromptPoint)
-                  for _, prompt in pairs(workspace:GetDescendants()) do
-                     if not autoFarm then break end
-                     
-                     if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                        local parentObj = prompt.Parent
-                        -- Memastikan target sesuai dengan nama yang terekam saat scan
-                        if parentObj and parentObj.Name == "PromptPoint" then
-                           
-                           -- Teleport ke posisi PromptPoint secara presisi
-                           hrp.CFrame = parentObj.CFrame * CFrame.new(0, 3, 0)
-                           task.wait(0.05)
-                           
-                           -- Eksekusi interaksi game otomatis
-                           fireproximityprompt(prompt)
-                           
-                           task.wait(0.2)
-                        end
-                     end
-                  end
+MainTab:CreateButton({
+   Name = "Analisis Objek & Model Terdekat",
+   Callback = function()
+      local player = game.Players.LocalPlayer
+      local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+      
+      if not hrp then
+         Rayfield:Notify({Title = "Error", Content = "Karakter belum siap!", Duration = 3})
+         return
+      end
+      
+      local scannedCount = 0
+      local foundCategories = {}
+      
+      -- Menelusuri seluruh folder dan model di dalam workspace
+      for _, obj in pairs(workspace:GetChildren()) do
+         if obj:IsA("Model") or obj:IsA("Folder") then
+            -- Hitung jarak dari player ke model/folder tersebut (jika ada Part utamanya)
+            local targetPart = obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart", true)
+            if targetPart then
+               local dist = (hrp.Position - targetPart.Position).Magnitude
+               if dist < 100 then -- Jarak 100 meter dari player
+                  scannedCount += 1
+                  Rayfield:Notify({
+                     Title = "Ketemu Folder/Model:",
+                     Content = obj.Name .. " (Jarak: " .. math.floor(dist) .. "m)",
+                     Duration = 4,
+                  })
+                  task.wait(1.2)
+                  if scannedCount >= 8 then break end
                end
-            end)
+            end
          end
-      end)
+      end
+      
+      if scannedCount == 0 then
+         Rayfield:Notify({
+            Title = "Hasil Kosong",
+            Content = "Coba pindah posisi karakter lalu scan ulang.",
+            Duration = 4,
+         })
+      else
+         Rayfield:Notify({
+            Title = "Analisis Selesai",
+            Content = "Total " .. scannedCount .. " struktur terdeteksi di sekitar Anda.",
+            Duration = 5,
+         })
+      end
    end,
 })
