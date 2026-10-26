@@ -1,95 +1,88 @@
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
+if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Hapus UI lama jika script dijalankan ulang
 local coreGui = game:GetService("CoreGui")
-if coreGui:FindFirstChild("RockstarNativeUI") then
-    coreGui.RockstarNativeUI:Destroy()
+if coreGui:FindFirstChild("RockstarScannerUI") then
+    coreGui.RockstarScannerUI:Destroy()
 end
 
--- Membuat ScreenGui Utama
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarNativeUI"
+ScreenGui.Name = "RockstarScannerUI"
 ScreenGui.Parent = coreGui
 
--- Membuat Tombol Melayang (Floating Toggle Button)
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(0, 180, 0, 45)
-ToggleButton.Position = UDim2.new(0, 40, 0, 40)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.TextSize = 13
-ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.Text = "Auto Farm: OFF"
-ToggleButton.Draggable = true -- Tombol bisa digeser-geser di layar
-ToggleButton.Active = true
-ToggleButton.Parent = ScreenGui
+-- Panel Utama
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 500, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -250, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
 
--- Desain sudut tombol melengkung rapi
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
-UICorner.Parent = ToggleButton
+UICorner.Parent = MainFrame
 
-local autoFarmActive = false
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.Text = "Scanner Log (Tanpa F9)"
+Title.Parent = MainFrame
 
--- Fungsi tombol ketika diklik
-ToggleButton.MouseButton1Click:Connect(function()
-    autoFarmActive = not autoFarmActive
-    if autoFarmActive then
-        ToggleButton.Text = "Auto Farm: ON (Black Hole)"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 160, 80)
-    else
-        ToggleButton.Text = "Auto Farm: OFF"
-        ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+local ScanButton = Instance.new("TextButton")
+ScanButton.Size = UDim2.new(1, -20, 0, 40)
+ScanButton.Position = UDim2.new(0, 10, 0, 40)
+ScanButton.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
+ScanButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ScanButton.Font = Enum.Font.GothamBold
+ScanButton.TextSize = 14
+ScanButton.Text = "Mulai Scan"
+ScanButton.Parent = MainFrame
+Instance.new("UICorner", ScanButton).CornerRadius = UDim.new(0, 6)
+
+-- Area Scroll untuk Hasil Scan
+local ScrollFrame = Instance.new("ScrollingFrame")
+ScrollFrame.Size = UDim2.new(1, -20, 1, -100)
+ScrollFrame.Position = UDim2.new(0, 10, 0, 90)
+ScrollFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+ScrollFrame.ScrollBarThickness = 6
+ScrollFrame.Parent = MainFrame
+Instance.new("UICorner", ScrollFrame).CornerRadius = UDim.new(0, 6)
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Parent = ScrollFrame
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Padding = UDim.new(0, 5)
+
+ScanButton.MouseButton1Click:Connect(function()
+    -- Bersihkan hasil log sebelumnya
+    for _, child in pairs(ScrollFrame:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
     end
-end)
 
--- Logika Utama Auto Farm Khusus Zona Black Hole
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if autoFarmActive then
-            pcall(function()
-                local player = game.Players.LocalPlayer
-                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-                
-                if hrp then
-                    for _, prompt in pairs(workspace:GetDescendants()) do
-                        if not autoFarmActive then break end
-                        
-                        if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                            -- Validasi wajib berada di dalam zona Black Hole
-                            local isInBlackHole = false
-                            local currentParent = prompt.Parent
-                            
-                            while currentParent and currentParent ~= workspace do
-                                local nameLower = string.lower(currentParent.Name)
-                                if string.find(nameLower, "black") or string.find(nameLower, "hole") then
-                                    isInBlackHole = true
-                                    break
-                                end
-                                currentParent = currentParent.Parent
-                            end
-                            
-                            -- Jika di zona Black Hole, teleport dan eksekusi
-                            if isInBlackHole then
-                                local targetPart = prompt.Parent
-                                if targetPart and targetPart:IsA("Attachment") then
-                                    targetPart = targetPart.Parent
-                                end
-                                
-                                if targetPart and targetPart:IsA("BasePart") then
-                                    hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
-                                    task.wait(0.05)
-                                    fireproximityprompt(prompt)
-                                    task.wait(0.2)
-                                end
-                            end
-                        end
-                    end
-                end
-            end)
+    ScanButton.Text = "Scanning..."
+    task.wait(0.1)
+    
+    local count = 0
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            count = count + 1
+            
+            local resultLabel = Instance.new("TextLabel")
+            resultLabel.Size = UDim2.new(1, -10, 0, 30)
+            resultLabel.BackgroundTransparency = 1
+            resultLabel.TextColor3 = Color3.fromRGB(150, 255, 150)
+            resultLabel.Font = Enum.Font.Code
+            resultLabel.TextSize = 12
+            resultLabel.TextXAlignment = Enum.TextXAlignment.Left
+            resultLabel.TextWrapped = true
+            resultLabel.Text = "[" .. count .. "] " .. obj:GetFullName()
+            resultLabel.Parent = ScrollFrame
         end
     end
+    
+    ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, count * 35)
+    ScanButton.Text = "Scan Selesai! (" .. count .. " Prompt Ditemukan)"
 end)
