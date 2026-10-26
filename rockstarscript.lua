@@ -8,12 +8,12 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 -- Inisialisasi Window Utama
 local Window = Rayfield:CreateWindow({
-   Name = "Pet Stealer & Rider Simulator",
-   LoadingTitle = "Memuat Sistem Game...",
-   LoadingSubtitle = "by Delta Executor",
+   Name = "rockstarscript",
+   LoadingTitle = "rockstarscript Hub",
+   LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = {
       Enabled = true,
-      FolderName = "PetStealerConfig",
+      FolderName = "RockstarScriptConfig",
       FileName = "MainConfig"
    },
    Discord = {
@@ -26,33 +26,65 @@ local Window = Rayfield:CreateWindow({
 
 -- Notifikasi Berhasil Dijalankan
 Rayfield:Notify({
-   Title = "Script Berhasil Dimuat!",
-   Content = "Selamat bermain! Pilih fitur di bawah untuk mulai.",
+   Title = "rockstarscript Loaded!",
+   Content = "Fitur Auto Curi & Zona berhasil diperbarui!",
    Duration = 5,
    Image = 4483362458,
 })
 
 ----------------------------------------------------------------
--- TAB 1: UTAMA / AUTO FARM (Curi Pet & Coins)
+-- TAB 1: AUTO FARM & ZONA CURI
 ----------------------------------------------------------------
 local MainTab = Window:CreateTab("Auto Farm", 4483362458)
-local MainSection = MainTab:CreateSection("Fitur Utama Curi & Coin")
+local MainSection = MainTab:CreateSection("Pengaturan Zona & Curi Pet")
+
+-- Variabel untuk menyimpan target zona yang dipilih
+local selectedZone = "Semua Zona"
+
+MainTab:CreateDropdown({
+   Name = "Pilih Zona Curi Pet",
+   Options = {"Semua Zona", "Zona 1 (Normal)", "Zona 2 (Rare)", "Zona 3 (Epic/Legendary)"},
+   CurrentOption = {"Semua Zona"},
+   MultipleOptions = false,
+   Flag = "ZoneDropdown",
+   Callback = function(Option)
+      selectedZone = Option[1]
+   end,
+})
 
 local autoSteal = false
 MainTab:CreateToggle({
-   Name = "Auto Steal Pet (Curi Otomatis)",
+   Name = "Auto Steal Pet (Diperbaiki & Aman)",
    CurrentValue = false,
    Flag = "AutoSteal",
    Callback = function(Value)
       autoSteal = Value
       task.spawn(function()
          while autoSteal do
-             task.wait(0.5)
+             task.wait(0.4)
              pcall(function()
-                 -- Simulasi interaksi / proximity prompt untuk mencuri pet terdekat
+                 -- Loop untuk mendeteksi ProximityPrompt atau bagian Pet di workspace
                  for _, v in pairs(workspace:GetDescendants()) do
-                     if v:IsA("ProximityPrompt") and (v.ActionText:lower():find("steal") or v.ObjectText:lower():find("pet")) then
-                         fireproximityprompt(v)
+                     if v:IsA("ProximityPrompt") then
+                         local textCheck = (v.ActionText .. " " .. v.ObjectText):lower()
+                         if textCheck:find("steal") or textCheck:find("pet") then
+                             -- Filter berdasarkan Zona yang dipilih user
+                             local passZone = false
+                             if selectedZone == "Semua Zona" then
+                                 passZone = true
+                             elseif selectedZone:find("Zona 1") and v.Parent and v.Parent.Name:lower():find("zone1") then
+                                 passZone = true
+                             elseif selectedZone:find("Zona 2") and v.Parent and v.Parent.Name:lower():find("zone2") then
+                                 passZone = true
+                             elseif selectedZone:find("Zona 3") and v.Parent and v.Parent.Name:lower():find("zone3") then
+                                 passZone = true
+                             end
+                             
+                             -- Jika zona sesuai atau memilih Semua Zona, jalankan prompt secara aman
+                             if passZone or selectedZone == "Semua Zona" then
+                                 fireproximityprompt(v)
+                             end
+                         end
                      end
                  end
              end)
@@ -88,7 +120,7 @@ MainTab:CreateToggle({
 })
 
 ----------------------------------------------------------------
--- TAB 2: RIDE PET (Naiki Hewan Peliharaan)
+-- TAB 2: RIDE PET
 ----------------------------------------------------------------
 local RideTab = Window:CreateTab("Ride Pet", 4483362458)
 local RideSection = RideTab:CreateSection("Kustomisasi & Tunggangan")
@@ -102,7 +134,6 @@ RideTab:CreateButton({
           local hrp = char and char:FindFirstChild("HumanoidRootPart")
           
           if hrp then
-              -- Mencari model pet di sekitar pemain untuk dinaiki
               local targetPet = nil
               local shortestDistance = math.huge
               
@@ -111,7 +142,7 @@ RideTab:CreateButton({
                       local petPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj:FindFirstChild("Head")
                       if petPart then
                           local dist = (hrp.Position - petPart.Position).Magnitude
-                          if dist < shortestDistance and dist < 20 then
+                          if dist < shortestDistance and dist < 25 then
                               shortestDistance = dist
                               targetPet = petPart
                           end
@@ -120,7 +151,6 @@ RideTab:CreateButton({
               end
               
               if targetPet then
-                  -- Menempelkan karakter ke atas pet untuk efek menaikinya
                   hrp.CFrame = targetPet.CFrame + Vector3.new(0, 3, 0)
                   Rayfield:Notify({Title = "Berhasil!", Content = "Anda menaiki hewan peliharaan.", Duration = 3})
               else
@@ -146,7 +176,7 @@ RideTab:CreateSlider({
 })
 
 ----------------------------------------------------------------
--- TAB 3: PLAYER MODS (Kecepatan & Lompat)
+-- TAB 3: PLAYER MODS
 ----------------------------------------------------------------
 local PlayerTab = Window:CreateTab("Player", 4483362458)
 local PlayerSection = PlayerTab:CreateSection("Pengaturan Karakter")
