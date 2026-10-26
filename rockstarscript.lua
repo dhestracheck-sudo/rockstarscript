@@ -1,8 +1,8 @@
 -- ==========================================
--- ROCKSTAR SCRIPT HUB - MULTI-GAME LOADER (FULL DECOMPILED BYPASS)
+-- ROCKSTAR SCRIPT HUB - MULTI-GAME LOADER (NATIVE CLIMBCONTROLLER BYPASS)
 -- Map 1: Steal & Escape Cage (95168737547508) [Safe Velocity Boost]
--- Map 2: Panjat untuk Telur Hewan (85738654635245) [True Truss Climb + SpeedCurve Sync]
--- Fallback: Deep Module Decompiler
+-- Map 2: Panjat untuk Telur Hewan (85738654635245) [Native StartCFrame Climb + Auto Place Egg]
+-- Fallback: Targeted Module Decompiler
 -- ==========================================
 
 local Players = game:GetService("Players")
@@ -33,7 +33,7 @@ local function getSafeGuiParent()
 end
 
 -- ==========================================
--- DEEP AUDITOR (DECOMPILE TARGET MODULES)
+-- DEEP AUDITOR
 -- ==========================================
 local LastStealRefusedReason = "Belum ada penolakan terekam"
 
@@ -48,14 +48,9 @@ local function runDeepAuditScan()
     add("==========================================\n")
 
     local targetNames = {
-        ["speedCurve"] = true,
-        ["zones"] = true,
-        ["zoneConfig"] = true,
-        ["staminaConfig"] = true,
-        ["climbController"] = true,
-        ["boostMotion"] = true,
-        ["eggCarryController"] = true,
-        ["staminaController"] = true
+        ["eggConfig"] = true,
+        ["staminaUpgradeConfig"] = true,
+        ["portalConfig"] = true
     }
 
     for _, container in ipairs({ReplicatedStorage, lp:FindFirstChild("PlayerScripts")}) do
@@ -748,10 +743,10 @@ if placeId == 95168737547508 then
 
 -- ============================================================================
 -- MAP 2: [🎃] PANJAT UNTUK TELUR HEWAN 🥚 (PlaceId: 85738654635245)
--- [TRUE TRUSS CLIMB + SPEEDCURVE.TOWALKSPEED + INFINITE STAMINA + JUMP TO START]
+-- [100% NATIVE CLIMBCONTROLLER PHYSICS + STARTCFRAME + SMART AUTO PLACE EGG]
 -- ============================================================================
 elseif placeId == 85738654635245 then
-    local ui = createRockstarWindow("Panjat untuk Telur Hewan (True Truss Bypass)")
+    local ui = createRockstarWindow("Panjat untuk Telur Hewan (Native Climb + Place)")
 
     local tabMain = ui.createTab("Main", "🥚")
     local tabAuto = ui.createTab("Automation", "⚡")
@@ -763,13 +758,12 @@ elseif placeId == 85738654635245 then
     ui.tabButtons["Main"].BackgroundTransparency = 0
     ui.tabButtons["Main"].TextColor3 = ui.C_TEXT
 
-    -- Require Modul Internal Asli Map 2
     local Knit = nil
-    local speedCurve = nil
+    local eggConfig = nil
     local zonesUtil = nil
 
     pcall(function() Knit = require(ReplicatedStorage.src.Packages.knit) end)
-    pcall(function() speedCurve = require(ReplicatedStorage.src.utility.speedCurve) end)
+    pcall(function() eggConfig = require(ReplicatedStorage.src.GameConfiguration.Gameplay.eggConfig) end)
     pcall(function() zonesUtil = require(ReplicatedStorage.src.utility.zones) end)
 
     local function getKnitService(serviceName)
@@ -790,13 +784,12 @@ elseif placeId == 85738654635245 then
     local DataController = getKnitController("DataController")
     local StaminaController = getKnitController("StaminaController")
     local SpeedStateController = getKnitController("SpeedStateController")
-    local JetpackController = getKnitController("JetpackController")
+    local ClimbController = getKnitController("ClimbController")
     local BaseController = getKnitController("BaseController")
     local ZoneController = getKnitController("ZoneController")
     local EggCarryController = getKnitController("EggCarryController")
     local EggPlacementController = getKnitController("EggPlacementController")
 
-    local EggSpawnSvc = getKnitService("EggSpawnService")
     local EggPlaceSvc = getKnitService("EggPlacementService")
     local EggHatchSvc = getKnitService("EggHatchService")
     local BaseUpgSvc = getKnitService("BaseUpgradeService")
@@ -808,19 +801,20 @@ elseif placeId == 85738654635245 then
     local IndexSvc = getKnitService("IndexService")
     local StaminaUpgSvc = getKnitService("StaminaUpgradeService")
 
-    -- 1. BYPASS STAMINA CLIENT-SIDE (TIDAK PERNAH LELAH SAAT MEMANJAT TANGGA!)
-    if StaminaController then
-        pcall(function()
-            StaminaController.Multiplier = 1
-            StaminaController.pushTiredNotification = function() end
-            StaminaController.updateWalkSpeed = function(self, hum)
-                self.Multiplier = 1
-                if SpeedStateController and hum then
-                    hum.WalkSpeed = SpeedStateController:GetWalkSpeed()
-                end
-            end
-        end)
-    end
+    -- Ambil StartCFrame resmi dari ReplicatedStorage.Assets.HeightBar.StartCFrame (Sesuai zones.lua!)
+    local OfficialStartPart = nil
+    pcall(function()
+        OfficialStartPart = ReplicatedStorage:WaitForChild("Assets", 5):WaitForChild("HeightBar", 5):WaitForChild("StartCFrame", 5)
+    end)
+
+    -- INFINITE STAMINA HEARTBEAT: Reset Stamina terus-menerus agar tidak pernah lelah / melambat!
+    RunService.Heartbeat:Connect(function()
+        if StaminaController then
+            pcall(function()
+                StaminaController:Reset()
+            end)
+        end
+    end)
 
     -- Listener StealRefused
     local StealRefusedFlag = false
@@ -837,21 +831,29 @@ elseif placeId == 85738654635245 then
 
     local State = {
         AutoStealEgg = false,
-        InfiniteStamina = true,
+        AutoPlaceEgg = false,
+        ChainClimbBoost = false,
         AutoHatchBase = false,
         AutoClaimRewards = false,
         SelectedRarities = {
             ["Astral"] = true, ["Celestial"] = true, ["Radiant"] = true,
             ["Eternal"] = true, ["Divine"] = true, ["Legendary"] = true,
-            ["Rare"] = true, ["Uncommon"] = false, ["Common"] = false
+            ["Rare"] = true, ["Uncommon"] = true, ["Common"] = false
         },
+        -- Default: Fokus ke pulau ketinggian bawah-menengah (Y=200 s/d Y=3124) agar cepat dicapai!
         SelectedBiomes = {
-            ["Forbidden Forest"] = true, ["Realm of Legends"] = true,
-            ["Celestial"] = true, ["Divine Heights"] = true,
-            ["Mystic Isles"] = true, ["PreHistoric"] = true,
-            ["Jungle"] = true, ["Winter"] = true, ["Desert"] = true,
-            ["Crystal Mines"] = true, ["Ocean"] = true,
-            ["Forest"] = true
+            ["Forest"] = true,          -- Y = 200
+            ["Winter"] = true,          -- Y = 404
+            ["Ocean"] = true,           -- Y = 812
+            ["Desert"] = true,          -- Y = 1356
+            ["Crystal Mines"] = true,   -- Y = 2172
+            ["Jungle"] = true,          -- Y = 3124
+            ["Mystic Isles"] = false,   -- Y = 4348
+            ["PreHistoric"] = false,    -- Y = 5640
+            ["Divine Heights"] = false, -- Y = 7136
+            ["Celestial"] = false,      -- Y = 8632
+            ["Realm of Legends"] = false, -- Y = 10120
+            ["Forbidden Forest"] = false  -- Y = 12160
         }
     }
 
@@ -865,104 +867,261 @@ elseif placeId == 85738654635245 then
         ["Rare"] = 3, ["Uncommon"] = 2, ["Common"] = 1
     }
     local BiomeList = {
-        "Forbidden Forest", "Realm of Legends", "Celestial", "Divine Heights",
-        "Mystic Isles", "PreHistoric", "Jungle", "Winter", "Desert",
-        "Crystal Mines", "Ocean", "Forest"
+        "Forest", "Winter", "Ocean", "Desert", "Crystal Mines", "Jungle",
+        "Mystic Isles", "PreHistoric", "Divine Heights", "Celestial",
+        "Realm of Legends", "Forbidden Forest"
     }
 
-    -- Hitung Kecepatan Panjat Resmi Server berdasarkan speedCurve.ToWalkSpeed(Speed)
-    local function getLegalClimbSpeed()
-        local rawSpeed = 448
-        if DataController then
-            local ok, s = pcall(function() return DataController:GetValue("Speed") end)
-            if ok and tonumber(s) then rawSpeed = tonumber(s) end
-        elseif lp:FindFirstChild("leaderstats") and lp.leaderstats:FindFirstChild("Speed") then
-            rawSpeed = tonumber(lp.leaderstats.Speed.Value) or 448
+    local function getMyBaseModel()
+        if BaseController then
+            local ok, b = pcall(function() return BaseController:GetBase() end)
+            if ok and b then return b end
         end
-
-        local walkSpd = 38
-        if speedCurve and speedCurve.ToWalkSpeed then
-            local ok, calc = pcall(function() return speedCurve.ToWalkSpeed(rawSpeed) end)
-            if ok and tonumber(calc) then walkSpd = tonumber(calc) end
-        end
-
-        local jpMult = 1
-        if JetpackController then
-            local ok, m = pcall(function() return JetpackController:GetSpeedMultiplier() end)
-            if ok and tonumber(m) then jpMult = tonumber(m) end
-        end
-
-        return walkSpd * jpMult
-    end
-
-    -- Kumpulkan semua TrussPart di Workspace.Structures untuk jalur panjat resmi
-    local CachedTrusses = {}
-    local function refreshTrusses()
-        table.clear(CachedTrusses)
         local structures = Workspace:FindFirstChild("Structures")
-        if not structures then return end
-        for _, v in ipairs(structures:GetDescendants()) do
-            if v:IsA("TrussPart") then
-                table.insert(CachedTrusses, v)
+        local bases = structures and structures:FindFirstChild("Bases")
+        if not bases then return nil end
+        for _, base in ipairs(bases:GetChildren()) do
+            for _, desc in ipairs(base:GetDescendants()) do
+                if desc:GetAttribute("OwnerUserId") == lp.UserId then
+                    return base
+                end
             end
         end
-        table.sort(CachedTrusses, function(a, b)
-            return a.Position.Y < b.Position.Y
-        end)
+        return nil
     end
-    refreshTrusses()
 
-    -- Cari TrussPart terdekat pada ketinggian Y tertentu
-    local function getTrussAtHeight(targetY, refXZ)
-        local bestTruss = nil
-        local bestDist = math.huge
-        for _, tr in ipairs(CachedTrusses) do
-            if tr and tr.Parent then
-                local halfH = tr.Size.Y / 2 + 4
-                if targetY >= (tr.Position.Y - halfH) and targetY <= (tr.Position.Y + halfH) then
-                    local d = refXZ and (Vector2.new(tr.Position.X, tr.Position.Z) - refXZ).Magnitude or 0
-                    if d < bestDist then
-                        bestDist = d
-                        bestTruss = tr
+    -- ========================================================================
+    -- SMART AUTO PLACE EGG ENGINE (SESUAI PLACEMENTPREVIEWCONTROLLER & GROUND)
+    -- ========================================================================
+    local function getFreeBaseGroundSpots(baseModel)
+        local spots = {}
+        if not baseModel then return spots end
+        local fences = baseModel:FindFirstChild("Fences")
+        if not fences then return spots end
+
+        local plotCF, plotSize = fences:GetBoundingBox()
+        local groundObj = Workspace:FindFirstChild("Ground")
+        local rayParams = RaycastParams.new()
+        if groundObj then
+            rayParams.FilterType = Enum.RaycastFilterType.Include
+            rayParams.FilterDescendantsInstances = { groundObj }
+        else
+            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+            rayParams.FilterDescendantsInstances = { lp.Character, fences }
+        end
+
+        local placedFolder = baseModel:FindFirstChild("PlacedEggs")
+        local existingPositions = {}
+        if placedFolder then
+            for _, eggMod in ipairs(placedFolder:GetChildren()) do
+                local ok, piv = pcall(function() return eggMod:GetPivot().Position end)
+                if ok and piv then
+                    table.insert(existingPositions, piv)
+                end
+            end
+        end
+
+        local gridOffsets = { -0.34, -0.17, 0, 0.17, 0.34 }
+        for _, rx in ipairs(gridOffsets) do
+            for _, rz in ipairs(gridOffsets) do
+                local testWorldPos = (plotCF * CFrame.new(rx * plotSize.X, 25, rz * plotSize.Z)).Position
+                local hit = Workspace:Raycast(testWorldPos, Vector3.new(0, -80, 0), rayParams)
+                local groundPos = hit and hit.Position or Vector3.new(testWorldPos.X, plotCF.Position.Y - (plotSize.Y / 2) + 0.5, testWorldPos.Z)
+
+                local isFree = true
+                for _, exPos in ipairs(existingPositions) do
+                    if (Vector2.new(groundPos.X, groundPos.Z) - Vector2.new(exPos.X, exPos.Z)).Magnitude < 3.2 then
+                        isFree = false
+                        break
+                    end
+                end
+
+                if isFree then
+                    table.insert(spots, CFrame.new(groundPos))
+                end
+            end
+        end
+
+        return spots
+    end
+
+    local function getUnplacedEggsList()
+        local unplaced = {}
+        local seenRef = {}
+
+        local placedMap = {}
+        if DataController then
+            local okP, pData = pcall(function() return DataController:GetValue("PlacedEggs") end)
+            if okP and type(pData) == "table" then
+                placedMap = pData
+            end
+
+            local okI, invData = pcall(function() return DataController:GetValue("Inventory") end)
+            if okI and type(invData) == "table" then
+                for refName, itemData in pairs(invData) do
+                    if type(itemData) == "table" and itemData.Handler == "Egg" and not placedMap[refName] then
+                        seenRef[refName] = true
+                        local eggCleanName = itemData.Name or tostring(refName):split("_")[1]
+                        local rarity = itemData.Rarity
+                        if not rarity and eggConfig and eggConfig.Eggs and eggConfig.Eggs[eggCleanName] then
+                            rarity = eggConfig.Eggs[eggCleanName].Rarity
+                        end
+                        table.insert(unplaced, {
+                            refName = refName,
+                            eggName = eggCleanName,
+                            rarity = rarity or "Common",
+                            weight = RarityWeight[rarity or "Common"] or 1
+                        })
                     end
                 end
             end
         end
-        return bestTruss
+
+        for _, container in ipairs({ lp:FindFirstChild("Backpack"), lp.Character }) do
+            if container then
+                for _, tool in ipairs(container:GetChildren()) do
+                    if tool:IsA("Tool") and tool:GetAttribute("Handler") == "Egg" then
+                        local refName = tool:GetAttribute("ReferenceName") or tool.Name
+                        if not seenRef[refName] and not placedMap[refName] then
+                            seenRef[refName] = true
+                            local eggCleanName = tool:GetAttribute("ItemName") or tostring(refName):split("_")[1]
+                            local rarity = tool:GetAttribute("Rarity")
+                            if not rarity and eggConfig and eggConfig.Eggs and eggConfig.Eggs[eggCleanName] then
+                                rarity = eggConfig.Eggs[eggCleanName].Rarity
+                            end
+                            table.insert(unplaced, {
+                                refName = refName,
+                                eggName = eggCleanName,
+                                rarity = rarity or "Common",
+                                weight = RarityWeight[rarity or "Common"] or 1,
+                                toolInstance = tool
+                            })
+                        end
+                    end
+                end
+            end
+        end
+
+        table.sort(unplaced, function(a, b)
+            return a.weight > b.weight
+        end)
+
+        return unplaced
     end
 
-    -- Reset ke Lobby ("Jump To The Start!") menggunakan mekanisme resmi OutOfBoundsController (Y <= 20)
+    local IsPlacingEggsNow = false
+    local function placeAllAvailableEggs(statusLbl)
+        if IsPlacingEggsNow then return 0 end
+        IsPlacingEggsNow = true
+
+        local placedCount = 0
+        pcall(function()
+            local baseModel = getMyBaseModel()
+            if not baseModel then return end
+
+            local unplacedList = getUnplacedEggsList()
+            if #unplacedList == 0 then
+                if statusLbl then statusLbl.Text = "Tidak ada telur di Inventory untuk ditaruh." end
+                return
+            end
+
+            local freeSpots = getFreeBaseGroundSpots(baseModel)
+            if #freeSpots == 0 then
+                if statusLbl then statusLbl.Text = "Area Base penuh / semua titik sudah terisi!" end
+                return
+            end
+
+            local fences = baseModel:FindFirstChild("Fences")
+            local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+            local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+            if fences and hrp and hum and hrp.Position.Y < 55 then
+                local fPos = fences:GetPivot().Position
+                if (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(fPos.X, fPos.Z)).Magnitude > 16 then
+                    if statusLbl then statusLbl.Text = "Berjalan mendekati kandang Base..." end
+                    hum:MoveTo(fPos)
+                    task.wait(0.8)
+                end
+            end
+
+            local maxToPlace = math.min(#unplacedList, #freeSpots)
+            for i = 1, maxToPlace do
+                local eggEntry = unplacedList[i]
+                local spotCF = freeSpots[i]
+
+                if statusLbl then
+                    statusLbl.Text = string.format("Menaruh Telur [%s] %s (%d/%d)...", eggEntry.rarity, eggEntry.eggName, i, maxToPlace)
+                end
+
+                if eggEntry.toolInstance and eggEntry.toolInstance.Parent == lp.Backpack and hum then
+                    pcall(function() hum:EquipTool(eggEntry.toolInstance) end)
+                    task.wait(0.15)
+                end
+
+                local placedOk = false
+                if EggPlacementController and EggPlacementController.Place then
+                    pcall(function()
+                        EggPlacementController.Debounce = false
+                        EggPlacementController:Place(eggEntry.refName, spotCF)
+                        placedOk = true
+                    end)
+                end
+                if not placedOk and EggPlaceSvc and EggPlaceSvc:FindFirstChild("RF") and EggPlaceSvc.RF:FindFirstChild("RequestToPlace") then
+                    pcall(function()
+                        EggPlaceSvc.RF.RequestToPlace:InvokeServer(eggEntry.refName, spotCF)
+                    end)
+                end
+
+                placedCount = placedCount + 1
+                task.wait(1.1)
+            end
+
+            if statusLbl and placedCount > 0 then
+                statusLbl.Text = string.format("✅ Berhasil menaruh %d telur di Base!", placedCount)
+            end
+        end)
+
+        IsPlacingEggsNow = false
+        return placedCount
+    end
+
+    -- ========================================================================
+    -- 100% NATIVE CLIMBCONTROLLER ENGINE (ZERO CFRAME TELEPORT WHILE CLIMBING!)
+    -- ========================================================================
     local function resetToLobbyLegit(statusLbl)
         local char = lp.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
-        if statusLbl then
-            statusLbl.Text = "Reset ke Lobby (Membersihkan Flag Server)..."
+        if ClimbController then
+            pcall(function() ClimbController.BoostControlsLocked = false end)
         end
 
-        -- Terjun ke Y = 18 agar OutOfBoundsController resmi memindahkan karakter ke TpCFrame di Lobby
+        if statusLbl then
+            statusLbl.Text = "Jump To Start (Reset ke Lobby)..."
+        end
+
+        -- Terjun ke Y = 18 agar OutOfBoundsController memindahkan karakter secara sah ke Lobby
         hrp.AssemblyLinearVelocity = Vector3.zero
         hrp.CFrame = CFrame.new(hrp.Position.X, 18, hrp.Position.Z)
 
         local waitStart = os.clock()
-        while os.clock() - waitStart < 2.5 do
+        while os.clock() - waitStart < 3.0 do
             char = lp.Character
             hrp = char and char:FindFirstChild("HumanoidRootPart")
             local zName = ZoneController and ZoneController.Zone or nil
-            if zName == "Lobby" or (hrp and hrp.Position.Y > 25 and hrp.Position.Y < 55) then
+            if zName == "Lobby" and hrp and hrp.Position.Y > 25 and hrp.Position.Y < 50 then
                 break
             end
             task.wait(0.1)
         end
 
         StealRefusedFlag = false
-        task.wait(0.6)
+        -- Berdiri di tanah Lobby selama 0.9 detik agar updateBoostReady (v_u_126) di ClimbController aktif!
+        task.wait(0.9)
     end
 
-    -- Jalan kaki di darat dengan kecepatan resmi Idle (26 studs/detik)
     local function walkOnGroundTo(targetPos, stopDist, checkFunc)
-        stopDist = stopDist or 4.5
+        stopDist = stopDist or 3.5
         local startTime = os.clock()
         while os.clock() - startTime < 18 do
             if checkFunc and not checkFunc() then return false end
@@ -982,95 +1141,150 @@ elseif placeId == 85738654635245 then
         return false
     end
 
-    -- PANJAT TANGGA (TRUSS) RESMI SESUAI SPEEDCURVE.TOWALKSPEED(SPEED)
-    local function climbTrussToHeight(targetY, targetXZ, statusLbl, checkFunc)
-        if #CachedTrusses == 0 then refreshTrusses() end
+    -- Cari TrussPart terendah di RainbowTruss (di sekitar StartCFrame)
+    local function getRainbowTrussStartPos(targetZ)
+        local startPos = OfficialStartPart and OfficialStartPart.Position or Vector3.new(0, 30, 0)
+        local rTruss = Workspace:FindFirstChild("Structures") and Workspace.Structures:FindFirstChild("RainbowTruss")
+        local bestPart = nil
+        local bestY = math.huge
+        if rTruss then
+            for _, v in ipairs(rTruss:GetDescendants()) do
+                if v:IsA("TrussPart") and v.Position.Y < bestY then
+                    bestY = v.Position.Y
+                    bestPart = v
+                end
+            end
+        end
+        local clampZ = startPos.Z
+        if targetZ then
+            clampZ = math.clamp(targetZ, startPos.Z - 22, startPos.Z + 22)
+        end
+        local trussX = bestPart and bestPart.Position.X or startPos.X
+        return Vector3.new(trussX, startPos.Y, clampZ), bestPart
+    end
+
+    -- PANJAT MURNI MENGGUNAKAN CLIMBCONTROLLER ASLI GAME (TANPA UBAH CFRAME SAAT MEMANJAT!)
+    local function nativeClimbToHeight(targetY, targetZ, statusLbl, checkFunc)
         local char = lp.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if not hrp or not hum then return false end
 
-        -- 1. Cari Truss paling bawah di Lobby (Y ~ 30..60)
-        local bottomTruss = getTrussAtHeight(40) or CachedTrusses[1]
-        if not bottomTruss then return false end
+        local climbEntryPos = getRainbowTrussStartPos(targetZ)
 
-        -- 2. Jika masih di Lobby, jalan kaki dulu ke depan Truss bawah!
+        -- 1. Jika masih di Lobby, wajib jalan kaki melewati StartCFrame agar zones.IsInClimbZone == true!
         if hrp.Position.Y < 55 then
-            if statusLbl then statusLbl.Text = "Berjalan ke kaki Tangga (Truss)..." end
-            local trussBasePos = Vector3.new(bottomTruss.Position.X, hrp.Position.Y, bottomTruss.Position.Z + 2)
-            walkOnGroundTo(trussBasePos, 4, checkFunc)
+            if statusLbl then statusLbl.Text = "Berjalan ke StartCFrame (RainbowTruss)..." end
+            -- Jalan ke depan tangga (2.5 stud di depan tangga di sisi Lobby)
+            local dirFromTruss = (hrp.Position.X >= climbEntryPos.X) and 2.2 or -2.2
+            local preTrussPos = Vector3.new(climbEntryPos.X + dirFromTruss, hrp.Position.Y, climbEntryPos.Z)
+            walkOnGroundTo(preTrussPos, 2.5, checkFunc)
+            task.wait(0.25)
+
+            -- Jalan menabrak tangga RainbowTruss agar ClimbController otomatis masuk state Climbing + Official Boost!
+            if statusLbl then statusLbl.Text = "Menempel ke RainbowTruss (Trigger Official Boost)..." end
+            local intoTrussPos = Vector3.new(climbEntryPos.X - dirFromTruss, hrp.Position.Y, climbEntryPos.Z)
+            local touchStart = os.clock()
+            while os.clock() - touchStart < 3.0 do
+                if checkFunc and not checkFunc() then return false end
+                if hum:GetState() == Enum.HumanoidStateType.Climbing then
+                    break
+                end
+                hum:MoveTo(intoTrussPos)
+                task.wait(0.05)
+            end
         end
 
-        -- 3. Memanjat naik sepanjang TrussPart dengan kecepatan resmi speedCurve.ToWalkSpeed(Speed)!
-        local currentXZ = Vector2.new(bottomTruss.Position.X, bottomTruss.Position.Z)
-        local lastTick = os.clock()
+        -- 2. Selama memanjat ke targetY:
+        -- JANGAN UBAH hrp.CFrame! Gunakan ClimbController.BoostControlsLocked = true & lp:Move(LookVector)!
+        local climbStartClock = os.clock()
+        local lastY = hrp.Position.Y
+        local stuckTimer = os.clock()
 
-        while hrp and hrp.Parent and hrp.Position.Y < (targetY - 2) do
-            if checkFunc and not checkFunc() then return false end
+        while hrp and hrp.Parent and hrp.Position.Y < (targetY - 1.5) do
+            if checkFunc and not checkFunc() then
+                if ClimbController then pcall(function() ClimbController.BoostControlsLocked = false end) end
+                return false
+            end
+
             char = lp.Character
             hrp = char and char:FindFirstChild("HumanoidRootPart")
             hum = char and char:FindFirstChildOfClass("Humanoid")
             if not hrp or not hum or hum.Health <= 0 then return false end
 
-            local now = os.clock()
-            local dt = math.clamp(now - lastTick, 0.01, 0.1)
-            lastTick = now
-
-            local legalClimbSpd = getLegalClimbSpeed()
-            if StaminaController then StaminaController.Multiplier = 1 end
-            if SpeedStateController then
-                pcall(function() SpeedStateController:UpdateState("Climbing") end)
+            -- Reset Stamina terus agar Multiplier selalu 1 (Full Speed!)
+            if StaminaController then
+                pcall(function() StaminaController:Reset() end)
             end
-            hum.WalkSpeed = legalClimbSpd
+
+            -- Aktifkan BoostControlsLocked agar ClimbController otomatis memanjat vertikal penuh!
+            if ClimbController then
+                pcall(function()
+                    ClimbController.BoostControlsLocked = true
+                    -- Jika user menyalakan ChainClimbBoost, panggil fungsi resmi ClimbController:boost(hum)
+                    if State.ChainClimbBoost and not ClimbController.Boosting and os.clock() >= (ClimbController.NextBoostAt or 0) then
+                        ClimbController:boost(hum)
+                    end
+                end)
+            end
+
+            -- Dorong gerakan maju ke arah tangga secara murni (sama persis seperti baris 216 climbController.lua)
+            pcall(function()
+                lp:Move(hrp.CFrame.LookVector, false)
+            end)
 
             if statusLbl then
-                statusLbl.Text = string.format("Memanjat Tangga: Y=%d / %d (Spd: %.0f)", math.floor(hrp.Position.Y), math.floor(targetY), legalClimbSpd)
+                statusLbl.Text = string.format("Native Climbing: Y=%d / %d (0%% CFrame Spoof)", math.floor(hrp.Position.Y), math.floor(targetY))
             end
 
-            -- Cari TrussPart pada ketinggian saat ini
-            local curY = hrp.Position.Y
-            local activeTruss = getTrussAtHeight(curY + 2, targetXZ or currentXZ) or bottomTruss
-            if activeTruss then
-                currentXZ = Vector2.new(activeTruss.Position.X, activeTruss.Position.Z)
+            -- Deteksi jika karakter terlepas dari tangga di tengah jalan
+            if math.abs(hrp.Position.Y - lastY) > 1 then
+                lastY = hrp.Position.Y
+                stuckTimer = os.clock()
+            elseif os.clock() - stuckTimer > 3.5 then
+                -- Tekan maju ke arah tangga lagi
+                hum:MoveTo(Vector3.new(climbEntryPos.X, hrp.Position.Y + 5, climbEntryPos.Z))
+                stuckTimer = os.clock()
             end
 
-            local nextY = math.min(curY + (legalClimbSpd * dt * 0.96), targetY + 2)
-            local climbPos = Vector3.new(currentXZ.X, nextY, currentXZ.Y + 1.2)
-            local lookAtTruss = Vector3.new(currentXZ.X, nextY, currentXZ.Y)
+            if os.clock() - climbStartClock > 120 then
+                break
+            end
 
-            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Climbing) end)
-            hrp.AssemblyLinearVelocity = Vector3.new(0, legalClimbSpd * 0.96, 0)
-            hrp.CFrame = CFrame.lookAt(climbPos, lookAtTruss)
-
-            -- Gerakkan kaki ke depan agar ClimbController mendeteksi gerakan memanjat
-            hum:Move(Vector3.new(0, 0, -1), true)
-
-            task.wait()
+            task.wait(0.05)
         end
 
-        if SpeedStateController then
-            pcall(function() SpeedStateController:UpdateState("Idle") end)
+        if ClimbController then
+            pcall(function() ClimbController.BoostControlsLocked = false end)
         end
-        return true
+
+        return hrp and hrp.Position.Y >= (targetY - 4)
     end
 
-    local cardEgg = ui.createCard(tabMain, "True Truss Climb + Auto Steal Egg", "Panjat tangga sesuai SpeedCurve asli + Infinite Stamina + Jump To Start")
+    -- ========================================================================
+    -- UI TAB MAIN: NATIVE CLIMB AUTO STEAL & SMART AUTO PLACE EGG
+    -- ========================================================================
+    local cardEgg = ui.createCard(tabMain, "Native ClimbController Auto Steal", "100% fisika ClimbController asli + StartCFrame + Infinite Stamina")
     local statusEggLbl = ui.addStatusBox(cardEgg, "Status: Idle (Siap memanjat & ambil telur)")
 
     ui.addMultiDropdown(cardEgg, "Filter Rarity", RarityOrder, State.SelectedRarities, 3)
     ui.addMultiDropdown(cardEgg, "Filter Biome", BiomeList, State.SelectedBiomes, 4)
 
-    ui.addToggle(cardEgg, "Start True Truss Auto Steal", false, function(val)
+    ui.addToggle(cardEgg, "Chain Official ClimbController:boost() (15x Speed)", false, function(val)
+        State.ChainClimbBoost = val
+    end, 5)
+
+    ui.addToggle(cardEgg, "Start Native Climb Auto Steal", false, function(val)
         State.AutoStealEgg = val
         if not val then
+            if ClimbController then pcall(function() ClimbController.BoostControlsLocked = false end) end
             statusEggLbl.Text = "Status: Idle"
             return
         end
 
         task.spawn(function()
-            -- Pastikan mulai dari Lobby dengan status bersih
             local hrpStart = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
-            if hrpStart and (hrpStart.Position.Y > 55 or StealRefusedFlag) then
+            if hrpStart and (hrpStart.Position.Y > 50 or StealRefusedFlag) then
                 resetToLobbyLegit(statusEggLbl)
             end
 
@@ -1092,7 +1306,8 @@ elseif placeId == 85738654635245 then
                                     local r = eggModel:GetAttribute("Rarity")
                                     local hitbox = eggModel:FindFirstChild("Hitbox") or eggModel:FindFirstChildWhichIsA("BasePart")
                                     if r and State.SelectedRarities[r] and hitbox then
-                                        local score = (RarityWeight[r] or 1) * 1000 + (tonumber(eggModel:GetAttribute("WeightKg")) or 0)
+                                        -- Prioritaskan Rarity tertinggi di pulau yang terjangkau
+                                        local score = (RarityWeight[r] or 1) * 10000 - hitbox.Position.Y
                                         if score > bestScore then
                                             bestScore = score
                                             bestEgg = eggModel
@@ -1109,23 +1324,28 @@ elseif placeId == 85738654635245 then
                     local rName = bestEgg:GetAttribute("Rarity") or ""
                     local eName = bestEgg:GetAttribute("EggName") or bestEgg.Name
                     local eggPos = bestHitbox.Position
-                    local eggXZ = Vector2.new(eggPos.X, eggPos.Z)
 
-                    -- 1. Panjat Tangga (Truss) resmi sampai ketinggian pulau telur!
-                    local climbed = climbTrussToHeight(eggPos.Y + 2, eggXZ, statusEggLbl, function()
+                    -- 1. Panjat murni lewat StartCFrame menggunakan ClimbController asli!
+                    local climbed = nativeClimbToHeight(eggPos.Y + 2, eggPos.Z, statusEggLbl, function()
                         return State.AutoStealEgg and bestEgg.Parent ~= nil
                     end)
 
                     if climbed and State.AutoStealEgg and bestEgg.Parent then
-                        -- 2. Jalan kaki alami di atas pulau menuju telur (Kecepatan Idle resmi 26 studs/s)
+                        -- 2. Melangkah turun dari tangga ke lantai pulau & jalan kaki ke telur
                         statusEggLbl.Text = string.format("Berjalan di Pulau ke [%s] %s...", rName, eName)
+                        local hum = lp.Character and lp.Character:FindFirstChildOfClass("Humanoid")
+                        if hum then
+                            pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end)
+                        end
+                        task.wait(0.2)
+
                         walkOnGroundTo(bestHitbox.Position, 4.5, function()
                             return State.AutoStealEgg and bestEgg.Parent ~= nil
                         end)
 
                         task.wait(0.35)
 
-                        -- 3. Arahkan kamera & tahan StealPrompt selama 0.65 detik
+                        -- 3. Tahan StealPrompt 0.65 detik
                         local prompt = bestEgg:FindFirstChild("StealPrompt", true) or bestEgg:FindFirstChildWhichIsA("ProximityPrompt", true)
                         if prompt then
                             pcall(function()
@@ -1161,33 +1381,22 @@ elseif placeId == 85738654635245 then
                             pcall(function() VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game) end)
                         end
 
-                        task.wait(0.3)
+                        task.wait(0.35)
 
-                        -- 4. Cek apakah telur berhasil digendong (CarryingEgg ~= nil)
+                        -- 4. Jika berhasil mengambil telur (CarryingEgg ~= nil), Jump To Start & Auto Place!
                         if lp:GetAttribute("CarryingEgg") ~= nil then
                             statusEggLbl.Text = "✅ Telur Dapat! Jump To The Start (Auto Claim)..."
                             resetToLobbyLegit(statusEggLbl)
                             if EggCarryController then
                                 pcall(function() EggCarryController:tryClaimEgg() end)
                             end
-                            task.wait(0.8)
+                            task.wait(1.0)
 
-                            -- Otomatis taruh telur dari Backpack ke Base Anda!
-                            local baseModel = BaseController and BaseController:GetBase() or nil
-                            local fences = baseModel and baseModel:FindFirstChild("Fences")
-                            local placeCF = fences and fences:GetPivot() or (hrp and hrp.CFrame)
-                            for _, tool in ipairs(lp.Backpack:GetChildren()) do
-                                if tool:IsA("Tool") and tool:GetAttribute("Handler") == "Egg" then
-                                    local refName = tool:GetAttribute("ReferenceName") or tool.Name
-                                    if EggPlacementController and placeCF then
-                                        pcall(function() EggPlacementController:Place(refName, placeCF) end)
-                                    elseif EggPlaceSvc and placeCF then
-                                        pcall(function() EggPlaceSvc.RF.RequestToPlace:InvokeServer(refName, placeCF) end)
-                                    end
-                                end
+                            if State.AutoPlaceEgg then
+                                placeAllAvailableEggs(statusEggLbl)
                             end
                         elseif StealRefusedFlag then
-                            statusEggLbl.Text = "⚠️ Reset Flag ke Lobby: " .. tostring(LastStealRefusedReason)
+                            statusEggLbl.Text = "⚠️ Reset ke Lobby: " .. tostring(LastStealRefusedReason)
                             resetToLobbyLegit(statusEggLbl)
                         end
                     end
@@ -1197,7 +1406,32 @@ elseif placeId == 85738654635245 then
                 task.wait(0.4)
             end
         end)
-    end, 5)
+    end, 6)
+
+    -- CARD SMART AUTO PLACE EGG KE BASE
+    local cardPlace = ui.createCard(tabMain, "Smart Auto Place Egg (Grid Base Ground)", "Otomatis menaruh telur dari Inventory/Tas ke tanah Base Anda (Anti-Tumpuk)")
+    local statusPlaceLbl = ui.addStatusBox(cardPlace, "Status Place: Siap menaruh telur ke Base")
+
+    ui.addToggle(cardPlace, "Auto Place Egg ke Base (Otomatis)", false, function(val)
+        State.AutoPlaceEgg = val
+        if not val then
+            statusPlaceLbl.Text = "Status Place: Idle"
+            return
+        end
+        task.spawn(function()
+            while State.AutoPlaceEgg do
+                local hrp = lp.Character and lp.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and hrp.Position.Y < 55 and lp:GetAttribute("CarryingEgg") == nil then
+                    placeAllAvailableEggs(statusPlaceLbl)
+                end
+                task.wait(2.5)
+            end
+        end)
+    end, 3)
+
+    ui.addButton(cardPlace, "🥚 TARUH SEMUA TELUR KE BASE SEKARANG", function()
+        placeAllAvailableEggs(statusPlaceLbl)
+    end, 4)
 
     -- TAB AUTOMATION
     local cardBase = ui.createCard(tabAuto, "Base & Rewards Automation", "Otomatis tetaskan telur & klaim hadiah")
@@ -1205,7 +1439,7 @@ elseif placeId == 85738654635245 then
         State.AutoHatchBase = val
         task.spawn(function()
             while State.AutoHatchBase do
-                local myBase = BaseController and BaseController:GetBase()
+                local myBase = getMyBaseModel()
                 local placed = myBase and myBase:FindFirstChild("PlacedEggs")
                 if placed then
                     for _, egg in ipairs(placed:GetChildren()) do
@@ -1254,23 +1488,23 @@ elseif placeId == 85738654635245 then
     end, 4)
 
     -- TAB ISLANDS
-    local cardTp = ui.createCard(tabTeleport, "True Truss Climb ke Pulau", "Panjat tangga otomatis ke pulau pilihan")
+    local cardTp = ui.createCard(tabTeleport, "Native Climb ke Pulau", "Panjat tangga resmi ke ketinggian pulau pilihan")
     local islandsFolder = Workspace:FindFirstChild("Structures") and Workspace.Structures:FindFirstChild("Islands")
     if islandsFolder then
         for idx, isl in ipairs(islandsFolder:GetChildren()) do
             ui.addButton(cardTp, "🧗 CLIMB KE: " .. string.upper(isl.Name), function()
                 local spawnPart = isl:FindFirstChild("Area") or isl:FindFirstChild("SpawnEggs") or isl:FindFirstChildWhichIsA("BasePart", true)
                 if spawnPart then
-                    climbTrussToHeight(spawnPart.Position.Y + 2, Vector2.new(spawnPart.Position.X, spawnPart.Position.Z), statusEggLbl)
+                    nativeClimbToHeight(spawnPart.Position.Y + 2, spawnPart.Position.Z, statusEggLbl)
                 end
             end, idx)
         end
     end
 
     -- TAB CONFIG
-    local cardCfg = ui.createCard(tabConfig, "Targeted Module Decompiler", "Decompile modul speedCurve, climbController & zones")
-    local scanStatus = ui.addStatusBox(cardCfg, "Klik tombol di bawah jika butuh decompile modul panjat")
-    ui.addButton(cardCfg, "🔍 DECOMPILE CLIMB & SPEED MODULES (COPY)", function()
+    local cardCfg = ui.createCard(tabConfig, "Targeted Module Decompiler", "Decompile modul tambahan jika diperlukan")
+    local scanStatus = ui.addStatusBox(cardCfg, "Klik tombol di bawah untuk copy modul")
+    ui.addButton(cardCfg, "🔍 DECOMPILE CONFIG MODULES (COPY)", function()
         runDeepAuditScan()
         scanStatus.Text = "✅ Modul berhasil di-copy!"
     end, 5)
