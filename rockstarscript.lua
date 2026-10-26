@@ -1,4 +1,3 @@
--- Cek apakah game sudah dimuat
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -6,8 +5,8 @@ end
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "rockstarscript | Test Exploiter",
-   LoadingTitle = "Auto Steal & Farm Tester",
+   Name = "rockstarscript | Zona Terakhir",
+   LoadingTitle = "Auto Farm Zona Terakhir",
    LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = { Enabled = false },
    Discord = { Enabled = false },
@@ -15,58 +14,72 @@ local Window = Rayfield:CreateWindow({
 })
 
 Rayfield:Notify({
-   Title = "Tester Berhasil Dimuat!",
-   Content = "Gunakan menu di bawah untuk menguji keamanan map.",
-   Duration = 5,
+   Title = "Filter Zona Aktif",
+   Content = "Script dikhususkan untuk zona terakhir.",
+   Duration = 4,
 })
 
-local MainTab = Window:CreateTab("Auto Steal Test", 4483362458)
-local MainSection = MainTab:CreateSection("Simulasi Serangan Auto Steal")
+local MainTab = Window:CreateTab("Auto Farm", 4483362458)
+local MainSection = MainTab:CreateSection("Target Zona Terakhir Saja")
 
-local autoStealActive = false
+local autoFarmLast = false
 
 MainTab:CreateToggle({
-   Name = "Mulai Auto Steal / Farm Egg",
+   Name = "Auto Farm Zona Terakhir",
    CurrentValue = false,
-   Flag = "AutoStealToggle",
+   Flag = "AutoFarmLastZone",
    Callback = function(Value)
-      autoStealActive = Value
+      autoFarmLast = Value
       task.spawn(function()
-         while autoStealActive do
-            task.wait(0.1)
+         -- Cari titik terjauh/zona terakhir berdasarkan posisi koordinat (Z atau Magnitude dari pusat)
+         local function getTargetPrompts()
+            local prompts = {}
+            local maxDistance = 0
+            
+            -- Kumpulkan semua prompt dan cari posisi terjauh sebagai indikasi zona terakhir
+            for _, prompt in pairs(workspace:GetDescendants()) do
+               if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                  local part = prompt.Parent
+                  if part and part:IsA("Attachment") then part = part.Parent end
+                  if part and part:IsA("BasePart") then
+                     local dist = part.Position.Magnitude
+                     if dist > maxDistance then
+                        maxDistance = dist
+                     end
+                     table.insert(prompts, {Prompt = prompt, Part = part, Dist = dist})
+                  end
+               end
+            end
+            
+            -- Filter hanya ambil prompt yang berada di radius zona terjauh (15% dari jarak maksimal)
+            local lastZonePrompts = {}
+            for _, data in pairs(prompts) do
+               if data.Dist >= (maxDistance - 150) then -- Toleransi jarak zona terakhir
+                  table.insert(lastZonePrompts, data)
+               end
+            end
+            
+            return lastZonePrompts
+         end
+
+         while autoFarmLast do
+            task.wait(0.2)
             pcall(function()
                local player = game.Players.LocalPlayer
                local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
                
                if hrp then
-                  -- Menelusuri seluruh ProximityPrompt di dalam map
-                  for _, prompt in pairs(workspace:GetDescendants()) do
-                     if not autoStealActive then break end
+                  local targetList = getTargetPrompts()
+                  for _, target in pairs(targetList) do
+                     if not autoFarmLast then break end
                      
-                     if prompt:IsA("ProximityPrompt") and prompt.Enabled then
-                        local targetPart = prompt.Parent
+                     if target.Prompt and target.Prompt.Enabled and target.Part then
+                        -- Teleport presisi hanya ke titik di zona terakhir
+                        hrp.CFrame = target.Part.CFrame * CFrame.new(0, 3, 0)
+                        task.wait(0.05)
                         
-                        -- Sesuaikan jika wadahnya berupa Attachment atau BasePart
-                        if targetPart and targetPart:IsA("Attachment") then
-                           targetPart = targetPart.Parent
-                        end
-                        
-                        if targetPart and targetPart:IsA("BasePart") then
-                           -- Teleport karakter ke dekat objek untuk mensimulasikan pencurian
-                           hrp.CFrame = targetPart.CFrame * CFrame.new(0, 3, 0)
-                           task.wait(0.05)
-                           
-                           -- Pemicu interaksi prompt
-                           fireproximityprompt(prompt)
-                           
-                           Rayfield:Notify({
-                              Title = "Mencoba Mengambil...",
-                              Content = "Target: " .. tostring(targetPart.Name),
-                              Duration = 1,
-                           })
-                           
-                           task.wait(0.2)
-                        end
+                        fireproximityprompt(target.Prompt)
+                        task.wait(0.25)
                      end
                   end
                end
