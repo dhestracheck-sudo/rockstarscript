@@ -1,4 +1,4 @@
--- Cek apakah game sudah sepenuhnya dimuat
+-- Cek apakah game sudah dimuat
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -7,7 +7,7 @@ local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
    Name = "rockstarscript",
-   LoadingTitle = "rockstarscript Scanner v2",
+   LoadingTitle = "rockstarscript Auto Farm Presisi",
    LoadingSubtitle = "by dhestracheck-sudo",
    ConfigurationSaving = { Enabled = false },
    Discord = { Enabled = false },
@@ -15,43 +15,52 @@ local Window = Rayfield:CreateWindow({
 })
 
 Rayfield:Notify({
-   Title = "Scanner Siap!",
-   Content = "Klik tombol di bawah untuk melihat hasil scan di layar.",
+   Title = "Auto Farm Siap!",
+   Content = "Menargetkan semua PromptPoint di map.",
    Duration = 5,
 })
 
-local MainTab = Window:CreateTab("Scanner Map", 4483362458)
-local MainSection = MainTab:CreateSection("Pemindai Langsung")
+local MainTab = Window:CreateTab("Auto Farm Zona", 4483362458)
+local MainSection = MainTab:CreateSection("Pencari & Auto Farm Berdasarkan Scan")
 
-MainTab:CreateButton({
-   Name = "Scan & Tampilkan Nama Prompt/Zone",
-   Callback = function()
-      local foundNames = {}
-      local count = 0
-      
-      pcall(function()
-          for _, v in pairs(workspace:GetDescendants()) do
-              if v:IsA("ProximityPrompt") then
-                  count += 1
-                  local parentName = v.Parent and v.Parent.Name or "Unknown"
-                  if not foundNames[parentName] then
-                      foundNames[parentName] = true
-                      -- Munculkan nama objek langsung ke notifikasi layar satu per satu
-                      Rayfield:Notify({
-                         Title = "Ditemukan Zone/Objek:",
-                         Content = parentName,
-                         Duration = 4,
-                      })
-                      task.wait(1)
+local autoFarm = false
+MainTab:CreateToggle({
+   Name = "Auto Farm PromptPoint",
+   CurrentValue = false,
+   Flag = "AutoFarmPromptPoint",
+   Callback = function(Value)
+      autoFarm = Value
+      task.spawn(function()
+         while autoFarm do
+            task.wait(0.1)
+            pcall(function()
+               local player = game.Players.LocalPlayer
+               local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+               
+               if hrp then
+                  -- Menelusuri seluruh objek berdasarkan data scan asli (PromptPoint)
+                  for _, prompt in pairs(workspace:GetDescendants()) do
+                     if not autoFarm then break end
+                     
+                     if prompt:IsA("ProximityPrompt") and prompt.Enabled then
+                        local parentObj = prompt.Parent
+                        -- Memastikan target sesuai dengan nama yang terekam saat scan
+                        if parentObj and parentObj.Name == "PromptPoint" then
+                           
+                           -- Teleport ke posisi PromptPoint secara presisi
+                           hrp.CFrame = parentObj.CFrame * CFrame.new(0, 3, 0)
+                           task.wait(0.05)
+                           
+                           -- Eksekusi interaksi game otomatis
+                           fireproximityprompt(prompt)
+                           
+                           task.wait(0.2)
+                        end
+                     end
                   end
-              end
-          end
+               end
+            end)
+         end
       end)
-      
-      Rayfield:Notify({
-         Title = "Scan Selesai!",
-         Content = "Total ProximityPrompt: " .. count,
-         Duration = 6,
-      })
    end,
 })
