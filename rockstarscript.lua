@@ -3,7 +3,6 @@ if not game:IsLoaded() then game.Loaded:Wait() end
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Bersihkan scanner sebelumnya jika ada
 if playerGui:FindFirstChild("RockstarVisualScanner") then
     playerGui.RockstarVisualScanner:Destroy()
 end
@@ -13,34 +12,30 @@ espFolder.Name = "RockstarVisualScanner"
 espFolder.ResetOnSpawn = false
 espFolder.Parent = playerGui
 
--- Fungsi untuk membuat tulisan melayang di 3D world
 local function createESP(prompt)
     if not prompt:IsA("ProximityPrompt") then return end
-    if prompt:FindFirstChild("RockstarESP_Tag") then return end -- Cegah duplikat
+    if prompt:FindFirstChild("RockstarESP_Tag") then return end
     
-    -- Tandai prompt ini sudah di-scan
     local tag = Instance.new("BoolValue")
     tag.Name = "RockstarESP_Tag"
     tag.Parent = prompt
     
-    -- Cari objek fisik (Part) tempat prompt ini menempel
     local part = prompt.Parent
     if part:IsA("Attachment") then part = part.Parent end
     if not part or not part:IsA("BasePart") then return end
     
-    -- Buat BillboardGui (UI 3D yang menempel di objek)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "PromptESP"
     billboard.Adornee = part
     billboard.Size = UDim2.new(0, 250, 0, 60)
-    billboard.StudsOffset = Vector3.new(0, 3, 0) -- Tinggi dari objek
-    billboard.AlwaysOnTop = true -- Tembus pandang (Wallhack)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
     
     local textLabel = Instance.new("TextLabel")
     textLabel.Size = UDim2.new(1, 0, 1, 0)
     textLabel.BackgroundTransparency = 1
-    textLabel.TextColor3 = Color3.fromRGB(0, 255, 255) -- Warna Cyan terang
-    textLabel.TextStrokeTransparency = 0 -- Garis luar hitam agar bisa dibaca
+    textLabel.TextColor3 = Color3.fromRGB(0, 255, 255)
+    textLabel.TextStrokeTransparency = 0
     textLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
     textLabel.TextSize = 12
     textLabel.Font = Enum.Font.Code
@@ -51,18 +46,15 @@ local function createESP(prompt)
     billboard.Parent = espFolder
 end
 
--- 1. Scan semua objek yang sudah ada saat ini
 for _, obj in pairs(workspace:GetDescendants()) do
     createESP(obj)
 end
 
--- 2. Deteksi otomatis jika map baru ter-load (Bypass StreamingEnabled)
 workspace.DescendantAdded:Connect(function(obj)
-    task.wait(0.1) -- Jeda sebentar agar properti objek termuat penuh
+    task.wait(0.1)
     createESP(obj)
 end)
 
--- Notifikasi bahwa Scanner Aktif
 local StarterGui = game:GetService("StarterGui")
 pcall(function()
     StarterGui:SetCore("SendNotification", {
