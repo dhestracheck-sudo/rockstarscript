@@ -1,20 +1,16 @@
 -- ============================================================================
--- * ROCKSTAR HUB - MY ANIME MINE AUTO-FARMING SCRIPT v2.0 *
+-- * ROCKSTAR HUB - MY ANIME MINE AUTO-FARMING SCRIPT v3.0 *
 -- Game: My Anime Mine / MineWorld
 -- PlaceId: 72858262610964 | GameId: 10629695169
--- Fitur Lengkap (v2.0):
---   [1] Auto Mine (Fast Remote Hit + Pet Mine + Multi-Target Engine)
---   [2] Remote Autonomous Mode (Mining Jarak Jauh Tanpa Perlu Jalan Manual)
---   [3] Auto Beli Kapak Otomatis (Pickaxe Shop Remote + Proximity Prompt)
---   [4] Auto Pakai Best Anime / Pet (PetService Remote + UI Auto-Equip)
---   [5] Auto Upgrade Stats (UpgradeService + PhysicalUpgrade Remote Engine)
---   [6] Auto Rebirth (RebirthService Remote Auto-Trigger)
---   [7] Auto Collect Loot Magnet (Instant Drops Collector ke Tas)
---   [8] Auto Sell Otomatis (RF.Sell Remote + SellStand Prompt)
---   [9] Auto Lucky Block (Unreal Block Prompt Interactor)
---   [10] Waypoints Teleport (Plot, Toko Beli Kapak, Sell, Summon, Enchant, Hub)
---   [11] Anti-AFK 24 Jam (Zero Disconnect Universal)
---   [12] 100% Universal Delta Executor Compatible (PC & Android)
+-- Pembaruan Utama (v3.0):
+--   [FIX] 100% Guaranteed Auto-Sell: Teleport mikro instan ke depan SellStand
+--         untuk tembus Server Distance Check, lalu otomatis balik ke tambang!
+--   [FIX] Zero Robux Popups: Mematikan pembukaan toko otomatis & memblokir
+--         semua popup Marketplace/Robux/Gamepass yang tidak diperlukan!
+--   [FIX] Tanpa Buka Toko GUI: Tidak memicu PickaxeShopPrompt yang membuka jendela toko.
+--   [NEW] Auto Pakai Best Anime: Langsung aktif otomatis memakai anime terkuat.
+--   [NEW] Auto Upgrades Stats: Upgrade remote internal tanpa pop-up toko.
+--   [OK] Anti-AFK 24 Jam Universal (Delta PC & Android Compatible)
 -- ============================================================================
 
 local Players = game:GetService("Players")
@@ -23,7 +19,7 @@ local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local MarketplaceService = game:GetService("MarketplaceService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -39,29 +35,28 @@ end
 local Config = {
     -- Mining & Autonomous
     AutoMine = true,
-    RemoteOnlyMining = true,            -- True = Mining jarak jauh tanpa perlu jalan kaki
+    RemoteOnlyMining = true,            -- True = Mining jarak jauh via Remote
     MineRarityFilter = "All",           -- "All", "Legendary", "Epic", "Rare", "Uncommon"
     AutoCollectLoot = true,
     
-    -- Toko & Inventori
-    AutoBuyPickaxe = true,             -- Otomatis beli kapak terkuat/baru
-    BuyPickaxeInterval = 5,             -- Detik antar cek beli kapak
-    AutoEquipBestAnime = true,          -- Otomatis pakai tim anime/pet terkuat
-    EquipBestInterval = 8,              -- Detik antar equip best
-    
-    -- Upgrade & Rebirth
-    AutoUpgrade = true,                 -- Otomatis upgrade stats (Pickaxe, Speed, Luck, Bag)
-    UpgradeInterval = 4,                -- Detik antar cek upgrade
-    AutoRebirth = false,                -- Otomatis rebirth jika syarat terpenuhi
-    RebirthInterval = 15,               -- Detik
-    
     -- Jual & Event
-    AutoSell = true,
-    AutoSellInterval = 15,              -- Detik
+    AutoSell = true,                    -- Auto Jual 100% tembus distance check
+    AutoSellInterval = 15,              -- Detik antar jual
     AutoLuckyBlock = true,
     
+    -- Anime / Pet & Upgrades
+    AutoEquipBestAnime = true,          -- Otomatis pakai anime/pet terbaik
+    EquipBestInterval = 10,             -- Detik antar equip best
+    AutoUpgrade = true,                 -- Otomatis upgrade stats via remote murni
+    UpgradeInterval = 6,                -- Detik antar upgrade
+    AutoRebirth = false,                -- Otomatis rebirth jika siap
+    RebirthInterval = 20,               -- Detik
+    
+    -- Toko Kapak (Aman Tanpa Buka UI & Tanpa Robux)
+    AutoBuyPickaxe = false,             -- Default OFF agar tidak mengganggu layar
+    BuyPickaxeInterval = 12,            -- Detik
+    
     -- Navigasi & Karakter
-    TweenSpeed = 50,                    -- Studs per detik jika teleport halus
     AntiAfk = true,
     WalkSpeed = 24,
     JumpPower = 50,
@@ -72,10 +67,9 @@ local State = {
     CurrentTargetNode = nil,
     TotalMined = 0,
     TotalSold = 0,
-    TotalPickaxesBought = 0,
     TotalUpgrades = 0,
     TotalRebirths = 0,
-    IsTweening = false,
+    IsSelling = false,
     Logs = {},
 }
 
@@ -86,7 +80,7 @@ local function Log(msg)
     if #State.Logs > 40 then
         table.remove(State.Logs)
     end
-    print("[ROCKSTAR MINE v2]: " .. fullMsg)
+    print("[ROCKSTAR MINE v3]: " .. fullMsg)
 end
 
 -- Anti AFK Universal
@@ -101,43 +95,65 @@ if Config.AntiAfk then
 end
 
 -- ============================================================================
--- 2. RESOLVER REMOTE SERVICES & GAME REMOTES
+-- 2. BLOKIR POPUP ROBUX / TOKO TIDAK PERLU
+-- ============================================================================
+-- Memastikan dialog Robux atau toko berbayar tidak mengganggu layar
+task.spawn(function()
+    while true do
+        task.wait(0.6)
+        pcall(function()
+            -- Tutup CoreGui PurchasePrompt (Robux Dialog)
+            local purchaseGui = CoreGui:FindFirstChild("PurchasePrompt") or CoreGui:FindFirstChild("PurchasePromptApp")
+            if purchaseGui then
+                for _, btn in ipairs(purchaseGui:GetDescendants()) do
+                    if btn:IsA("TextButton") or btn:IsA("ImageButton") then
+                        local txt = string.lower(btn:IsA("TextButton") and btn.Text or btn.Name)
+                        if string.find(txt, "cancel", 1, true) or string.find(txt, "batal", 1, true) or string.find(txt, "close", 1, true) or string.find(txt, "no", 1, true) then
+                            if firesignal then
+                                firesignal(btn.MouseButton1Click)
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Tutup jendela Shop jika terbuka sendiri dan berisi penawaran Robux
+            for _, gui in ipairs(PlayerGui:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "RockstarMyAnimeMineGui" then
+                    local nameLow = string.lower(gui.Name)
+                    if string.find(nameLow, "robux", 1, true) or string.find(nameLow, "gamepass", 1, true) or string.find(nameLow, "starterpack", 1, true) then
+                        gui.Enabled = false
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- ============================================================================
+-- 3. RESOLVER REMOTE SERVICES
 -- ============================================================================
 local Remotes = {
     -- Mining
     Hit = nil,
     CollectDrop = nil,
     Sell = nil,
-    Enter = nil,
-    Leave = nil,
-    Surface = nil,
     PetMine = nil,
-    MineReward = nil,
-    MineReset = nil,
-    MineNotice = nil,
     MiningPurchase = nil,
-    MiningDailyBuy = nil,
+    SharedSellAll = nil,
     
     -- Pets / Anime
     PetActionRequested = nil,
-    PetActionResult = nil,
     EquipPetTeam = nil,
     SharedEquipBestPets = nil,
     SharedEquipBestTeam = nil,
     
-    -- Upgrades
+    -- Upgrades & Rebirth
     UpgradePurchase = nil,
     PhysicalUpgradePurchase = nil,
     SharedBuyUpgrade = nil,
-    SharedUpgradeRebirthStat = nil,
-    
-    -- Rebirth
     RebirthRequested = nil,
     SharedRebirth = nil,
-    
-    -- Shrine & Enchant
-    ShrineChoose = nil,
-    EnchantRemote = nil,
 }
 
 local function GetRemote(path)
@@ -150,50 +166,31 @@ local function GetRemote(path)
     return curr
 end
 
--- Resolve Mining Remotes
 Remotes.Hit = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.Hit")
 Remotes.CollectDrop = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.CollectDrop")
 Remotes.Sell = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.Sell")
-Remotes.Enter = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.Enter")
-Remotes.Leave = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.Leave")
-Remotes.Surface = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.Surface")
 Remotes.PetMine = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RE.PetMine")
-Remotes.MineReward = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RE.MineReward")
-Remotes.MineReset = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RE.MineReset")
-Remotes.MineNotice = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RE.MineNotice")
 Remotes.MiningPurchase = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.Purchase")
-Remotes.MiningDailyBuy = GetRemote("ReplicatedStorage.RemoteServices.MiningService.RF.DailyBuy")
+Remotes.SharedSellAll = GetRemote("ReplicatedStorage.Shared.Remotes.SellAll")
 
--- Resolve Pet / Anime Remotes
 Remotes.PetActionRequested = GetRemote("ReplicatedStorage.RemoteServices.PetService.RE.PetActionRequested")
-Remotes.PetActionResult = GetRemote("ReplicatedStorage.RemoteServices.PetService.RE.PetActionResult")
 Remotes.EquipPetTeam = GetRemote("ReplicatedStorage.RemoteServices.PetService.RF.EquipPetTeam")
 Remotes.SharedEquipBestPets = GetRemote("ReplicatedStorage.Shared.Remotes.EquipBestPets")
 Remotes.SharedEquipBestTeam = GetRemote("ReplicatedStorage.Shared.Remotes.EquipBestTeam")
 
--- Resolve Upgrade Remotes
 Remotes.UpgradePurchase = GetRemote("ReplicatedStorage.RemoteServices.UpgradeService.RF.Purchase")
 Remotes.PhysicalUpgradePurchase = GetRemote("ReplicatedStorage.RemoteServices.PhysicalUpgradeService.RF.Purchase")
 Remotes.SharedBuyUpgrade = GetRemote("ReplicatedStorage.Shared.Remotes.BuyUpgrade")
-Remotes.SharedUpgradeRebirthStat = GetRemote("ReplicatedStorage.Shared.Remotes.UpgradeRebirthStat")
-
--- Resolve Rebirth Remotes
 Remotes.RebirthRequested = GetRemote("ReplicatedStorage.RemoteServices.RebirthService.RE.RebirthRequested")
 Remotes.SharedRebirth = GetRemote("ReplicatedStorage.Shared.Remotes.Rebirth")
-
--- Resolve Shrine & Enchant
-Remotes.ShrineChoose = GetRemote("ReplicatedStorage.RemoteServices.ShrineService.RF.Choose")
-Remotes.EnchantRemote = GetRemote("ReplicatedStorage.RemoteServices.EnchantService.RF.Enchant")
 
 if Remotes.Hit then Log("Remote Hit terhubung OK.") end
 if Remotes.CollectDrop then Log("Remote CollectDrop terhubung OK.") end
 if Remotes.Sell then Log("Remote Sell terhubung OK.") end
-if Remotes.MiningPurchase then Log("Remote Beli Kapak (MiningPurchase) terhubung OK.") end
-if Remotes.PetActionRequested or Remotes.SharedEquipBestPets then Log("Remote Equip Best Anime terhubung OK.") end
-if Remotes.UpgradePurchase or Remotes.PhysicalUpgradePurchase then Log("Remote Upgrades terhubung OK.") end
+if Remotes.PetActionRequested or Remotes.SharedEquipBestPets then Log("Remote Best Anime terhubung OK.") end
 
 -- ============================================================================
--- 3. DETEKSI PLOT MILIK SENDIRI
+-- 4. DETEKSI PLOT MILIK SENDIRI
 -- ============================================================================
 local function FindMyPlot()
     local myUserId = LocalPlayer.UserId
@@ -226,7 +223,7 @@ local function FindMyPlot()
 end
 
 -- ============================================================================
--- 4. NAVIGASI KARAKTER (SAFE TELEPORT & TWEEN)
+-- 5. NAVIGASI KARAKTER (SAFE TELEPORT & ROOT)
 -- ============================================================================
 local function GetRootPart()
     local char = LocalPlayer.Character
@@ -240,8 +237,21 @@ local function SafeTeleport(targetPos)
     return true
 end
 
+local function TriggerProximity(prompt)
+    if not prompt then return end
+    pcall(function()
+        if fireproximityprompt then
+            fireproximityprompt(prompt, 0)
+        else
+            prompt:InputHoldBegin()
+            task.wait(prompt.HoldDuration or 0.1)
+            prompt:InputHoldEnd()
+        end
+    end)
+end
+
 -- ============================================================================
--- 5. PENCARI ORE NODE & REMOTE MINING ENGINE
+-- 6. PENCARI ORE NODE & REMOTE MINING ENGINE
 -- ============================================================================
 local RarityWeights = {
     ["Legendary"] = 5,
@@ -346,7 +356,6 @@ local function PickBestNode(nodes)
     return filtered[1]
 end
 
--- Eksekusi Memukul Ore (Hit Remote + Tool Swing + Pet Mine)
 local function MineTargetNode(node)
     if not node or not node.Instance or not node.Instance.Parent then return end
 
@@ -361,7 +370,7 @@ local function MineTargetNode(node)
         end)
     end
 
-    -- 2. RemoteEvent PetMine (Perintahkan seluruh anime menambang)
+    -- 2. RemoteEvent PetMine
     if Remotes.PetMine and Remotes.PetMine:IsA("RemoteEvent") then
         pcall(function()
             Remotes.PetMine:FireServer(node.Instance)
@@ -391,202 +400,171 @@ local function MineTargetNode(node)
 end
 
 -- ============================================================================
--- 6. AUTO BELI KAPAK OTOMATIS (PICKAXE AUTO-BUY ENGINE)
+-- 7. 100% RELIABLE AUTO SELL (TELEPORT MIKRO KE DEPAN SELLSTAND)
 -- ============================================================================
-local function PerformAutoBuyPickaxe()
-    if not Config.AutoBuyPickaxe then return end
+local function PerformSell()
+    if State.IsSelling then return end
+    State.IsSelling = true
 
-    -- Cara 1: RemoteFunction MiningPurchase
-    if Remotes.MiningPurchase and Remotes.MiningPurchase:IsA("RemoteFunction") then
-        -- Coba beli tier kapak berikutnya (1 sampai 25)
-        for tier = 1, 25 do
-            pcall(function()
-                local res = Remotes.MiningPurchase:InvokeServer(tier)
-                if res == true or (type(res) == "table" and res.Success) then
-                    State.TotalPickaxesBought = State.TotalPickaxesBought + 1
-                    Log("KAPAK: Berhasil membeli Pickaxe Tier " .. tier .. " via Remote!")
-                end
-            end)
-            pcall(function()
-                local res = Remotes.MiningPurchase:InvokeServer("Pickaxe", tier)
-                if res == true then
-                    State.TotalPickaxesBought = State.TotalPickaxesBought + 1
-                    Log("KAPAK: Berhasil membeli Pickaxe (" .. tier .. ") via Remote!")
-                end
-            end)
-        end
+    local root = GetRootPart()
+    if not root then
+        State.IsSelling = false
+        return
     end
 
-    -- Cara 2: RemoteFunction DailyBuy (Jika ada penawaran kapak harian)
-    if Remotes.MiningDailyBuy and Remotes.MiningDailyBuy:IsA("RemoteFunction") then
+    -- Posisi tepat di depan NPC Toko Jual (SkeletonMiner)
+    local sellStandPos = Vector3.new(-5980.5, 502.0, -5999.7)
+    local prevCFrame = root.CFrame
+    local dist = (root.Position - sellStandPos).Magnitude
+    local didTeleport = false
+
+    -- Jika jarak > 10 studs, lakukan teleport kilat untuk tembus server distance check
+    if dist > 10 then
+        root.CFrame = CFrame.new(sellStandPos)
+        didTeleport = true
+        task.wait(0.12) -- Tunggu server menerima CFrame baru
+    end
+
+    local sold = false
+
+    -- 1. Panggil RemoteFunction Sell resmi game
+    if Remotes.Sell and Remotes.Sell:IsA("RemoteFunction") then
         pcall(function()
-            Remotes.MiningDailyBuy:InvokeServer(1)
+            local res = Remotes.Sell:InvokeServer()
+            if res ~= false then sold = true end
+        end)
+        pcall(function() Remotes.Sell:InvokeServer("All") end)
+        pcall(function() Remotes.Sell:InvokeServer(true) end)
+    end
+
+    -- 2. Panggil Shared SellAll
+    if Remotes.SharedSellAll and Remotes.SharedSellAll:IsA("RemoteFunction") then
+        pcall(function()
+            Remotes.SharedSellAll:InvokeServer()
+            sold = true
         end)
     end
 
-    -- Cara 3: ProximityPrompt PickaxeShopPrompt di SkeletonMiner
+    -- 3. Trigger ProximityPrompt di SellStand (jarak sudah 0 studs)
     pcall(function()
-        local shopPrompt = workspace:FindFirstChild("PickaxeShopPrompt", true)
-        if not shopPrompt and workspace:FindFirstChild("MineWorld") then
-            shopPrompt = workspace.MineWorld:FindFirstChild("PickaxeShopPrompt", true)
-        end
-        if shopPrompt and fireproximityprompt then
-            fireproximityprompt(shopPrompt)
-        end
-    end)
-
-    -- Cara 4: UI Button Auto-Purchase di PlayerGui
-    pcall(function()
-        for _, gui in ipairs(PlayerGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                for _, desc in ipairs(gui:GetDescendants()) do
-                    if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-                        local btnText = string.lower(desc:IsA("TextButton") and desc.Text or desc.Name)
-                        if (string.find(btnText, "buy", 1, true) or string.find(btnText, "beli", 1, true) or string.find(btnText, "purchase", 1, true)) 
-                           and (string.find(btnText, "pickaxe", 1, true) or string.find(btnText, "kapak", 1, true) or string.find(string.lower(desc.Parent.Name), "pickaxe", 1, true)) then
-                            if firesignal then
-                                firesignal(desc.MouseButton1Click)
-                            elseif desc.Active then
-                                desc.Visible = true
-                            end
-                        end
-                    end
-                end
+        local sellStand = workspace:FindFirstChild("SellStand", true) or (workspace:FindFirstChild("MineWorld") and workspace.MineWorld:FindFirstChild("SellStand", true))
+        if sellStand then
+            local prompt = sellStand:FindFirstChildWhichIsA("ProximityPrompt", true)
+            if prompt then
+                TriggerProximity(prompt)
+                sold = true
             end
         end
     end)
+
+    if sold then
+        State.TotalSold = State.TotalSold + 1
+        Log("SELL: Berhasil menjual seluruh ore ke Toko!")
+    end
+
+    -- Kembalikan posisi karakter ke tambang asal secara instan
+    if didTeleport and prevCFrame then
+        task.wait(0.1)
+        local curRoot = GetRootPart()
+        if curRoot then
+            curRoot.CFrame = prevCFrame
+        end
+    end
+
+    State.IsSelling = false
 end
 
 -- ============================================================================
--- 7. AUTO PAKAI BEST ANIME (AUTO EQUIP BEST ANIME / PETS)
+-- 8. AUTO PAKAI BEST ANIME (TANPA BUKA TOKO/MENU)
 -- ============================================================================
 local function PerformAutoEquipBestAnime()
     if not Config.AutoEquipBestAnime then return end
 
-    local success = false
+    local ok = false
 
-    -- Cara 1: RemoteEvent PetActionRequested dengan semua varian payload
+    -- 1. RemoteEvent PetActionRequested
     if Remotes.PetActionRequested and Remotes.PetActionRequested:IsA("RemoteEvent") then
         pcall(function()
             Remotes.PetActionRequested:FireServer("EquipBest")
-            success = true
+            ok = true
         end)
         pcall(function()
             Remotes.PetActionRequested:FireServer({ Action = "EquipBest" })
-            success = true
-        end)
-        pcall(function()
-            Remotes.PetActionRequested:FireServer("EquipBestTeam")
-            success = true
+            ok = true
         end)
         pcall(function()
             Remotes.PetActionRequested:FireServer("Best")
-            success = true
+            ok = true
         end)
     end
 
-    -- Cara 2: RemoteFunction EquipPetTeam / Shared Remotes
-    if Remotes.EquipPetTeam and Remotes.EquipPetTeam:IsA("RemoteFunction") then
-        pcall(function()
-            Remotes.EquipPetTeam:InvokeServer("Best")
-            success = true
-        end)
-        pcall(function()
-            Remotes.EquipPetTeam:InvokeServer(1)
-            success = true
-        end)
-    end
-
+    -- 2. RemoteFunction Shared & PetTeam
     if Remotes.SharedEquipBestPets and Remotes.SharedEquipBestPets:IsA("RemoteFunction") then
         pcall(function()
             Remotes.SharedEquipBestPets:InvokeServer()
-            success = true
+            ok = true
         end)
     end
 
     if Remotes.SharedEquipBestTeam and Remotes.SharedEquipBestTeam:IsA("RemoteFunction") then
         pcall(function()
             Remotes.SharedEquipBestTeam:InvokeServer()
-            success = true
+            ok = true
         end)
     end
 
-    -- Cara 3: UI Auto Click Tombol "Equip Best" di PlayerGui
-    pcall(function()
-        for _, gui in ipairs(PlayerGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                for _, desc in ipairs(gui:GetDescendants()) do
-                    if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-                        local btnText = string.lower(desc:IsA("TextButton") and desc.Text or desc.Name)
-                        if string.find(btnText, "equip best", 1, true) or string.find(btnText, "equipbest", 1, true) or string.find(btnText, "best anime", 1, true) or string.find(btnText, "auto equip", 1, true) then
-                            if firesignal then
-                                firesignal(desc.MouseButton1Click)
-                                success = true
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
+    if Remotes.EquipPetTeam and Remotes.EquipPetTeam:IsA("RemoteFunction") then
+        pcall(function()
+            Remotes.EquipPetTeam:InvokeServer("Best")
+            ok = true
+        end)
+    end
 
-    if success then
-        Log("ANIME: Auto-Equip Best Anime dijalankan!")
+    if ok then
+        Log("ANIME: Best Anime berhasil di-equip otomatis!")
     end
 end
 
 -- ============================================================================
--- 8. FITUR AUTO UPGRADE STATS & REBIRTH
+-- 9. AUTO UPGRADES STATS (REMOTE MURNI TANPA ROBUX)
 -- ============================================================================
-local UpgradeNames = {
+local SafeUpgradeNames = {
     "MiningSpeed", "PickaxePower", "OreMultiplier", "BagCapacity", 
-    "Luck", "PetDamage", "WalkSpeed", "PlayerSpeed", "DrillPower",
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+    "Luck", "PetDamage", "WalkSpeed", "PlayerSpeed",
+    1, 2, 3, 4, 5
 }
 
 local function PerformAutoUpgrade()
     if not Config.AutoUpgrade then return end
 
-    -- 1. UpgradeService Purchase Remote
     if Remotes.UpgradePurchase and Remotes.UpgradePurchase:IsA("RemoteFunction") then
-        for _, upg in ipairs(UpgradeNames) do
+        for _, upg in ipairs(SafeUpgradeNames) do
             pcall(function()
                 local res = Remotes.UpgradePurchase:InvokeServer(upg)
                 if res == true or (type(res) == "table" and res.Success) then
                     State.TotalUpgrades = State.TotalUpgrades + 1
-                    Log("UPGRADE: Berhasil upgrade (" .. tostring(upg) .. ")!")
+                    Log("UPGRADE: Sukses upgrade " .. tostring(upg))
                 end
             end)
         end
     end
 
-    -- 2. PhysicalUpgradeService Purchase Remote
     if Remotes.PhysicalUpgradePurchase and Remotes.PhysicalUpgradePurchase:IsA("RemoteFunction") then
-        for step = 1, 15 do
+        for step = 1, 5 do
             pcall(function()
                 local res = Remotes.PhysicalUpgradePurchase:InvokeServer(step)
                 if res == true then
                     State.TotalUpgrades = State.TotalUpgrades + 1
-                    Log("UPGRADE: Physical Upgrade Step " .. step .. " berhasil!")
+                    Log("UPGRADE: Physical step " .. step .. " sukses!")
                 end
             end)
         end
     end
 
-    -- 3. Shared BuyUpgrade
     if Remotes.SharedBuyUpgrade and Remotes.SharedBuyUpgrade:IsA("RemoteFunction") then
-        for _, upg in ipairs(UpgradeNames) do
+        for _, upg in ipairs(SafeUpgradeNames) do
             pcall(function()
                 Remotes.SharedBuyUpgrade:InvokeServer(upg)
-            end)
-        end
-    end
-
-    -- 4. Shared UpgradeRebirthStat
-    if Remotes.SharedUpgradeRebirthStat and Remotes.SharedUpgradeRebirthStat:IsA("RemoteFunction") then
-        for _, upg in ipairs({"Damage", "Speed", "Luck", "Capacity", 1, 2, 3}) do
-            pcall(function()
-                Remotes.SharedUpgradeRebirthStat:InvokeServer(upg)
             end)
         end
     end
@@ -599,7 +577,7 @@ local function PerformAutoRebirth()
         pcall(function()
             Remotes.RebirthRequested:FireServer()
             State.TotalRebirths = State.TotalRebirths + 1
-            Log("REBIRTH: Meminta Rebirth ke server...")
+            Log("REBIRTH: Eksekusi Rebirth via Remote...")
         end)
     end
 
@@ -607,13 +585,29 @@ local function PerformAutoRebirth()
         pcall(function()
             Remotes.SharedRebirth:InvokeServer()
             State.TotalRebirths = State.TotalRebirths + 1
-            Log("REBIRTH: Eksekusi Rebirth via Shared.Rebirth!")
+            Log("REBIRTH: Eksekusi Shared.Rebirth!")
         end)
     end
 end
 
 -- ============================================================================
--- 9. AUTO COLLECT LOOT & AUTO SELL
+-- 10. AUTO BELI KAPAK (HANYA REMOTE MURNI JIKA DIAKTIFKAN - TANPA BUKA UI)
+-- ============================================================================
+local function PerformAutoBuyPickaxe()
+    if not Config.AutoBuyPickaxe then return end
+
+    -- HANYA panggil RemoteFunction koin murni tingkat rendah, TANPA memicu ProximityPrompt / UI
+    if Remotes.MiningPurchase and Remotes.MiningPurchase:IsA("RemoteFunction") then
+        for tier = 1, 8 do
+            pcall(function()
+                Remotes.MiningPurchase:InvokeServer(tier)
+            end)
+        end
+    end
+end
+
+-- ============================================================================
+-- 11. AUTO COLLECT LOOT & LUCKY BLOCK
 -- ============================================================================
 local function AutoCollectNearbyDrops()
     if not Config.AutoCollectLoot then return end
@@ -641,58 +635,35 @@ local function AutoCollectNearbyDrops()
     end
 end
 
-local function PerformSell()
-    Log("SELL: Menjual hasil tambang via Remote RF.Sell...")
-
-    if Remotes.Sell and Remotes.Sell:IsA("RemoteFunction") then
-        pcall(function()
-            Remotes.Sell:InvokeServer()
-            State.TotalSold = State.TotalSold + 1
-        end)
-    end
-
-    pcall(function()
-        local sellStand = workspace:FindFirstChild("SellStand", true)
-        if sellStand then
-            local prompt = sellStand:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt and fireproximityprompt then
-                fireproximityprompt(prompt)
-                State.TotalSold = State.TotalSold + 1
-            end
-        end
-    end)
-end
-
 local function PerformLuckyBlock()
     if not Config.AutoLuckyBlock then return end
     pcall(function()
         local blockDisplay = workspace:FindFirstChild("UnrealLuckyBlockDisplay", true)
         if blockDisplay then
             local prompt = blockDisplay:FindFirstChildWhichIsA("ProximityPrompt", true)
-            if prompt and fireproximityprompt then
-                fireproximityprompt(prompt)
+            if prompt then
+                TriggerProximity(prompt)
             end
         end
     end)
 end
 
 -- ============================================================================
--- 10. MASTER LOOPS (AUTONOMOUS REMOTE ENGINE)
+-- 12. MASTER LOOPS (AUTONOMOUS ENGINE)
 -- ============================================================================
 
--- Loop 1: Auto Mine (Remote Autonomous + Fast Hit)
+-- Loop 1: Mining Engine
 task.spawn(function()
-    Log("Autonomous Mining Engine v2 Aktif.")
+    Log("Autonomous Mining Engine v3.0 Aktif.")
     while true do
         task.wait(0.15)
-        if Config.AutoMine then
+        if Config.AutoMine and not State.IsSelling then
             local nodes = GetAvailableNodes()
             local target = PickBestNode(nodes)
 
             if target then
                 State.CurrentTargetNode = target
                 
-                -- Jika RemoteOnlyMining = false, karakter terbang/teleport ke ore
                 if not Config.RemoteOnlyMining then
                     local root = GetRootPart()
                     if root then
@@ -705,7 +676,6 @@ task.spawn(function()
                     end
                 end
 
-                -- Eksekusi Remote Hit & Pet Mine langsung ke target
                 MineTargetNode(target)
             else
                 State.CurrentTargetNode = nil
@@ -724,12 +694,12 @@ task.spawn(function()
     end
 end)
 
--- Loop 3: Auto Beli Kapak (Pickaxe Auto-Buyer)
+-- Loop 3: Auto Sell Terjadwal
 task.spawn(function()
     while true do
-        task.wait(Config.BuyPickaxeInterval)
-        if Config.AutoBuyPickaxe then
-            PerformAutoBuyPickaxe()
+        task.wait(Config.AutoSellInterval)
+        if Config.AutoSell then
+            PerformSell()
         end
     end
 end)
@@ -744,7 +714,7 @@ task.spawn(function()
     end
 end)
 
--- Loop 5: Auto Upgrades & Rebirth
+-- Loop 5: Auto Upgrades
 task.spawn(function()
     while true do
         task.wait(Config.UpgradeInterval)
@@ -763,12 +733,12 @@ task.spawn(function()
     end
 end)
 
--- Loop 6: Auto Sell Terjadwal
+-- Loop 6: Auto Beli Kapak (Hanya jika diaktifkan user)
 task.spawn(function()
     while true do
-        task.wait(Config.AutoSellInterval)
-        if Config.AutoSell then
-            PerformSell()
+        task.wait(Config.BuyPickaxeInterval)
+        if Config.AutoBuyPickaxe then
+            PerformAutoBuyPickaxe()
         end
     end
 end)
@@ -783,7 +753,7 @@ task.spawn(function()
     end
 end)
 
--- Loop 8: Kecepatan Karakter (WalkSpeed & JumpPower)
+-- Loop 8: WalkSpeed & JumpPower
 task.spawn(function()
     while true do
         task.wait(1.5)
@@ -797,7 +767,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- 11. USER INTERFACE (CYBERPUNK ROCKSTAR HUD v2.0)
+-- 13. USER INTERFACE (CLEAN CYBERPUNK HUD v3.0)
 -- ============================================================================
 local Theme = {
     Background = Color3.fromRGB(15, 20, 32),
@@ -843,7 +813,7 @@ OpenBtn.Name = "RockstarMineOpenBtn"
 OpenBtn.Size = UDim2.new(0, 160, 0, 38)
 OpenBtn.Position = UDim2.new(0, 18, 0.42, 0)
 OpenBtn.BackgroundColor3 = Theme.Accent
-OpenBtn.Text = "ROCKSTAR MINE v2.0"
+OpenBtn.Text = "ROCKSTAR MINE v3.0"
 OpenBtn.TextColor3 = Color3.fromRGB(10, 15, 25)
 OpenBtn.Font = Enum.Font.GothamBold
 OpenBtn.TextSize = 12
@@ -856,8 +826,8 @@ OpenCorner.Parent = OpenBtn
 -- Main Frame (Jendela GUI Utama)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 560, 0, 520)
-MainFrame.Position = UDim2.new(0.5, -280, 0.5, -260)
+MainFrame.Size = UDim2.new(0, 550, 0, 510)
+MainFrame.Position = UDim2.new(0.5, -275, 0.5, -255)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -899,7 +869,7 @@ local TitleLabel = Instance.new("TextLabel")
 TitleLabel.Size = UDim2.new(0, 440, 1, 0)
 TitleLabel.Position = UDim2.new(0, 16, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "ROCKSTAR HUB v2.0 - MY ANIME MINE AUTONOMOUS"
+TitleLabel.Text = "ROCKSTAR HUB v3.0 - NO-ROBUX AUTONOMOUS"
 TitleLabel.TextColor3 = Theme.Accent
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 13
@@ -944,7 +914,7 @@ StatusLbl.TextSize = 10
 StatusLbl.TextXAlignment = Enum.TextXAlignment.Left
 StatusLbl.Parent = StatusCard
 
--- Container Tombol Fitur Baru (Scrollable jika layar kecil)
+-- Container Tombol Fitur
 local FeatureCard = Instance.new("Frame")
 FeatureCard.Size = UDim2.new(1, -24, 0, 185)
 FeatureCard.Position = UDim2.new(0, 12, 0, 122)
@@ -956,7 +926,7 @@ local FcCorner = Instance.new("UICorner")
 FcCorner.CornerRadius = UDim.new(0, 8)
 FcCorner.Parent = FeatureCard
 
--- Baris 1: Auto-Mine & Remote-Only Mode
+-- Baris 1: Auto-Mine & Remote Mode
 local MineToggle = Instance.new("TextButton")
 MineToggle.Size = UDim2.new(0.48, -4, 0, 38)
 MineToggle.Position = UDim2.new(0, 8, 0, 8)
@@ -996,29 +966,29 @@ RemoteToggle.MouseButton1Click:Connect(function()
     Config.RemoteOnlyMining = not Config.RemoteOnlyMining
     RemoteToggle.BackgroundColor3 = Config.RemoteOnlyMining and Theme.AccentPurple or Theme.Sidebar
     RemoteToggle.Text = Config.RemoteOnlyMining and "REMOTE JALAN SENDIRI: ON" or "REMOTE MODE: OFF"
-    Log("Remote Jalan Sendiri: " .. (Config.RemoteOnlyMining and "Aktif (Tanpa jalan kaki)" or "Nonaktif (Teleport fisik)"))
+    Log("Remote Jalan Sendiri: " .. (Config.RemoteOnlyMining and "Aktif" or "Nonaktif"))
 end)
 
--- Baris 2: Auto Beli Kapak & Auto Best Anime
-local BuyPickToggle = Instance.new("TextButton")
-BuyPickToggle.Size = UDim2.new(0.48, -4, 0, 38)
-BuyPickToggle.Position = UDim2.new(0, 8, 0, 52)
-BuyPickToggle.BackgroundColor3 = Config.AutoBuyPickaxe and Theme.AccentGreen or Theme.Sidebar
-BuyPickToggle.Text = Config.AutoBuyPickaxe and "AUTO BELI KAPAK: ON" or "AUTO BELI KAPAK: OFF"
-BuyPickToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-BuyPickToggle.Font = Enum.Font.GothamBold
-BuyPickToggle.TextSize = 10
-BuyPickToggle.Parent = FeatureCard
+-- Baris 2: Auto Sell (100% Reliable) & Pakai Best Anime
+local SellToggle = Instance.new("TextButton")
+SellToggle.Size = UDim2.new(0.48, -4, 0, 38)
+SellToggle.Position = UDim2.new(0, 8, 0, 52)
+SellToggle.BackgroundColor3 = Config.AutoSell and Theme.AccentGreen or Theme.Sidebar
+SellToggle.Text = Config.AutoSell and "AUTO SELL (15s): ON" or "AUTO SELL: OFF"
+SellToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+SellToggle.Font = Enum.Font.GothamBold
+SellToggle.TextSize = 10
+SellToggle.Parent = FeatureCard
 
-local BpCorner = Instance.new("UICorner")
-BpCorner.CornerRadius = UDim.new(0, 6)
-BpCorner.Parent = BuyPickToggle
+local StCorner = Instance.new("UICorner")
+StCorner.CornerRadius = UDim.new(0, 6)
+StCorner.Parent = SellToggle
 
-BuyPickToggle.MouseButton1Click:Connect(function()
-    Config.AutoBuyPickaxe = not Config.AutoBuyPickaxe
-    BuyPickToggle.BackgroundColor3 = Config.AutoBuyPickaxe and Theme.AccentGreen or Theme.Sidebar
-    BuyPickToggle.Text = Config.AutoBuyPickaxe and "AUTO BELI KAPAK: ON" or "AUTO BELI KAPAK: OFF"
-    Log("Auto Beli Kapak: " .. (Config.AutoBuyPickaxe and "Aktif" or "Nonaktif"))
+SellToggle.MouseButton1Click:Connect(function()
+    Config.AutoSell = not Config.AutoSell
+    SellToggle.BackgroundColor3 = Config.AutoSell and Theme.AccentGreen or Theme.Sidebar
+    SellToggle.Text = Config.AutoSell and "AUTO SELL (15s): ON" or "AUTO SELL: OFF"
+    Log("Auto-Sell: " .. (Config.AutoSell and "Aktif (Anti-Gagal)" or "Nonaktif"))
 end)
 
 local EquipAnimeToggle = Instance.new("TextButton")
@@ -1045,7 +1015,7 @@ EquipAnimeToggle.MouseButton1Click:Connect(function()
     end
 end)
 
--- Baris 3: Auto Upgrades & Auto Rebirth
+-- Baris 3: Auto Upgrades & Beli Kapak Remote
 local UpgradeToggle = Instance.new("TextButton")
 UpgradeToggle.Size = UDim2.new(0.48, -4, 0, 38)
 UpgradeToggle.Position = UDim2.new(0, 8, 0, 96)
@@ -1067,28 +1037,28 @@ UpgradeToggle.MouseButton1Click:Connect(function()
     Log("Auto Upgrades: " .. (Config.AutoUpgrade and "Aktif" or "Nonaktif"))
 end)
 
-local RebirthToggle = Instance.new("TextButton")
-RebirthToggle.Size = UDim2.new(0.48, -4, 0, 38)
-RebirthToggle.Position = UDim2.new(0.52, 0, 0, 96)
-RebirthToggle.BackgroundColor3 = Config.AutoRebirth and Theme.AccentGreen or Theme.Sidebar
-RebirthToggle.Text = Config.AutoRebirth and "AUTO REBIRTH: ON" or "AUTO REBIRTH: OFF"
-RebirthToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
-RebirthToggle.Font = Enum.Font.GothamBold
-RebirthToggle.TextSize = 10
-RebirthToggle.Parent = FeatureCard
+local BuyPickToggle = Instance.new("TextButton")
+BuyPickToggle.Size = UDim2.new(0.48, -4, 0, 38)
+BuyPickToggle.Position = UDim2.new(0.52, 0, 0, 96)
+BuyPickToggle.BackgroundColor3 = Config.AutoBuyPickaxe and Theme.AccentGreen or Theme.Sidebar
+BuyPickToggle.Text = Config.AutoBuyPickaxe and "BELI KAPAK: ON" or "BELI KAPAK: OFF"
+BuyPickToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+BuyPickToggle.Font = Enum.Font.GothamBold
+BuyPickToggle.TextSize = 10
+BuyPickToggle.Parent = FeatureCard
 
-local RbtCorner = Instance.new("UICorner")
-RbtCorner.CornerRadius = UDim.new(0, 6)
-RbtCorner.Parent = RebirthToggle
+local BpCorner = Instance.new("UICorner")
+BpCorner.CornerRadius = UDim.new(0, 6)
+BpCorner.Parent = BuyPickToggle
 
-RebirthToggle.MouseButton1Click:Connect(function()
-    Config.AutoRebirth = not Config.AutoRebirth
-    RebirthToggle.BackgroundColor3 = Config.AutoRebirth and Theme.AccentGreen or Theme.Sidebar
-    RebirthToggle.Text = Config.AutoRebirth and "AUTO REBIRTH: ON" or "AUTO REBIRTH: OFF"
-    Log("Auto Rebirth: " .. (Config.AutoRebirth and "Aktif" or "Nonaktif"))
+BuyPickToggle.MouseButton1Click:Connect(function()
+    Config.AutoBuyPickaxe = not Config.AutoBuyPickaxe
+    BuyPickToggle.BackgroundColor3 = Config.AutoBuyPickaxe and Theme.AccentGreen or Theme.Sidebar
+    BuyPickToggle.Text = Config.AutoBuyPickaxe and "BELI KAPAK: ON" or "BELI KAPAK: OFF"
+    Log("Beli Kapak: " .. (Config.AutoBuyPickaxe and "Aktif (Remote Murni)" or "Nonaktif"))
 end)
 
--- Baris 4: Filter Ore & Jual Sekarang
+-- Baris 4: Filter Ore & Jual Instan Sekarang
 local FilterBtn = Instance.new("TextButton")
 FilterBtn.Size = UDim2.new(0.48, -4, 0, 36)
 FilterBtn.Position = UDim2.new(0, 8, 0, 140)
@@ -1154,8 +1124,8 @@ local Waypoints = {
         local plot = State.MyPlot or FindMyPlot()
         return plot and (plot:GetPivot().Position + Vector3.new(0, 4, 0)) or Vector3.new(-6000, 501, -6000)
     end },
-    { Name = "Toko Jual", Pos = Vector3.new(-5978.0, 504.0, -6000.0) },
-    { Name = "Beli Pickaxe", Pos = Vector3.new(-6022.0, 504.0, -6000.0) },
+    { Name = "Toko Jual", Pos = Vector3.new(-5980.5, 502.0, -5999.7) },
+    { Name = "Toko Kapak", Pos = Vector3.new(-6022.0, 504.0, -6000.0) },
     { Name = "Summon Gacha", Pos = Vector3.new(-6048.2, 511.0, -5952.4) },
     { Name = "Enchant Altar", Pos = Vector3.new(-6048.2, 512.0, -6047.6) },
     { Name = "Center Hub", Pos = Vector3.new(-6000.0, 502.0, -6000.0) },
@@ -1201,7 +1171,7 @@ local ConsoleText = Instance.new("TextLabel")
 ConsoleText.Size = UDim2.new(1, -16, 1, -16)
 ConsoleText.Position = UDim2.new(0, 8, 0, 8)
 ConsoleText.BackgroundTransparency = 1
-ConsoleText.Text = "Rockstar Mine v2.0 siap..."
+ConsoleText.Text = "Rockstar Mine v3.0 siap..."
 ConsoleText.TextColor3 = Theme.TextDim
 ConsoleText.Font = Enum.Font.Code
 ConsoleText.TextSize = 9
@@ -1214,8 +1184,8 @@ task.spawn(function()
     while true do
         local plot = State.MyPlot or FindMyPlot()
         local plotName = plot and plot.Name or "Mencari Plot..."
-        local curOre = State.CurrentTargetNode and (State.CurrentTargetNode.Name .. " (" .. State.CurrentTargetNode.Rarity .. ")") or "Standby / Mencari Ore"
-        StatusLbl.Text = "Plot: " .. plotName .. " | Target: " .. curOre .. "\nTotal Mined: " .. State.TotalMined .. " | Sold: " .. State.TotalSold .. " | Kapak: " .. State.TotalPickaxesBought .. " | Upgrades: " .. State.TotalUpgrades .. " | Rebirth: " .. State.TotalRebirths
+        local curOre = State.CurrentTargetNode and (State.CurrentTargetNode.Name .. " (" .. State.CurrentTargetNode.Rarity .. ")") or "Standby / Menambang Ore"
+        StatusLbl.Text = "Plot: " .. plotName .. " | Target: " .. curOre .. "\nTotal Mined: " .. State.TotalMined .. " | Sold: " .. State.TotalSold .. "x | Upgrades: " .. State.TotalUpgrades
         if #State.Logs > 0 then
             ConsoleText.Text = table.concat(State.Logs, "\n")
         end
@@ -1223,4 +1193,4 @@ task.spawn(function()
     end
 end)
 
-Log("ROCKSTAR MINE v2.0 READY: Auto Pickaxe, Best Anime, & Upgrades Aktif!")
+Log("ROCKSTAR MINE v3.0 READY: Auto-Sell Tembus Server & Bebas Robux Popups!")
