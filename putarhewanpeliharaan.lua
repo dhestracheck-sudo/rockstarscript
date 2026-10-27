@@ -1,12 +1,11 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v6.7 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
+-- ★ ROCKSTAR HUB v6.8 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
 -- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299)
--- Update v6.7:
---   [+] Fix Auto Buy & Equip Dadu Terbaik (Urutan Tier Benar + Filter ID Dadu Asli)
---   [+] Fix Auto Trait Terbaik & Grade Terbaik (Pakai PetUuid Podium + Stop Saat Dapat Trait Top)
---   [+] Pilihan Mode Target Trait (Top Tier / Semua Pet Kosong / Podium Tertentu)
+-- Update v6.8 (Full & Untruncated):
+--   [+] Fix Dadu Terbaik Berdasarkan LUCK ASLI (Bukan Jumlah Stok / Harga Cash)
+--   [+] Fitur "🚫 Skip Dadu Kekosongan (Void)" & Pemilih Dadu Manual (◀ / ▶)
+--   [+] Fix Auto Trait Terbaik & Grade Terbaik (Pakai PetUuid Podium + Stop Saat Top Trait)
 --   [+] Fix Auto Halloween Candy, Exact BuyUpgrade (Luck1..5, dll.) & Stage Menara
---   [+] Self-Learning Hook & Diagnostik Lengkap untuk BuyDice, EquipDice, RerollTrait, RollGrade
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -27,12 +26,18 @@ local LocalPlayer = Players.LocalPlayer
 -- 1. PENGATURAN & STATE GLOBAL
 -- ============================================================================
 local Config = {
-    -- Auto Roll & Pet
     AutoRoll = false,
     RollDelay = 0.15,
     AutoEquipBest = false,
     AutoFuse = false,
     AutoSellWeakest = false,
+
+    -- Auto Dadu Terbaik (Fix v6.8)
+    AutoBuyAndEquipDice = false,
+    DiceSelectMode = "HighestLuck", -- "HighestLuck" atau "Manual"
+    SelectedDiceIndex = 1,
+    SkipVoidDice = true,            -- Lewati Dadu Kekosongan (Void) jika ada dadu lebih bagus
+    AutoTeleportDiceShop = false,
 
     -- Auto Collect & Plot
     AutoCollectCash = false,
@@ -40,25 +45,23 @@ local Config = {
     AutoTreadmill = false,
     AutoWatchSkipAd = false,
 
-    -- Auto Peningkatan, Dadu & Trait Terbaik (v6.7 Fixed)
+    -- Auto Peningkatan, Trait & Grade Terbaik
     AutoUpgradePodium = false,
     AutoTeleportUpgrade = true,
     AutoBuyAllUpgrades = false,
     AutoBuyRebirthUpgrades = false,
-    AutoBuyAndEquipDice = false,
-    AutoTeleportDiceShop = false,  -- Mendekat ke DiceShopPad jika diperlukan server
     AutoRerollTrait = false,
-    TraitTargetMode = "BestOnly",  -- "BestOnly" (Berhenti di Trait Terbaik), "FillEmpty" (Hanya isi yang kosong), "Always" (Reroll terus)
+    TraitTargetMode = "BestOnly",   -- "BestOnly", "FillEmpty", "Always"
     AutoRollGrade = false,
-    GradeTargetMode = "BestOnly",  -- "BestOnly" (Berhenti di S / SS / SSS / X)
-    AutoTeleportTraitShop = false, -- Mendekat ke TraitShopPad / GradeShopPad saat reroll
+    GradeTargetMode = "BestOnly",
+    AutoTeleportTraitShop = false,
     AutoBuyCandyShop = false,
     AutoBuyQuestShop = false,
     AutoRebirth = false,
 
     -- Auto Menara & Pilih Stage
     AutoTower = false,
-    TowerStageMode = "Selected",   -- "Selected" atau "Highest"
+    TowerStageMode = "Selected",    -- "Selected" atau "Highest"
     SelectedStage = 1,
     HighestUnlockedStage = 1,
     AutoTeleportToTowerPad = true,
@@ -67,19 +70,17 @@ local Config = {
     AutoDeclineRevive = true,
     AutoEquipTowerTeam = true,
 
-    -- Auto Klaim & Event Halloween
+    -- Event & Utility
     AutoSpinWheel = false,
     AutoClaimRewards = false,
     AutoClaimCandy = false,
     AutoTeleportCandy = false,
-
-    -- Utility
     InstantPrompt = true,
     AntiAFK = true,
 }
 
 -- ============================================================================
--- 2. KONEKSI REMOTES & FILTER DATA REAL GAME
+-- 2. KONEKSI REMOTES & DATABASE FILTER
 -- ============================================================================
 local SharedFolder = ReplicatedStorage:WaitForChild("Shared", 15)
 local RemotesFolder = SharedFolder and SharedFolder:WaitForChild("Remotes", 15)
@@ -93,7 +94,6 @@ local function GetRemote(name)
 end
 
 local Remotes = {
-    -- Roll & Pets
     RequestRoll = GetRemote("RequestRoll"),
     EquipBestPets = GetRemote("EquipBestPets"),
     EquipBestTeam = GetRemote("EquipBestTeam"),
@@ -105,7 +105,6 @@ local Remotes = {
     PodiumAction = GetRemote("PodiumAction"),
     CashCollected = GetRemote("CashCollected"),
 
-    -- Upgrades, Dice, Traits & Shops
     BuyUpgrade = GetRemote("BuyUpgrade"),
     UpgradeRebirthStat = GetRemote("UpgradeRebirthStat"),
     Rebirth = GetRemote("Rebirth"),
@@ -117,7 +116,6 @@ local Remotes = {
     RerollTrait = GetRemote("RerollTrait"),
     RollGrade = GetRemote("RollGrade"),
 
-    -- Towers
     StartTower = GetRemote("StartTower"),
     LeaveTower = GetRemote("LeaveTower"),
     DeclineRevive = GetRemote("DeclineRevive"),
@@ -125,7 +123,6 @@ local Remotes = {
     SetTowerAutoRetry = GetRemote("SetTowerAutoRetry"),
     TowerEvent = GetRemote("TowerEvent"),
 
-    -- Claims & Data
     GetData = GetRemote("GetData"),
     DataChanged = GetRemote("DataChanged"),
     DataBatch = GetRemote("DataBatch"),
@@ -143,7 +140,6 @@ local Remotes = {
     WatchSkipAd = GetRemote("WatchSkipAd"),
 }
 
--- Daftar nama komponen UI / Method yang DILARANG masuk ke daftar ID Dadu / Upgrade / Trait
 local BlacklistedNames = {
     IsAutoClimbing = true, ShowUnit = true, ScaleTween = true, OnRevive = true,
     RenderRetry = true, SetHidden = true, GetProfile = true, DeclineRevive = true,
@@ -159,7 +155,6 @@ local BlacklistedNames = {
     ScrollingFrame = true, Frame = true, TextLabel = true, ImageLabel = true,
 }
 
--- Daftar Kata Kunci Trait Terbaik (Top-Tier) & Grade Terbaik
 local BestTraitKeywords = {
     "glitched", "divine", "celestial", "mythic", "mythical", "godly", "secret",
     "rainbow", "void", "immortal", "transcendent", "cosmic", "supreme", "omni",
@@ -188,19 +183,17 @@ local DiscoveredData = {
         "RollSpeed1", "RollSpeed2", "MutationLuck1", "MutationLuck2",
         "Luck", "Cash", "RollSpeed", "Inventory", "Damage", "Candy",
     },
-    -- Hanya diisi oleh ID Dadu yang TERVERIFIKASI dari ModuleScript / GetData / UI DiceShop / Self-Learning
-    VerifiedDice = {},       -- Array terurut dari Tier Terendah -> Tier Tertinggi
-    DiceOrderMap = {},       -- [diceId] = bobot urutan (semakin besar = semakin bagus)
-    OwnedDiceMap = {},       -- [diceId] = true/jumlah dari GetData()
+    VerifiedDice = {},       -- Terurut dari Luck Terendah -> Luck Tertinggi
+    DiceLuckMap = {},        -- [diceId] = Skor Luck Asli
+    OwnedDiceCount = {},     -- [diceId] = Jumlah stok di tas pemain
     CurrentEquippedDice = nil,
-    LearnedDiceArgs = {},    -- Argumen BuyDice/EquipDice yang terekam dari klik manual
+    LearnedDiceArgs = {},
 
-    -- Data Trait & Grade
-    DiscoveredTraits = {},   -- Daftar nama Trait dari ModuleScript
-    TopTraitsMap = {},       -- [traitNameLower] = true (Trait kasta tertinggi dari ModuleScript)
-    LearnedTraitArgs = {},   -- Argumen RerollTrait yang terekam dari klik manual
-    LearnedGradeArgs = {},   -- Argumen RollGrade yang terekam dari klik manual
-    InventoryPetUuids = {},  -- Daftar UUID pet dari GetData()
+    DiscoveredTraits = {},
+    TopTraitsMap = {},
+    LearnedTraitArgs = {},
+    LearnedGradeArgs = {},
+    InventoryPetUuids = {},
 
     CandyShopItems = {
         "HauntedCrate", "PumpkinDice", "HalloweenDice", "CandyLuck1", "CandyLuck2",
@@ -212,7 +205,6 @@ local DiscoveredData = {
     ValidCandyTokens = {},
 }
 
--- Sistem Log Self-Learning v6.7
 local LearningLogs = {}
 local function AddLearningLog(remoteName, arg1, arg2, arg3)
     local timeStr = os.date("%H:%M:%S")
@@ -221,17 +213,14 @@ local function AddLearningLog(remoteName, arg1, arg2, arg3)
         if existing:sub(12) == line:sub(12) then return end
     end
     table.insert(LearningLogs, 1, line)
-    if #LearningLogs > 50 then
-        table.remove(LearningLogs)
-    end
+    if #LearningLogs > 45 then table.remove(LearningLogs) end
 end
 
 local function IsValidKey(key)
     if key == nil then return false end
     if type(key) == "function" or type(key) == "userdata" or type(key) == "table" then return false end
     local str = tostring(key)
-    if #str == 0 or #str > 45 then return false end
-    if BlacklistedNames[str] then return false end
+    if #str == 0 or #str > 45 or BlacklistedNames[str] then return false end
     if str == "__index" or str == "RBX_ReimportId" or str == "OwnerUserId" then return false end
     return true
 end
@@ -244,26 +233,65 @@ local function AddUniqueKey(list, key)
     table.insert(list, key)
 end
 
--- Menambahkan Dadu Terverifikasi beserta bobot Tier/Harga agar selalu terurut dari Terendah ke Tertinggi
-local function RegisterVerifiedDice(diceId, weight)
+local function IsVoidDice(diceId)
+    local low = tostring(diceId or ""):lower()
+    return low:find("void") ~= nil or low:find("kekosongan") ~= nil
+end
+
+-- Skor kata kunci kasta dadu (Void = 110, dadu kasta atas/event = 250 s/d 950)
+local function GetKeywordDiceScore(diceId)
+    local low = tostring(diceId or ""):lower()
+    if low:find("basic") or low:find("starter") or low:find("normal") or low:find("wood") then return 10 end
+    if low:find("stone") or low:find("iron") or low:find("bronze") or low:find("silver") then return 25 end
+    if low:find("gold") and not low:find("god") then return 45 end
+    if low:find("emerald") or low:find("ruby") or low:find("sapphire") or low:find("diamond") then return 70 end
+    if low:find("obsidian") or low:find("dark") or low:find("shadow") then return 90 end
+    if low:find("void") or low:find("kekosongan") then return 110 end
+    if low:find("galaxy") or low:find("plasma") or low:find("star") or low:find("lava") then return 240 end
+    if low:find("mythic") or low:find("rainbow") or low:find("prismatic") or low:find("chromatic") then return 350 end
+    if low:find("pumpkin") or low:find("candy") or low:find("spooky") or low:find("haunted") or low:find("halloween") or low:find("reaper") then return 480 end
+    if low:find("cosmic") or low:find("nebula") or low:find("astral") or low:find("celestial") then return 650 end
+    if low:find("divine") or low:find("godly") or low:find("immortal") or low:find("supreme") then return 820 end
+    if low:find("glitch") or low:find("chaos") or low:find("infinity") or low:find("omega") or low:find("secret") or low:find("titanic") then return 960 end
+    return 160
+end
+
+-- Pendaftaran Dadu Berdasarkan LUCK ASLI (Bukan Jumlah Stok & Bukan Harga Cash Semata!)
+local function RegisterVerifiedDice(diceId, luckVal, orderVal)
     if not IsValidKey(diceId) then return end
-    local numWeight = tonumber(weight) or (#DiscoveredData.VerifiedDice + 1)
-    if not DiscoveredData.DiceOrderMap[diceId] or numWeight > DiscoveredData.DiceOrderMap[diceId] then
-        DiscoveredData.DiceOrderMap[diceId] = numWeight
+    if tostring(diceId):match("^GoldenDice%d+$") then return end
+
+    local kwScore = GetKeywordDiceScore(diceId)
+    local lNum = tonumber(luckVal)
+    local oNum = tonumber(orderVal)
+
+    local finalScore = kwScore
+    if lNum and lNum > 0 then
+        -- Nilai Luck asli dari ModuleScript menjadi faktor utama
+        finalScore = (lNum * 100000) + kwScore
+    elseif oNum and oNum > 0 then
+        finalScore = (oNum * 500) + kwScore
     end
-    local found = false
+
+    local oldScore = DiscoveredData.DiceLuckMap[diceId]
+    if not oldScore or finalScore > oldScore then
+        DiscoveredData.DiceLuckMap[diceId] = finalScore
+    end
+
+    local exists = false
     for _, d in ipairs(DiscoveredData.VerifiedDice) do
-        if d == diceId then found = true break end
+        if d == diceId then exists = true break end
     end
-    if not found then
+    if not exists then
         table.insert(DiscoveredData.VerifiedDice, diceId)
     end
+
     table.sort(DiscoveredData.VerifiedDice, function(a, b)
-        return (DiscoveredData.DiceOrderMap[a] or 0) < (DiscoveredData.DiceOrderMap[b] or 0)
+        return (DiscoveredData.DiceLuckMap[a] or 0) < (DiscoveredData.DiceLuckMap[b] or 0)
     end)
 end
 
--- Hook Self-Learning (__namecall) Lengkap (Termasuk BuyDice, EquipDice, RerollTrait, RollGrade!)
+-- Hook Self-Learning (__namecall)
 if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" then
     pcall(function()
         local oldNamecall
@@ -273,21 +301,17 @@ if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "functi
                 local rName = self.Name
                 local a1, a2, a3 = ...
                 if rName == "BuyDice" and a1 ~= nil then
-                    RegisterVerifiedDice(a1, 999)
+                    RegisterVerifiedDice(a1, nil, nil)
                     table.insert(DiscoveredData.LearnedDiceArgs, {a1, a2})
                     AddLearningLog("BuyDice", a1, a2, a3)
                 elseif rName == "EquipDice" and a1 ~= nil then
-                    RegisterVerifiedDice(a1, 999)
+                    RegisterVerifiedDice(a1, nil, nil)
                     AddLearningLog("EquipDice", a1, a2, a3)
                 elseif rName == "RerollTrait" then
-                    if a1 ~= nil then
-                        table.insert(DiscoveredData.LearnedTraitArgs, {a1, a2, a3})
-                    end
+                    if a1 ~= nil then table.insert(DiscoveredData.LearnedTraitArgs, {a1, a2, a3}) end
                     AddLearningLog("RerollTrait", a1, a2, a3)
                 elseif rName == "RollGrade" then
-                    if a1 ~= nil then
-                        table.insert(DiscoveredData.LearnedGradeArgs, {a1, a2, a3})
-                    end
+                    if a1 ~= nil then table.insert(DiscoveredData.LearnedGradeArgs, {a1, a2, a3}) end
                     AddLearningLog("RollGrade", a1, a2, a3)
                 elseif rName == "BuyUpgrade" and IsValidKey(a1) then
                     AddUniqueKey(DiscoveredData.Upgrades, a1)
@@ -313,57 +337,103 @@ if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "functi
 end
 
 -- ============================================================================
--- 3. PEMINDAI CERDAS DADU, TRAIT, GRADE & UPGRADE (v6.7)
+-- 3. PEMINDAI CERDAS DADU (LUCK ASLI), TRAIT, GRADE & UPGRADE (v6.8)
 -- ============================================================================
 local function RefreshGameKnowledge()
-    -- A. Baca Data Pemain Langsung dari GetData:InvokeServer()
+    -- 1. Pindai ModuleScript di ReplicatedStorage.Shared untuk mengambil LUCK ASLI setiap Dadu
+    if SharedFolder then
+        for _, inst in ipairs(SharedFolder:GetDescendants()) do
+            if inst:IsA("ModuleScript") then
+                local mName = inst.Name:lower()
+                if not mName:find("controller") and not mName:find("client") and not mName:find("renderer") and not mName:find("ui") then
+                    local ok, mod = pcall(require, inst)
+                    if ok and type(mod) == "table" then
+                        local function inspectConfigTable(tbl, depth, contextHint)
+                            if depth > 3 then return end
+                            for k, v in pairs(tbl) do
+                                if type(v) == "table" then
+                                    local keyStr = tostring(k)
+                                    local lowKey = keyStr:lower()
+                                    local hint = contextHint or mName
+
+                                    local itemId = v.Id or v.ID or v.Key or v.DiceId or v.TraitId or v.UpgradeId or (type(k) == "string" and k)
+                                    local luckVal = v.Luck or v.LuckMultiplier or v.RollLuck or v.BonusLuck or v.Multiplier or v.Boost or v.Power
+                                    local orderVal = v.LayoutOrder or v.Order or v.Tier or v.Rank or v.Index or (type(k) == "number" and k)
+
+                                    if hint:find("dice") or lowKey:find("dice") or v.DiceId or (luckVal and (v.Price or v.Cost) and not hint:find("upgrade")) then
+                                        if itemId and IsValidKey(itemId) then
+                                            RegisterVerifiedDice(itemId, luckVal, orderVal)
+                                        end
+                                    elseif hint:find("trait") or lowKey:find("trait") or v.TraitId then
+                                        if itemId and IsValidKey(itemId) then
+                                            AddUniqueKey(DiscoveredData.DiscoveredTraits, itemId)
+                                            local chance = tonumber(v.Chance or v.Weight or v.Probability)
+                                            local mult = tonumber(v.Multiplier or v.Boost or v.CashMultiplier or v.Power)
+                                            if (chance and chance <= 5) or (mult and mult >= 3) then
+                                                DiscoveredData.TopTraitsMap[tostring(itemId):lower()] = true
+                                            end
+                                        end
+                                    elseif hint:find("upgrade") and not hint:find("rebirth") then
+                                        if itemId and IsValidKey(itemId) then AddUniqueKey(DiscoveredData.Upgrades, itemId) end
+                                    elseif hint:find("rebirth") then
+                                        if itemId and IsValidKey(itemId) then AddUniqueKey(DiscoveredData.RebirthStats, itemId) end
+                                    elseif hint:find("candy") then
+                                        if itemId and IsValidKey(itemId) then AddUniqueKey(DiscoveredData.CandyShopItems, itemId) end
+                                    end
+
+                                    local nextHint = hint
+                                    if lowKey:find("dice") or lowKey:find("trait") or lowKey:find("grade") or lowKey:find("upgrade") or lowKey:find("candy") then
+                                        nextHint = lowKey
+                                    end
+                                    inspectConfigTable(v, depth + 1, nextHint)
+                                end
+                            end
+                        end
+                        inspectConfigTable(mod, 1, mName)
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2. Baca Data Pemain dari GetData:InvokeServer() (Simpan Jumlah Stok Tanpa Mengacaukan Urutan Luck!)
     if Remotes.GetData then
-        local ok, pData = pcall(function()
-            return Remotes.GetData:InvokeServer()
-        end)
+        local ok, pData = pcall(function() return Remotes.GetData:InvokeServer() end)
         if ok and type(pData) == "table" then
             for k, v in pairs(pData) do
                 local lowerK = tostring(k):lower()
-
-                -- Deteksi Dadu yang sedang dipakai pemain
                 if (lowerK:find("equippeddice") or lowerK:find("currentdice") or lowerK:find("selecteddice") or lowerK == "dice") and (type(v) == "string" or type(v) == "number") then
                     DiscoveredData.CurrentEquippedDice = v
-                    RegisterVerifiedDice(v, 100)
+                    RegisterVerifiedDice(v, nil, nil)
                 end
-
-                -- Deteksi Stage Menara tertinggi
                 if type(v) == "number" and (lowerK:find("tower") or lowerK:find("stage") or lowerK:find("floor")) then
                     if v >= 1 and v <= 1000 and v > Config.HighestUnlockedStage then
                         Config.HighestUnlockedStage = math.floor(v)
                     end
                 elseif type(v) == "table" then
-                    -- Tabel Dadu milik pemain (OwnedDice / Dices / DiceInventory)
                     if lowerK:find("dice") then
                         for dk, dv in pairs(v) do
-                            if type(dk) == "string" and not BlacklistedNames[dk] then
-                                RegisterVerifiedDice(dk, tonumber(dv) or 50)
-                                if dv ~= false and dv ~= 0 then
-                                    DiscoveredData.OwnedDiceMap[dk] = true
-                                end
-                            elseif type(dv) == "string" and not BlacklistedNames[dv] then
-                                RegisterVerifiedDice(dv, tonumber(dk) or 50)
-                                DiscoveredData.OwnedDiceMap[dv] = true
+                            if type(dk) == "string" and IsValidKey(dk) then
+                                -- PENTING: Jangan masukkan dv (jumlah stok) ke parameter luckVal!
+                                RegisterVerifiedDice(dk, nil, nil)
+                                local qty = (type(dv) == "number" and dv) or (dv == true and 1) or 0
+                                DiscoveredData.OwnedDiceCount[dk] = qty
+                            elseif type(dv) == "string" and IsValidKey(dv) then
+                                RegisterVerifiedDice(dv, nil, nil)
+                                DiscoveredData.OwnedDiceCount[dv] = 1
                             elseif type(dv) == "table" then
                                 local dId = dv.Id or dv.ID or dv.DiceId or dv.Name or (type(dk) == "string" and dk)
-                                if dId then
-                                    RegisterVerifiedDice(dId, dv.Price or dv.Cost or dv.Order or 50)
-                                    DiscoveredData.OwnedDiceMap[dId] = true
+                                if dId and IsValidKey(dId) then
+                                    RegisterVerifiedDice(dId, dv.Luck, dv.Order)
+                                    DiscoveredData.OwnedDiceCount[dId] = tonumber(dv.Amount or dv.Count or dv.Quantity) or 1
                                 end
                             end
                         end
-                    -- Tabel Pet di Inventori Pemain (Untuk mengambil PetUuid)
                     elseif lowerK:find("pet") or lowerK:find("inventory") then
                         for pk, pv in pairs(v) do
                             if type(pv) == "table" then
                                 local uuid = pv.UUID or pv.Uuid or pv.Id or pv.ID or (type(pk) == "string" and #pk >= 8 and pk)
-                                if uuid and IsValidKey(uuid) then
-                                    AddUniqueKey(DiscoveredData.InventoryPetUuids, uuid)
-                                end
+                                if uuid and IsValidKey(uuid) then AddUniqueKey(DiscoveredData.InventoryPetUuids, uuid) end
                             elseif type(pk) == "string" and #pk >= 12 then
                                 AddUniqueKey(DiscoveredData.InventoryPetUuids, pk)
                             end
@@ -386,88 +456,15 @@ local function RefreshGameKnowledge()
         end
     end
 
-    -- B. Pindai Mendalam Seluruh ModuleScript Data di ReplicatedStorage.Shared
-    if SharedFolder then
-        for _, inst in ipairs(SharedFolder:GetDescendants()) do
-            if inst:IsA("ModuleScript") then
-                local mName = inst.Name:lower()
-                if not mName:find("controller") and not mName:find("client") and not mName:find("renderer") and not mName:find("ui") then
-                    local ok, mod = pcall(require, inst)
-                    if ok and type(mod) == "table" then
-                        local function inspectConfigTable(tbl, depth, contextHint)
-                            if depth > 3 then return end
-                            for k, v in pairs(tbl) do
-                                if type(v) == "table" then
-                                    local keyStr = tostring(k)
-                                    local lowKey = keyStr:lower()
-                                    local hint = contextHint or mName
-
-                                    local itemId = v.Id or v.ID or v.Key or v.DiceId or v.TraitId or v.UpgradeId or (type(k) == "string" and k)
-                                    local weight = tonumber(v.Price or v.Cost or v.Order or v.LayoutOrder or v.Tier or v.Luck or v.Multiplier or v.Chance) or (type(k) == "number" and k) or 10
-
-                                    -- 1. Deteksi Config Dadu (Dice)
-                                    if hint:find("dice") or lowKey:find("dice") or v.DiceId or (v.Luck and v.Price and not hint:find("upgrade")) then
-                                        if itemId and IsValidKey(itemId) and not tostring(itemId):find("GoldenDice%d") then
-                                            RegisterVerifiedDice(itemId, weight)
-                                        end
-                                    -- 2. Deteksi Config Trait
-                                    elseif hint:find("trait") or lowKey:find("trait") or v.TraitId then
-                                        if itemId and IsValidKey(itemId) then
-                                            AddUniqueKey(DiscoveredData.DiscoveredTraits, itemId)
-                                            -- Jika Chance sangat kecil (< 5%) atau Multiplier tinggi (>= 3), tandai sebagai Top Trait!
-                                            local chance = tonumber(v.Chance or v.Weight or v.Probability)
-                                            local mult = tonumber(v.Multiplier or v.Boost or v.CashMultiplier or v.Power)
-                                            if (chance and chance <= 5) or (mult and mult >= 3) then
-                                                DiscoveredData.TopTraitsMap[tostring(itemId):lower()] = true
-                                            end
-                                        end
-                                    -- 3. Deteksi Config Upgrade
-                                    elseif hint:find("upgrade") and not hint:find("rebirth") then
-                                        if itemId and IsValidKey(itemId) then
-                                            AddUniqueKey(DiscoveredData.Upgrades, itemId)
-                                        end
-                                    -- 4. Deteksi Config Rebirth
-                                    elseif hint:find("rebirth") then
-                                        if itemId and IsValidKey(itemId) then
-                                            AddUniqueKey(DiscoveredData.RebirthStats, itemId)
-                                        end
-                                    -- 5. Deteksi Config CandyShop
-                                    elseif hint:find("candy") then
-                                        if itemId and IsValidKey(itemId) then
-                                            AddUniqueKey(DiscoveredData.CandyShopItems, itemId)
-                                        end
-                                    end
-
-                                    local nextHint = hint
-                                    if lowKey:find("dice") or lowKey:find("trait") or lowKey:find("grade") or lowKey:find("upgrade") or lowKey:find("candy") then
-                                        nextHint = lowKey
-                                    end
-                                    inspectConfigTable(v, depth + 1, nextHint)
-                                end
-                            end
-                        end
-                        inspectConfigTable(mod, 1, mName)
-                    end
-                end
-            end
-        end
-    end
-
-    -- C. Pindai Frame Item di PlayerGui.DiceShop (Mengambil Atribut ID & Urutan LayoutOrder)
+    -- 3. Pindai Frame Item di PlayerGui.DiceShop
     local pGui = LocalPlayer:FindFirstChild("PlayerGui")
     if pGui then
         for _, guiObj in ipairs(pGui:GetDescendants()) do
             if guiObj:IsA("GuiObject") then
                 local attrDice = guiObj:GetAttribute("DiceId") or guiObj:GetAttribute("Dice")
+                local attrLuck = guiObj:GetAttribute("Luck") or guiObj:GetAttribute("Multiplier")
                 if attrDice and IsValidKey(attrDice) then
-                    RegisterVerifiedDice(attrDice, guiObj.LayoutOrder > 0 and guiObj.LayoutOrder or 50)
-                end
-                local pName = guiObj.Parent and guiObj.Parent.Name:lower() or ""
-                if (pName:find("diceshop") or pName:find("dicelist") or pName:find("dicecontainer")) and IsValidKey(guiObj.Name) then
-                    local attrId = guiObj:GetAttribute("Id") or guiObj:GetAttribute("ItemId") or guiObj.Name
-                    if IsValidKey(attrId) then
-                        RegisterVerifiedDice(attrId, guiObj.LayoutOrder > 0 and guiObj.LayoutOrder or 25)
-                    end
+                    RegisterVerifiedDice(attrDice, attrLuck, guiObj.LayoutOrder > 0 and guiObj.LayoutOrder or nil)
                 end
             end
         end
@@ -479,20 +476,14 @@ task.spawn(RefreshGameKnowledge)
 -- ============================================================================
 -- 4. FUNGSI HELPER PLOT, PODIUM, PROMPT & UI SIGNAL
 -- ============================================================================
-local function GetCharacter()
-    return LocalPlayer.Character
-end
-
 local function GetHRP()
-    local char = GetCharacter()
+    local char = LocalPlayer.Character
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
 local function SafeTeleport(targetCFrame)
     local hrp = GetHRP()
-    if hrp and targetCFrame then
-        hrp.CFrame = targetCFrame
-    end
+    if hrp and targetCFrame then hrp.CFrame = targetCFrame end
 end
 
 local CachedMyPlot = nil
@@ -519,7 +510,6 @@ end
 local function GetMyPodiums()
     local plot = GetMyPlot()
     if not plot then return {} end
-
     local podiums = {}
     local f1 = plot:FindFirstChild("Podiums")
     if f1 then
@@ -527,7 +517,6 @@ local function GetMyPodiums()
             if p:IsA("Model") then table.insert(podiums, p) end
         end
     end
-
     local floor2 = plot:FindFirstChild("Floor2")
     local f2 = floor2 and floor2:FindFirstChild("Podiums")
     if f2 then
@@ -535,11 +524,9 @@ local function GetMyPodiums()
             if p:IsA("Model") then table.insert(podiums, p) end
         end
     end
-
     table.sort(podiums, function(a, b)
         return (tonumber(a:GetAttribute("Slot")) or 99) < (tonumber(b:GetAttribute("Slot")) or 99)
     end)
-
     return podiums
 end
 
@@ -577,26 +564,39 @@ local function FireGuiButton(btn)
     end
     if typeof(getconnections) == "function" then
         pcall(function()
-            for _, conn in ipairs(getconnections(btn.Activated)) do
-                conn:Fire()
-                fired = true
-            end
-            for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do
-                conn:Fire()
-                fired = true
-            end
+            for _, conn in ipairs(getconnections(btn.Activated)) do conn:Fire() fired = true end
+            for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do conn:Fire() fired = true end
         end)
     end
     return fired
 end
 
 -- ============================================================================
--- 5. SISTEM AUTO BELI DADU TERBAIK & AUTO TRAIT/GRADE TERBAIK (v6.7 FIXED)
+-- 5. SISTEM AUTO BELI & PASANG DADU TERBAIK (v6.8 LUCK-BASED + SKIP VOID)
 -- ============================================================================
+local function GetTargetBestDice()
+    local list = DiscoveredData.VerifiedDice
+    if #list == 0 then return nil end
 
--- A. Fungsi Auto Buy & Equip Dadu Terbaik (Urutan Benar + Tanpa Downgrade ke Basic!)
+    if Config.DiceSelectMode == "Manual" then
+        local idx = math.clamp(Config.SelectedDiceIndex, 1, #list)
+        return list[idx]
+    end
+
+    -- Cari dari skor Luck tertinggi ke bawah yang stoknya > 0 dan lewati Void jika SkipVoidDice aktif
+    for i = #list, 1, -1 do
+        local dId = list[i]
+        local isSkippedVoid = Config.SkipVoidDice and IsVoidDice(dId)
+        local ownedQty = DiscoveredData.OwnedDiceCount[dId]
+        if not isSkippedVoid and (ownedQty == nil or ownedQty > 0) then
+            return dId
+        end
+    end
+
+    return list[#list]
+end
+
 local function RunAutoBuyAndEquipDice()
-    -- 1. Jika opsi teleport ke DiceShopPad aktif, dekati & buka StandDiceShop
     if Config.AutoTeleportDiceShop then
         local modelFolder = Workspace:FindFirstChild("Model")
         local dicePad = modelFolder and modelFolder:FindFirstChild("DiceShopPad") or Workspace:FindFirstChild("DiceShopPad", true)
@@ -612,101 +612,77 @@ local function RunAutoBuyAndEquipDice()
         end
     end
 
-    -- 2. Jika ada argumen BuyDice yang sudah dipelajari dari klik manual pemain, jalankan dulu
-    if Remotes.BuyDice and #DiscoveredData.LearnedDiceArgs > 0 then
-        for _, args in ipairs(DiscoveredData.LearnedDiceArgs) do
-            pcall(function()
-                if args[2] ~= nil then
-                    Remotes.BuyDice:InvokeServer(args[1], args[2])
-                else
-                    Remotes.BuyDice:InvokeServer(args[1])
-                end
-            end)
+    local list = DiscoveredData.VerifiedDice
+    if #list == 0 then return end
+
+    -- Jika Mode = Manual (Kunci 1 Dadu Pilihan Pemain)
+    if Config.DiceSelectMode == "Manual" then
+        local chosen = GetTargetBestDice()
+        if chosen and IsValidKey(chosen) then
+            if Remotes.BuyDice then pcall(function() Remotes.BuyDice:InvokeServer(chosen) end) end
+            if Remotes.EquipDice then pcall(function() Remotes.EquipDice:InvokeServer(chosen) end) end
         end
+        return
     end
 
-    -- 3. Beli Dadu Terverifikasi dari urutan Terendah -> Tertinggi
-    if Remotes.BuyDice and #DiscoveredData.VerifiedDice > 0 then
-        for i = 1, #DiscoveredData.VerifiedDice do
-            local diceId = DiscoveredData.VerifiedDice[i]
-            if IsValidKey(diceId) then
-                local ok, res = pcall(function()
-                    return Remotes.BuyDice:InvokeServer(diceId)
-                end)
+    -- Mode = HighestLuck (Beli dari Luck tertinggi & Pasang dadu terbaik tanpa Basic/Void)
+    if Remotes.BuyDice then
+        for i = #list, 2, -1 do
+            local diceId = list[i]
+            if IsValidKey(diceId) and not (Config.SkipVoidDice and IsVoidDice(diceId)) then
+                local ok, res = pcall(function() return Remotes.BuyDice:InvokeServer(diceId) end)
                 if ok and res == true then
-                    DiscoveredData.OwnedDiceMap[diceId] = true
+                    DiscoveredData.OwnedDiceCount[diceId] = (DiscoveredData.OwnedDiceCount[diceId] or 0) + 1
                 end
                 task.wait(0.02)
             end
         end
     end
 
-    -- 4. Pasang (Equip) Dadu dari urutan TERENDAH ke TERTINGGI
-    -- PENTING: Karena berjalan dari 1 ke #VerifiedDice, panggilan terakhir yang sukses adalah DADU TERTINGGI!
-    if Remotes.EquipDice and #DiscoveredData.VerifiedDice > 0 then
-        for i = 1, #DiscoveredData.VerifiedDice do
-            local diceId = DiscoveredData.VerifiedDice[i]
-            -- Lewati dadu pertama (Basic) jika ada lebih dari 1 dadu supaya tidak pernah balik ke Basic!
-            if i > 1 or #DiscoveredData.VerifiedDice == 1 then
-                if IsValidKey(diceId) then
-                    pcall(function()
-                        Remotes.EquipDice:InvokeServer(diceId)
-                    end)
-                    task.wait(0.02)
-                end
+    if Remotes.EquipDice then
+        -- Urutkan dari bawah ke atas, LEWATI Basic (indeks 1) dan LEWATI Void jika SkipVoidDice aktif!
+        for i = 2, #list do
+            local diceId = list[i]
+            local isSkippedVoid = Config.SkipVoidDice and IsVoidDice(diceId)
+            local ownedQty = DiscoveredData.OwnedDiceCount[diceId]
+            if not isSkippedVoid and (ownedQty == nil or ownedQty > 0) then
+                pcall(function() Remotes.EquipDice:InvokeServer(diceId) end)
+                task.wait(0.02)
             end
         end
-    end
-
-    -- 5. Jika GUI Dice Shop sedang terbuka di layar, bantu klik tombol Buy / Equip pada item urutan paling bawah (terbaik)
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if pGui then
-        for _, guiObj in ipairs(pGui:GetDescendants()) do
-            if (guiObj:IsA("TextButton") or guiObj:IsA("ImageButton")) and guiObj.Visible then
-                local fullPath = guiObj:GetFullName():lower()
-                if fullPath:find("dice") and not fullPath:find("robux") then
-                    local bName = guiObj.Name:lower()
-                    local bText = guiObj:IsA("TextButton") and (guiObj.Text or ""):lower() or ""
-                    if bName:find("buy") or bText:find("buy") or bText:find("beli") then
-                        FireGuiButton(guiObj)
-                    end
-                end
-            end
+        -- Pastikan target dengan Luck paling tinggi dipasang di paling akhir
+        local bestTarget = GetTargetBestDice()
+        if bestTarget and not (Config.SkipVoidDice and IsVoidDice(bestTarget)) then
+            pcall(function() Remotes.EquipDice:InvokeServer(bestTarget) end)
         end
     end
 end
 
--- B. Mengecek Apakah Suatu Trait Termasuk Trait Terbaik (Top-Tier)
+-- ============================================================================
+-- 6. SISTEM AUTO TRAIT TERBAIK, GRADE & PENINGKATAN
+-- ============================================================================
 local function IsBestTrait(traitStr)
     if not traitStr or type(traitStr) ~= "string" then return false end
     local clean = traitStr:lower():gsub("%s+", "")
     if clean == "" or clean == "none" or clean == "nil" or clean == "normal" or clean == "basic" or clean == "common" then
         return false
     end
-    if DiscoveredData.TopTraitsMap[ traitStr:lower() ] then
-        return true
-    end
+    if DiscoveredData.TopTraitsMap[traitStr:lower()] then return true end
     for _, kw in ipairs(BestTraitKeywords) do
-        if clean:find(kw) then
-            return true
-        end
+        if clean:find(kw) then return true end
     end
     return false
 end
 
--- C. Mengecek Apakah Suatu Grade Termasuk Grade Terbaik (S / SS / SSS / X)
 local function IsBestGrade(gradeStr)
     if not gradeStr then return false end
     local clean = tostring(gradeStr):upper():gsub("%s+", "")
-    if clean == "" or clean == "NONE" or clean == "NIL" then return false end
     return BestGradeList[clean] == true
 end
 
--- D. Fungsi Auto Reroll Trait Terbaik (Menggunakan PetUuid Asli + Berhenti Saat Dapat Trait Terbaik!)
 local function RunAutoBestTrait()
     if not Remotes.RerollTrait then return end
 
-    -- 1. Dekati TraitShopPad jika opsi teleport diaktifkan
     if Config.AutoTeleportTraitShop then
         local modelFolder = Workspace:FindFirstChild("Model")
         local traitPad = modelFolder and modelFolder:FindFirstChild("TraitShopPad") or Workspace:FindFirstChild("TraitShopPad", true)
@@ -722,23 +698,7 @@ local function RunAutoBestTrait()
         end
     end
 
-    -- 2. Jika pemain sudah pernah klik manual RerollTrait 1x, gunakan format argumen yang terekam (jika Mode = Always)
-    if Config.TraitTargetMode == "Always" and #DiscoveredData.LearnedTraitArgs > 0 then
-        local lastArgs = DiscoveredData.LearnedTraitArgs[1]
-        pcall(function()
-            if lastArgs[2] ~= nil then
-                Remotes.RerollTrait:InvokeServer(lastArgs[1], lastArgs[2])
-            else
-                Remotes.RerollTrait:InvokeServer(lastArgs[1])
-            end
-        end)
-    end
-
-    -- 3. Pindai seluruh Podium yang terbuka (Slot 1-16) dan cek PetUuid serta PetTrait-nya!
-    local podiums = GetMyPodiums()
-    local rerolledAny = false
-
-    for _, podium in ipairs(podiums) do
+    for _, podium in ipairs(GetMyPodiums()) do
         if not Config.AutoRerollTrait then break end
         if podium:GetAttribute("Locked") ~= true then
             local petUuid = podium:GetAttribute("PetUuid")
@@ -747,66 +707,26 @@ local function RunAutoBestTrait()
 
             if petUuid and #tostring(petUuid) > 0 then
                 local shouldReroll = false
-
                 if Config.TraitTargetMode == "BestOnly" then
-                    -- Hanya reroll jika pet ini BELUM memiliki Trait Terbaik!
-                    if not IsBestTrait(currentTrait) then
-                        shouldReroll = true
-                    end
+                    if not IsBestTrait(currentTrait) then shouldReroll = true end
                 elseif Config.TraitTargetMode == "FillEmpty" then
-                    -- Hanya reroll jika pet ini belum punya Trait sama sekali
-                    if currentTrait == "" or currentTrait:lower() == "none" then
-                        shouldReroll = true
-                    end
-                else -- "Always"
+                    if currentTrait == "" or currentTrait:lower() == "none" then shouldReroll = true end
+                else
                     shouldReroll = true
                 end
 
                 if shouldReroll then
-                    rerolledAny = true
-                    -- Coba panggil dengan PetUuid (format utama), lalu SlotNumber jika server memakai slot
-                    local ok1, res1 = pcall(function()
-                        return Remotes.RerollTrait:InvokeServer(petUuid)
-                    end)
-                    if not ok1 or res1 == false then
-                        if slotNum then
-                            pcall(function() Remotes.RerollTrait:InvokeServer(slotNum) end)
-                        end
+                    local ok1, res1 = pcall(function() return Remotes.RerollTrait:InvokeServer(petUuid) end)
+                    if (not ok1 or res1 == false) and slotNum then
+                        pcall(function() Remotes.RerollTrait:InvokeServer(slotNum) end)
                     end
                     task.wait(0.08)
                 end
             end
         end
     end
-
-    -- 4. Jika di Podium semua sudah dapat atau belum ada PetUuid terbaca, cek daftar UUID dari GetData()
-    if not rerolledAny and #DiscoveredData.InventoryPetUuids > 0 and Config.TraitTargetMode == "Always" then
-        for _, uuid in ipairs(DiscoveredData.InventoryPetUuids) do
-            pcall(function() Remotes.RerollTrait:InvokeServer(uuid) end)
-            task.wait(0.05)
-        end
-    end
-
-    -- 5. Jika GUI Trait sedang terbuka di layar, bantu klik tombol Reroll/Roll Trait (bukan Robux)
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if pGui then
-        for _, guiObj in ipairs(pGui:GetDescendants()) do
-            if (guiObj:IsA("TextButton") or guiObj:IsA("ImageButton")) and guiObj.Visible then
-                local fullPath = guiObj:GetFullName():lower()
-                if fullPath:find("trait") and not fullPath:find("robux") then
-                    local bName = guiObj.Name:lower()
-                    local bText = guiObj:IsA("TextButton") and (guiObj.Text or ""):lower() or ""
-                    if (bName:find("reroll") or bName:find("roll") or bText:find("reroll") or bText:find("roll"))
-                        and not bName:find("robux") and not bText:find("robux") and not bName:find("auto") then
-                        FireGuiButton(guiObj)
-                    end
-                end
-            end
-        end
-    end
 end
 
--- E. Fungsi Auto Roll Grade Terbaik (Menggunakan PetUuid Podium + Berhenti di S / SS / SSS / X)
 local function RunAutoBestGrade()
     if not Remotes.RollGrade then return end
 
@@ -825,8 +745,7 @@ local function RunAutoBestGrade()
         end
     end
 
-    local podiums = GetMyPodiums()
-    for _, podium in ipairs(podiums) do
+    for _, podium in ipairs(GetMyPodiums()) do
         if not Config.AutoRollGrade then break end
         if podium:GetAttribute("Locked") ~= true then
             local petUuid = podium:GetAttribute("PetUuid")
@@ -836,13 +755,9 @@ local function RunAutoBestGrade()
             if petUuid and #tostring(petUuid) > 0 then
                 local shouldRoll = (Config.GradeTargetMode ~= "BestOnly") or (not IsBestGrade(currentGrade))
                 if shouldRoll then
-                    local ok1, res1 = pcall(function()
-                        return Remotes.RollGrade:InvokeServer(petUuid)
-                    end)
-                    if not ok1 or res1 == false then
-                        if slotNum then
-                            pcall(function() Remotes.RollGrade:InvokeServer(slotNum) end)
-                        end
+                    local ok1, res1 = pcall(function() return Remotes.RollGrade:InvokeServer(petUuid) end)
+                    if (not ok1 or res1 == false) and slotNum then
+                        pcall(function() Remotes.RollGrade:InvokeServer(slotNum) end)
                     end
                     task.wait(0.08)
                 end
@@ -851,14 +766,11 @@ local function RunAutoBestGrade()
     end
 end
 
--- F. Auto Buy Semua Peningkatan & Podium
 local function RunAutoBuyAllUpgrades()
     if not Remotes.BuyUpgrade then return end
     for _, key in ipairs(DiscoveredData.Upgrades) do
         if IsValidKey(key) then
-            pcall(function()
-                Remotes.BuyUpgrade:InvokeServer(key)
-            end)
+            pcall(function() Remotes.BuyUpgrade:InvokeServer(key) end)
             task.wait(0.02)
         end
     end
@@ -868,9 +780,7 @@ local function RunAutoBuyRebirthUpgrades()
     if not Remotes.UpgradeRebirthStat then return end
     for _, key in ipairs(DiscoveredData.RebirthStats) do
         if IsValidKey(key) then
-            pcall(function()
-                Remotes.UpgradeRebirthStat:InvokeServer(key)
-            end)
+            pcall(function() Remotes.UpgradeRebirthStat:InvokeServer(key) end)
             task.wait(0.02)
         end
     end
@@ -897,7 +807,6 @@ end
 
 local function UpgradeSinglePodium(podium, allowTeleport)
     if not podium or podium:GetAttribute("Locked") == true then return false end
-
     local slotNum = tonumber(podium:GetAttribute("Slot")) or tonumber(podium.Name:match("%d+"))
     local screen = podium:FindFirstChild("Screen")
     local screenFace = podium:FindFirstChild("ScreenFace")
@@ -905,8 +814,7 @@ local function UpgradeSinglePodium(podium, allowTeleport)
 
     local hrp = GetHRP()
     if allowTeleport and hrp and targetPart and targetPart:IsA("BasePart") then
-        local dist = (hrp.Position - targetPart.Position).Magnitude
-        if dist > 11.5 then
+        if (hrp.Position - targetPart.Position).Magnitude > 11.5 then
             hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 3.2, 0))
             task.wait(0.08)
         end
@@ -934,12 +842,11 @@ local function UpgradeSinglePodium(podium, allowTeleport)
         local singleCd = screenFace:FindFirstChildOfClass("ClickDetector")
         if singleCd then SafeFireClick(singleCd) end
     end
-
     return true
 end
 
 -- ============================================================================
--- 6. SISTEM AUTO HALLOWEEN CANDY & AUTO MENARA
+-- 7. SISTEM AUTO HALLOWEEN CANDY & AUTO MENARA
 -- ============================================================================
 if Remotes.CandyClaim and Remotes.CandyClaim:IsA("RemoteEvent") then
     Remotes.CandyClaim.OnClientEvent:Connect(function(a1)
@@ -1010,7 +917,6 @@ local function CollectHalloweenCandies()
     end
 end
 
--- Sistem Auto Menara
 local TowerRuntime = {
     InTower = false,
     LastStartAttempt = 0,
@@ -1032,9 +938,7 @@ if Remotes.TowerEvent and Remotes.TowerEvent:IsA("RemoteEvent") then
 
         if type(payload) == "table" then
             local stg = tonumber(payload.Stage or payload.Floor or payload.Wave or payload.NextStage or payload.UnlockedStage)
-            if stg and stg > Config.HighestUnlockedStage then
-                Config.HighestUnlockedStage = stg
-            end
+            if stg and stg > Config.HighestUnlockedStage then Config.HighestUnlockedStage = stg end
         elseif type(payload) == "number" and payload > Config.HighestUnlockedStage and payload <= 1000 then
             Config.HighestUnlockedStage = payload
         end
@@ -1108,7 +1012,6 @@ local function EnterTowerAtStage(stageNum)
     if Config.AutoRetryTower and Remotes.SetTowerAutoRetry then
         pcall(function() Remotes.SetTowerAutoRetry:FireServer(true) end)
     end
-
     if Config.AutoEquipTowerTeam and Remotes.EquipBestTeam then
         pcall(function() Remotes.EquipBestTeam:InvokeServer() end)
         task.wait(0.1)
@@ -1158,33 +1061,26 @@ end
 
 local function StepAutoTower()
     local targetStage = GetTargetTowerStage()
-
     if Config.AutoRetryTower and Remotes.SetTowerAutoRetry then
         pcall(function() Remotes.SetTowerAutoRetry:FireServer(true) end)
     end
-
     if Config.AutoDeclineRevive and Remotes.DeclineRevive then
         pcall(function() Remotes.DeclineRevive:InvokeServer() end)
     end
-
     AutoClickTowerGUI(targetStage)
-
     if TowerRuntime.InTower then
-        if Remotes.ResumeTower then
-            pcall(function() Remotes.ResumeTower:InvokeServer() end)
-        end
+        if Remotes.ResumeTower then pcall(function() Remotes.ResumeTower:InvokeServer() end) end
         if tick() - TowerRuntime.LastStartAttempt > 20 then
             TowerRuntime.InTower = false
         else
             return
         end
     end
-
     EnterTowerAtStage(targetStage)
 end
 
 -- ============================================================================
--- 7. SISTEM UI ROCKSTAR HUB v6.7 (CYBER-BLUE EDITION)
+-- 8. SISTEM UI ROCKSTAR HUB v6.8 (CYBER-BLUE EDITION)
 -- ============================================================================
 local ParentGui = (typeof(gethui) == "function" and gethui()) or CoreGui
 if ParentGui:FindFirstChild("RockstarHub_PutarHewan") then
@@ -1197,7 +1093,6 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.Parent = ParentGui
 
--- Tombol Mengambang Bulat (R★)
 local FloatBtn = Instance.new("TextButton")
 FloatBtn.Name = "RockstarToggleBtn"
 FloatBtn.Size = UDim2.new(0, 52, 0, 52)
@@ -1207,7 +1102,6 @@ FloatBtn.Text = "R★"
 FloatBtn.TextColor3 = Color3.fromRGB(0, 215, 255)
 FloatBtn.Font = Enum.Font.GothamBlack
 FloatBtn.TextSize = 20
-FloatBtn.AutoButtonColor = true
 FloatBtn.Parent = ScreenGui
 
 local FloatCorner = Instance.new("UICorner")
@@ -1219,11 +1113,10 @@ FloatStroke.Color = Color3.fromRGB(0, 195, 255)
 FloatStroke.Thickness = 2.2
 FloatStroke.Parent = FloatBtn
 
--- Jendela Utama
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 615, 0, 420)
-MainFrame.Position = UDim2.new(0.5, -307, 0.5, -210)
+MainFrame.Size = UDim2.new(0, 615, 0, 425)
+MainFrame.Position = UDim2.new(0.5, -307, 0.5, -212)
 MainFrame.BackgroundColor3 = Color3.fromRGB(11, 16, 26)
 MainFrame.BorderSizePixel = 0
 MainFrame.Parent = ScreenGui
@@ -1237,7 +1130,6 @@ MainStroke.Color = Color3.fromRGB(0, 175, 240)
 MainStroke.Thickness = 1.6
 MainStroke.Parent = MainFrame
 
--- Header Bar
 local TopBar = Instance.new("Frame")
 TopBar.Size = UDim2.new(1, 0, 0, 42)
 TopBar.BackgroundColor3 = Color3.fromRGB(15, 23, 38)
@@ -1252,7 +1144,7 @@ local TitleLbl = Instance.new("TextLabel")
 TitleLbl.Size = UDim2.new(1, -100, 1, 0)
 TitleLbl.Position = UDim2.new(0, 16, 0, 0)
 TitleLbl.BackgroundTransparency = 1
-TitleLbl.Text = "★ ROCKSTAR HUB v6.7  |  [🎃] Putar Hewan Peliharaan"
+TitleLbl.Text = "★ ROCKSTAR HUB v6.8  |  [🎃] Putar Hewan Peliharaan"
 TitleLbl.TextColor3 = Color3.fromRGB(0, 220, 255)
 TitleLbl.Font = Enum.Font.GothamBold
 TitleLbl.TextSize = 14
@@ -1281,9 +1173,7 @@ local function EnableDrag(guiObj)
             dragStart = input.Position
             startPos = guiObj.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
@@ -1295,10 +1185,7 @@ local function EnableDrag(guiObj)
     UserInputService.InputChanged:Connect(function(input)
         if input == dragInput and dragging then
             local delta = input.Position - dragStart
-            guiObj.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
+            guiObj.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
     end)
 end
@@ -1306,12 +1193,8 @@ end
 EnableDrag(MainFrame)
 EnableDrag(FloatBtn)
 
-FloatBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-end)
-MinBtn.MouseButton1Click:Connect(function()
-    MainFrame.Visible = false
-end)
+FloatBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
+MinBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
 local function Notify(title, msg)
     task.spawn(function()
@@ -1353,9 +1236,7 @@ local function Notify(title, msg)
         ml.Parent = toast
 
         task.wait(3)
-        if toast and toast.Parent then
-            toast:Destroy()
-        end
+        if toast and toast.Parent then toast:Destroy() end
     end)
 end
 
@@ -1393,7 +1274,6 @@ ContentCorner.CornerRadius = UDim.new(0, 8)
 ContentCorner.Parent = ContentContainer
 
 local Tabs = {}
-
 local function CreateTab(tabName)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -12, 0, 34)
@@ -1443,7 +1323,6 @@ local function CreateTab(tabName)
         btn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
         btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     end
-
     return page
 end
 
@@ -1518,14 +1397,30 @@ local function AddButton(page, labelText, callback)
     bc.CornerRadius = UDim.new(0, 6)
     bc.Parent = btn
 
-    btn.MouseButton1Click:Connect(function()
-        pcall(callback)
-    end)
+    btn.MouseButton1Click:Connect(function() pcall(callback) end)
     return btn
 end
 
+local function CreateSmallBtn(parent, txt, width, color, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, width, 1, 0)
+    b.BackgroundColor3 = color
+    b.Text = txt
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.Parent = parent
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = b
+
+    b.MouseButton1Click:Connect(onClick)
+    return b
+end
+
 -- ============================================================================
--- 8. MEMBANGUN TAB MENU ROCKSTAR HUB v6.7
+-- 9. MEMBANGUN TAB MENU ROCKSTAR HUB v6.8
 -- ============================================================================
 local TabRoll = CreateTab("🎲 Roll & Dadu")
 local TabUpgrade = CreateTab("⬆️ Upgrade & Trait")
@@ -1535,33 +1430,113 @@ local TabCollect = CreateTab("💰 Uang & Plot")
 local TabTeleport = CreateTab("📍 Teleport & Log")
 
 -- ----------------------------------------------------------------------------
--- TAB 1: ROLL, PET & BELI DADU TERBAIK (v6.7 FIXED)
+-- TAB 1: ROLL, PET & PEMILIH DADU TERBAIK (v6.8 LUCK-BASED + SKIP VOID)
 -- ----------------------------------------------------------------------------
 AddSection(TabRoll, "Auto Roll & Manajemen Hewan Peliharaan")
 
-AddToggle(TabRoll, "🎲 Auto Roll Hewan Peliharaan (Cepat)", Config.AutoRoll, function(v)
-    Config.AutoRoll = v
+AddToggle(TabRoll, "🎲 Auto Roll Hewan Peliharaan (Cepat)", Config.AutoRoll, function(v) Config.AutoRoll = v end)
+AddToggle(TabRoll, "🐾 Auto Pasang Pet Terbaik (Equip Best Pets)", Config.AutoEquipBest, function(v) Config.AutoEquipBest = v end)
+AddToggle(TabRoll, "🧬 Auto Gabungkan Pet Kembar (Auto Fuse)", Config.AutoFuse, function(v) Config.AutoFuse = v end)
+AddToggle(TabRoll, "🗑️ Auto Jual Pet Terlemah Saat Penuh (Sell Weakest)", Config.AutoSellWeakest, function(v) Config.AutoSellWeakest = v end)
+
+AddSection(TabRoll, "Pemilih Dadu Terbaik Berdasarkan Luck Asli (v6.8)")
+
+local DiceSelectorCard = Instance.new("Frame")
+DiceSelectorCard.Size = UDim2.new(1, -6, 0, 74)
+DiceSelectorCard.BackgroundColor3 = Color3.fromRGB(18, 27, 44)
+DiceSelectorCard.Parent = TabRoll
+
+local DiceCardCorner = Instance.new("UICorner")
+DiceCardCorner.CornerRadius = UDim.new(0, 8)
+DiceCardCorner.Parent = DiceSelectorCard
+
+local DiceCardStroke = Instance.new("UIStroke")
+DiceCardStroke.Color = Color3.fromRGB(0, 175, 240)
+DiceCardStroke.Thickness = 1.2
+DiceCardStroke.Parent = DiceSelectorCard
+
+local DiceTitleLbl = Instance.new("TextLabel")
+DiceTitleLbl.Size = UDim2.new(1, -16, 0, 24)
+DiceTitleLbl.Position = UDim2.new(0, 10, 0, 5)
+DiceTitleLbl.BackgroundTransparency = 1
+DiceTitleLbl.Text = "🎲 Target Dadu: Auto Luck Tertinggi (Skip Void)"
+DiceTitleLbl.TextColor3 = Color3.fromRGB(0, 225, 255)
+DiceTitleLbl.Font = Enum.Font.GothamBold
+DiceTitleLbl.TextSize = 12
+DiceTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+DiceTitleLbl.Parent = DiceSelectorCard
+
+local DiceCtrlRow = Instance.new("Frame")
+DiceCtrlRow.Size = UDim2.new(1, -20, 0, 32)
+DiceCtrlRow.Position = UDim2.new(0, 10, 0, 34)
+DiceCtrlRow.BackgroundTransparency = 1
+DiceCtrlRow.Parent = DiceSelectorCard
+
+local DiceCtrlLayout = Instance.new("UIListLayout")
+DiceCtrlLayout.FillDirection = Enum.FillDirection.Horizontal
+DiceCtrlLayout.Padding = UDim.new(0, 6)
+DiceCtrlLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+DiceCtrlLayout.Parent = DiceCtrlRow
+
+local DiceModeBtn
+local function UpdateDiceDisplay()
+    local target = GetTargetBestDice() or "Memindai..."
+    local qty = DiscoveredData.OwnedDiceCount[target]
+    local qtyStr = qty and (" [Stok: " .. tostring(qty) .. "]") or ""
+    if Config.DiceSelectMode == "HighestLuck" then
+        DiceTitleLbl.Text = "🎲 Target: " .. tostring(target) .. qtyStr .. " (Auto Luck Tertinggi)"
+        if DiceModeBtn then
+            DiceModeBtn.Text = "Mode: Auto Luck"
+            DiceModeBtn.BackgroundColor3 = Color3.fromRGB(0, 165, 130)
+        end
+    else
+        DiceTitleLbl.Text = "🎯 Kunci Manual: " .. tostring(target) .. qtyStr
+        if DiceModeBtn then
+            DiceModeBtn.Text = "Mode: Manual"
+            DiceModeBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
+        end
+    end
+end
+
+CreateSmallBtn(DiceCtrlRow, "◀ Prev Dadu", 95, Color3.fromRGB(32, 48, 76), function()
+    RefreshGameKnowledge()
+    Config.DiceSelectMode = "Manual"
+    local total = math.max(1, #DiscoveredData.VerifiedDice)
+    Config.SelectedDiceIndex = ((Config.SelectedDiceIndex - 2) % total) + 1
+    UpdateDiceDisplay()
 end)
 
-AddToggle(TabRoll, "🐾 Auto Pasang Pet Terbaik (Equip Best Pets)", Config.AutoEquipBest, function(v)
-    Config.AutoEquipBest = v
+DiceModeBtn = CreateSmallBtn(DiceCtrlRow, "Mode: Auto Luck", 150, Color3.fromRGB(0, 165, 130), function()
+    if Config.DiceSelectMode == "HighestLuck" then
+        Config.DiceSelectMode = "Manual"
+        Config.SelectedDiceIndex = math.max(1, #DiscoveredData.VerifiedDice)
+    else
+        Config.DiceSelectMode = "HighestLuck"
+    end
+    UpdateDiceDisplay()
 end)
 
-AddToggle(TabRoll, "🧬 Auto Gabungkan Pet Kembar (Auto Fuse)", Config.AutoFuse, function(v)
-    Config.AutoFuse = v
+CreateSmallBtn(DiceCtrlRow, "Next Dadu ▶", 95, Color3.fromRGB(32, 48, 76), function()
+    RefreshGameKnowledge()
+    Config.DiceSelectMode = "Manual"
+    local total = math.max(1, #DiscoveredData.VerifiedDice)
+    Config.SelectedDiceIndex = (Config.SelectedDiceIndex % total) + 1
+    UpdateDiceDisplay()
 end)
 
-AddToggle(TabRoll, "🗑️ Auto Jual Pet Terlemah Saat Penuh (Sell Weakest)", Config.AutoSellWeakest, function(v)
-    Config.AutoSellWeakest = v
+AddToggle(TabRoll, "🚫 Jangan Pakai Dadu Kekosongan / Skip Void Dice", Config.SkipVoidDice, function(v)
+    Config.SkipVoidDice = v
+    UpdateDiceDisplay()
 end)
 
-AddSection(TabRoll, "Auto Beli & Pasang Dadu Terbaik (Fix v6.7)")
-
-AddToggle(TabRoll, "🎲 Auto Buy & Equip Dadu Terbaik (Urutan Tier Benar)", Config.AutoBuyAndEquipDice, function(v)
+AddToggle(TabRoll, "🎲 Auto Buy & Equip Dadu Terbaik (Sesuai Luck/Target)", Config.AutoBuyAndEquipDice, function(v)
     Config.AutoBuyAndEquipDice = v
     if v then
-        task.spawn(RefreshGameKnowledge)
-        Notify("Auto Dadu Terbaik", "Membeli & memasang dadu tier tertinggi secara otomatis!")
+        task.spawn(function()
+            RefreshGameKnowledge()
+            UpdateDiceDisplay()
+            RunAutoBuyAndEquipDice()
+        end)
     end
 end)
 
@@ -1569,24 +1544,22 @@ AddToggle(TabRoll, "📍 Auto Mendekat ke Toko Dadu Saat Membeli", Config.AutoTe
     Config.AutoTeleportDiceShop = v
 end)
 
-AddButton(TabRoll, "⚡ Beli & Pasang Dadu Terbaik Sekarang (1x Klik)", function()
+AddButton(TabRoll, "⚡ Beli & Pasang Dadu Target Sekarang (1x Klik)", function()
     task.spawn(function()
         RefreshGameKnowledge()
+        UpdateDiceDisplay()
         RunAutoBuyAndEquipDice()
-        Notify("Dadu Terbaik", "Berhasil memicu pembelian & pemasangan dadu tertinggi (" .. #DiscoveredData.VerifiedDice .. " dadu terdeteksi)!")
+        Notify("Dadu Dipasang", "Target Dadu: " .. tostring(GetTargetBestDice()))
     end)
 end)
 
 -- ----------------------------------------------------------------------------
--- TAB 2: PENINGKATAN, PODIUM & AUTO TRAIT TERBAIK (v6.7 FIXED)
+-- TAB 2: PENINGKATAN, PODIUM & AUTO TRAIT TERBAIK
 -- ----------------------------------------------------------------------------
-AddSection(TabUpgrade, "Auto Trait Terbaik & Grade Terbaik (Fix PetUuid v6.7)")
+AddSection(TabUpgrade, "Auto Trait Terbaik & Grade Terbaik (PetUuid Podium)")
 
 AddToggle(TabUpgrade, "✨ Auto Reroll Trait Terbaik (Semua Pet Podium)", Config.AutoRerollTrait, function(v)
     Config.AutoRerollTrait = v
-    if v then
-        Notify("Auto Trait Terbaik", "Mencari Trait Terbaik pada Pet di Podium (Berhenti otomatis saat dapat Top Trait)!")
-    end
 end)
 
 local TraitModeBtn
@@ -1605,16 +1578,13 @@ end)
 
 AddToggle(TabUpgrade, "⭐ Auto Roll Grade Terbaik (Berhenti di S / SS / SSS / X)", Config.AutoRollGrade, function(v)
     Config.AutoRollGrade = v
-    if v then
-        Notify("Auto Grade Terbaik", "Mencari Grade S/SS/SSS/X pada Pet di Podium!")
-    end
 end)
 
 AddToggle(TabUpgrade, "📍 Auto Mendekat ke Trait / Grade Pad Saat Reroll", Config.AutoTeleportTraitShop, function(v)
     Config.AutoTeleportTraitShop = v
 end)
 
-AddSection(TabUpgrade, "Auto Buy Peningkatan Statistik & Rebirth")
+AddSection(TabUpgrade, "Auto Buy Peningkatan Statistik & Podium")
 
 AddToggle(TabUpgrade, "📈 Auto Buy Semua Peningkatan (Luck1..5, RollSpeed1..5, dll.)", Config.AutoBuyAllUpgrades, function(v)
     Config.AutoBuyAllUpgrades = v
@@ -1624,12 +1594,6 @@ AddToggle(TabUpgrade, "♻️ Auto Buy Peningkatan Rebirth (UpgradeRebirthStat)"
     Config.AutoBuyRebirthUpgrades = v
 end)
 
-AddToggle(TabUpgrade, "🔥 Auto Rebirth Otomatis", Config.AutoRebirth, function(v)
-    Config.AutoRebirth = v
-end)
-
-AddSection(TabUpgrade, "Auto Peningkatan Podium Pet (Lantai 1 & 2)")
-
 AddToggle(TabUpgrade, "⬆️ Auto Upgrade Level Semua Podium (Slot 1-16)", Config.AutoUpgradePodium, function(v)
     Config.AutoUpgradePodium = v
 end)
@@ -1638,24 +1602,8 @@ AddToggle(TabUpgrade, "📍 Teleport Mendekat Saat Upgrade Podium (<14m)", Confi
     Config.AutoTeleportUpgrade = v
 end)
 
-AddButton(TabUpgrade, "🚀 Keliling & Upgrade Max Semua Podium Sekarang", function()
-    task.spawn(function()
-        local hrp = GetHRP()
-        local oldCF = hrp and hrp.CFrame
-        local podiums = GetMyPodiums()
-        local upgradedCount = 0
-        for _, podium in ipairs(podiums) do
-            if podium:GetAttribute("Locked") ~= true then
-                UpgradeSinglePodium(podium, true)
-                upgradedCount = upgradedCount + 1
-                task.wait(0.1)
-            end
-        end
-        if oldCF and GetHRP() then
-            GetHRP().CFrame = oldCF
-        end
-        Notify("Podium Diupgrade", "Berhasil memicu Upgrade pada " .. upgradedCount .. " Podium!")
-    end)
+AddToggle(TabUpgrade, "🔥 Auto Rebirth Otomatis", Config.AutoRebirth, function(v)
+    Config.AutoRebirth = v
 end)
 
 -- ----------------------------------------------------------------------------
@@ -1707,38 +1655,20 @@ StepLayout.Padding = UDim.new(0, 6)
 StepLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 StepLayout.Parent = StepRow
 
-local function CreateSmallStageBtn(parent, txt, width, color, onClick)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0, width, 1, 0)
-    b.BackgroundColor3 = color
-    b.Text = txt
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 11
-    b.Parent = parent
-
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 6)
-    c.Parent = b
-
-    b.MouseButton1Click:Connect(onClick)
-    return b
-end
-
-CreateSmallStageBtn(StepRow, "-10", 54, Color3.fromRGB(32, 48, 76), function()
+CreateSmallBtn(StepRow, "-10", 54, Color3.fromRGB(32, 48, 76), function()
     Config.TowerStageMode = "Selected"
     Config.SelectedStage = math.max(1, Config.SelectedStage - 10)
     UpdateStageDisplay()
 end)
 
-CreateSmallStageBtn(StepRow, "-1", 50, Color3.fromRGB(32, 48, 76), function()
+CreateSmallBtn(StepRow, "-1", 50, Color3.fromRGB(32, 48, 76), function()
     Config.TowerStageMode = "Selected"
     Config.SelectedStage = math.max(1, Config.SelectedStage - 1)
     UpdateStageDisplay()
 end)
 
-local ModeSwitchBtn = CreateSmallStageBtn(StepRow, "Mode: Pilihan", 140, Color3.fromRGB(0, 135, 205), function() end)
-ModeSwitchBtn.MouseButton1Click:Connect(function()
+local ModeSwitchBtn
+ModeSwitchBtn = CreateSmallBtn(StepRow, "Mode: Pilihan", 140, Color3.fromRGB(0, 135, 205), function()
     if Config.TowerStageMode == "Selected" then
         Config.TowerStageMode = "Highest"
         ModeSwitchBtn.Text = "Mode: Tertinggi"
@@ -1752,13 +1682,13 @@ ModeSwitchBtn.MouseButton1Click:Connect(function()
     UpdateStageDisplay()
 end)
 
-CreateSmallStageBtn(StepRow, "+1", 50, Color3.fromRGB(32, 48, 76), function()
+CreateSmallBtn(StepRow, "+1", 50, Color3.fromRGB(32, 48, 76), function()
     Config.TowerStageMode = "Selected"
     Config.SelectedStage = Config.SelectedStage + 1
     UpdateStageDisplay()
 end)
 
-CreateSmallStageBtn(StepRow, "+10", 54, Color3.fromRGB(32, 48, 76), function()
+CreateSmallBtn(StepRow, "+10", 54, Color3.fromRGB(32, 48, 76), function()
     Config.TowerStageMode = "Selected"
     Config.SelectedStage = Config.SelectedStage + 10
     UpdateStageDisplay()
@@ -1777,7 +1707,7 @@ PresetLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 PresetLayout.Parent = PresetRow
 
 for _, presetNum in ipairs({1, 5, 10, 20, 30, 50}) do
-    CreateSmallStageBtn(PresetRow, "Stg " .. presetNum, 58, Color3.fromRGB(24, 38, 62), function()
+    CreateSmallBtn(PresetRow, "Stg " .. presetNum, 58, Color3.fromRGB(24, 38, 62), function()
         Config.TowerStageMode = "Selected"
         Config.SelectedStage = presetNum
         ModeSwitchBtn.Text = "Mode: Pilihan"
@@ -1789,21 +1719,16 @@ end
 AddButton(TabTower, "🚀 Buka & Masuk ke Stage Pilihan Sekarang", function()
     task.spawn(function()
         local stg = GetTargetTowerStage()
-        Notify("Menara Stage " .. stg, "Membuka menara & masuk ke Stage " .. stg .. "...")
         EnterTowerAtStage(stg)
         UpdateStageDisplay()
     end)
 end)
 
-AddSection(TabTower, "Otomatisasi Menara (Tanpa Ketuk Manual)")
-
 AddToggle(TabTower, "🗼 Auto Buka & Farm Menara Sesuai Stage", Config.AutoTower, function(v)
     Config.AutoTower = v
     if v then
-        local stg = GetTargetTowerStage()
-        Notify("Auto Menara ON", "Otomatis masuk & farming di Stage " .. tostring(stg))
         task.spawn(function()
-            EnterTowerAtStage(stg)
+            EnterTowerAtStage(GetTargetTowerStage())
             UpdateStageDisplay()
         end)
     else
@@ -1813,91 +1738,50 @@ AddToggle(TabTower, "🗼 Auto Buka & Farm Menara Sesuai Stage", Config.AutoTowe
     end
 end)
 
-AddToggle(TabTower, "⚔️ Auto Tap Serang & Klik Tombol UI Menara", Config.AutoTapTowerCombat, function(v)
-    Config.AutoTapTowerCombat = v
-end)
-
-AddToggle(TabTower, "📍 Auto Teleport ke TowersPad Saat Buka Menara", Config.AutoTeleportToTowerPad, function(v)
-    Config.AutoTeleportToTowerPad = v
-end)
-
+AddToggle(TabTower, "⚔️ Auto Tap Serang & Klik Tombol UI Menara", Config.AutoTapTowerCombat, function(v) Config.AutoTapTowerCombat = v end)
+AddToggle(TabTower, "📍 Auto Teleport ke TowersPad Saat Buka Menara", Config.AutoTeleportToTowerPad, function(v) Config.AutoTeleportToTowerPad = v end)
 AddToggle(TabTower, "🔄 Aktifkan Auto-Retry Menara (Server)", Config.AutoRetryTower, function(v)
     Config.AutoRetryTower = v
-    if Remotes.SetTowerAutoRetry then
-        pcall(function() Remotes.SetTowerAutoRetry:FireServer(v) end)
-    end
+    if Remotes.SetTowerAutoRetry then pcall(function() Remotes.SetTowerAutoRetry:FireServer(v) end) end
 end)
-
-AddToggle(TabTower, "🛡️ Auto Tolak Popup Revive Robux (DeclineRevive)", Config.AutoDeclineRevive, function(v)
-    Config.AutoDeclineRevive = v
-end)
+AddToggle(TabTower, "🛡️ Auto Tolak Popup Revive Robux (DeclineRevive)", Config.AutoDeclineRevive, function(v) Config.AutoDeclineRevive = v end)
 
 AddButton(TabTower, "🚪 Keluar dari Menara Sekarang (LeaveTower)", function()
-    if Remotes.LeaveTower then
-        pcall(function() Remotes.LeaveTower:InvokeServer() end)
-    end
+    if Remotes.LeaveTower then pcall(function() Remotes.LeaveTower:InvokeServer() end) end
     TowerRuntime.InTower = false
     TowerRuntime.LastStatusText = "Keluar Manual"
     UpdateStageDisplay()
-    Notify("Menara", "Berhasil keluar dari sesi Menara.")
 end)
 
 -- ----------------------------------------------------------------------------
 -- TAB 4: EVENT HALLOWEEN & KLAIM
 -- ----------------------------------------------------------------------------
-AddSection(TabEvent, "Event Halloween (Permen & Candy Shop)")
+AddSection(TabEvent, "Event Halloween & Klaim Hadiah")
 
-AddToggle(TabEvent, "🍬 Auto Ambil & Klaim Permen Halloween (Anti-Error)", Config.AutoClaimCandy, function(v)
-    Config.AutoClaimCandy = v
-end)
-
-AddToggle(TabEvent, "📍 Teleport ke Permen Saat Muncul di Map", Config.AutoTeleportCandy, function(v)
-    Config.AutoTeleportCandy = v
-end)
-
-AddToggle(TabEvent, "🍭 Auto Beli Item Candy Shop (BuyCandyShop)", Config.AutoBuyCandyShop, function(v)
-    Config.AutoBuyCandyShop = v
-end)
-
-AddToggle(TabEvent, "📜 Auto Beli Item Quest Shop (BuyQuestShop)", Config.AutoBuyQuestShop, function(v)
-    Config.AutoBuyQuestShop = v
-end)
-
-AddSection(TabEvent, "Roda Putar, Klaim Hadiah & 3 Golden Dice Rahasia")
-
-AddToggle(TabEvent, "🎡 Auto Putar Spin Wheel Gratis", Config.AutoSpinWheel, function(v)
-    Config.AutoSpinWheel = v
-end)
-
-AddToggle(TabEvent, "🎁 Auto Klaim Semua Hadiah (Daily, Playtime, Quest, Chest)", Config.AutoClaimRewards, function(v)
-    Config.AutoClaimRewards = v
-end)
+AddToggle(TabEvent, "🍬 Auto Ambil & Klaim Permen Halloween", Config.AutoClaimCandy, function(v) Config.AutoClaimCandy = v end)
+AddToggle(TabEvent, "📍 Teleport ke Permen Saat Muncul di Map", Config.AutoTeleportCandy, function(v) Config.AutoTeleportCandy = v end)
+AddToggle(TabEvent, "🍭 Auto Beli Item Candy Shop (BuyCandyShop)", Config.AutoBuyCandyShop, function(v) Config.AutoBuyCandyShop = v end)
+AddToggle(TabEvent, "📜 Auto Beli Item Quest Shop (BuyQuestShop)", Config.AutoBuyQuestShop, function(v) Config.AutoBuyQuestShop = v end)
+AddToggle(TabEvent, "🎡 Auto Putar Spin Wheel Gratis", Config.AutoSpinWheel, function(v) Config.AutoSpinWheel = v end)
+AddToggle(TabEvent, "🎁 Auto Klaim Semua Hadiah (Daily, Playtime, Quest, Chest)", Config.AutoClaimRewards, function(v) Config.AutoClaimRewards = v end)
 
 AddButton(TabEvent, "🎲 Ambil 3 Golden Dice Rahasia di Peta (Sekali Klik)", function()
     task.spawn(function()
         local hrp = GetHRP()
         local oldCF = hrp and hrp.CFrame
-        local secrets = {
-            Workspace:FindFirstChild("AlleySecret"),
-            Workspace:FindFirstChild("HiddenSecret"),
-            Workspace:FindFirstChild("TowerSecret"),
-        }
-        local taken = 0
-        for _, sec in ipairs(secrets) do
+        for _, name in ipairs({"AlleySecret", "HiddenSecret", "TowerSecret"}) do
+            local sec = Workspace:FindFirstChild(name)
             local gd = sec and sec:FindFirstChild("GoldenDice")
             local prompt = gd and gd:FindFirstChildOfClass("ProximityPrompt")
             if gd and gd:IsA("BasePart") then
                 SafeTeleport(gd.CFrame + Vector3.new(0, 3, 0))
                 task.wait(0.25)
-                if prompt then
-                    SafeFirePrompt(prompt)
-                    taken = taken + 1
-                end
+                if prompt then SafeFirePrompt(prompt) end
                 task.wait(0.2)
             end
         end
         if oldCF then SafeTeleport(oldCF) end
-        Notify("Golden Dice Rahasia", "Berhasil memicu " .. taken .. " Golden Dice Rahasia!")
+        Notify("Golden Dice", "3 Golden Dice Rahasia telah diambil!")
     end)
 end)
 
@@ -1906,59 +1790,38 @@ end)
 -- ----------------------------------------------------------------------------
 AddSection(TabCollect, "Auto Kumpul Uang & Fasilitas Plot")
 
-AddToggle(TabCollect, "💰 Auto Kumpul Uang Semua Podium (Lantai 1 & 2)", Config.AutoCollectCash, function(v)
-    Config.AutoCollectCash = v
-end)
-
-AddToggle(TabCollect, "🛒 Auto Beli Papan 'Auto Collect' di Plot", Config.AutoBuyAutoCollect, function(v)
-    Config.AutoBuyAutoCollect = v
-end)
-
-AddToggle(TabCollect, "🏃 Auto Gunakan Treadmill Plot", Config.AutoTreadmill, function(v)
-    Config.AutoTreadmill = v
-end)
-
-AddToggle(TabCollect, "⏩ Auto Lewati Iklan 5 Menit (WatchSkipAd)", Config.AutoWatchSkipAd, function(v)
-    Config.AutoWatchSkipAd = v
-end)
+AddToggle(TabCollect, "💰 Auto Kumpul Uang Semua Podium (Lantai 1 & 2)", Config.AutoCollectCash, function(v) Config.AutoCollectCash = v end)
+AddToggle(TabCollect, "🛒 Auto Beli Papan 'Auto Collect' di Plot", Config.AutoBuyAutoCollect, function(v) Config.AutoBuyAutoCollect = v end)
+AddToggle(TabCollect, "🏃 Auto Gunakan Treadmill Plot", Config.AutoTreadmill, function(v) Config.AutoTreadmill = v end)
+AddToggle(TabCollect, "⏩ Auto Lewati Iklan 5 Menit (WatchSkipAd)", Config.AutoWatchSkipAd, function(v) Config.AutoWatchSkipAd = v end)
 
 -- ----------------------------------------------------------------------------
--- TAB 6: TELEPORT PETA & LOG DIAGNOSTIK v6.7
+-- TAB 6: TELEPORT PETA & LOG DIAGNOSTIK v6.8
 -- ----------------------------------------------------------------------------
-AddSection(TabTeleport, "Log Self-Learning & Diagnostik Dadu/Trait v6.7")
+AddSection(TabTeleport, "Log Self-Learning & Diagnostik v6.8")
 
-AddButton(TabTeleport, "📋 Salin Log Diagnostik (Dadu, Trait, Upgrade, Tower)", function()
+AddButton(TabTeleport, "📋 Salin Log Diagnostik (Urutan Dadu, Stok, Trait, Tower)", function()
     RefreshGameKnowledge()
+    local diceDetails = {}
+    for i, dId in ipairs(DiscoveredData.VerifiedDice) do
+        local score = DiscoveredData.DiceLuckMap[dId] or 0
+        local qty = DiscoveredData.OwnedDiceCount[dId]
+        table.insert(diceDetails, string.format("%d.%s(Score:%d,Stok:%s)", i, tostring(dId), math.floor(score), tostring(qty or "?")))
+    end
     local lines = {
-        "=== LOG SELF-LEARNING ROCKSTAR v6.7 ===",
-        "InTower Status: " .. tostring(TowerRuntime.InTower),
-        "Verified Dice (" .. #DiscoveredData.VerifiedDice .. "): " .. table.concat(DiscoveredData.VerifiedDice, ", "),
+        "=== LOG SELF-LEARNING ROCKSTAR v6.8 ===",
+        "Target Best Dice: " .. tostring(GetTargetBestDice()),
+        "Sorted Dice (" .. #diceDetails .. "): " .. table.concat(diceDetails, " | "),
         "Discovered Traits (" .. #DiscoveredData.DiscoveredTraits .. "): " .. table.concat(DiscoveredData.DiscoveredTraits, ", "),
+        "--- Captured Remote Calls ---",
     }
-    -- Tambahkan info PetUuid & Trait di Podium saat ini
-    local podiumInfo = {}
-    for _, p in ipairs(GetMyPodiums()) do
-        if p:GetAttribute("Locked") ~= true then
-            local s = tostring(p:GetAttribute("Slot") or p.Name)
-            local u = tostring(p:GetAttribute("PetUuid") or "nil")
-            local tr = tostring(p:GetAttribute("PetTrait") or "None")
-            local gr = tostring(p:GetAttribute("PetGrade") or "None")
-            table.insert(podiumInfo, string.format("Slot %s: UUID=%s | Trait=%s | Grade=%s", s, u, tr, gr))
-        end
-    end
-    table.insert(lines, "Podium Pets (" .. #podiumInfo .. "): " .. table.concat(podiumInfo, " ; "))
-    table.insert(lines, "--- Captured Remote Calls ---")
-    for _, l in ipairs(LearningLogs) do
-        table.insert(lines, l)
-    end
-
+    for _, l in ipairs(LearningLogs) do table.insert(lines, l) end
     local fullText = table.concat(lines, "\n")
     if typeof(setclipboard) == "function" then
         setclipboard(fullText)
-        Notify("Log Disalin", "Log Diagnostik v6.7 berhasil disalin ke Clipboard!")
+        Notify("Log Disalin", "Log Diagnostik v6.8 berhasil disalin ke Clipboard!")
     else
         print(fullText)
-        Notify("Log Dicetak", "Log dicetak ke konsol F9.")
     end
 end)
 
@@ -1966,23 +1829,15 @@ AddSection(TabTeleport, "Teleport Cepat ke Plot & Toko")
 
 AddButton(TabTeleport, "🏠 Teleport ke Plot Milikku", function()
     local myPlot = GetMyPlot()
-    if myPlot then
-        SafeTeleport(myPlot:GetPivot() + Vector3.new(0, 5, 0))
-        Notify("Teleport", "Berhasil pindah ke " .. myPlot.Name)
-    else
-        Notify("Plot", "Plot milikmu belum ditemukan!")
-    end
+    if myPlot then SafeTeleport(myPlot:GetPivot() + Vector3.new(0, 5, 0)) end
 end)
 
 local MapLocations = {
     { Name = "🎲 Toko Dadu (Dice Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("DiceShopPad") end, Fallback = Vector3.new(200, 330, 10) },
     { Name = "🍬 Toko Permen (Candy Shop)", Path = function() return Workspace:FindFirstChild("CandyShopPad") end, Fallback = Vector3.new(203.7, 332.5, 48.1) },
     { Name = "🎃 Peti Angker (Haunted Crate)", Path = function() return Workspace:FindFirstChild("HauntedCrateStand") end, Fallback = Vector3.new(189.5, 333.3, 55.6) },
-    { Name = "🧬 Mesin Fuse Pet (Fusing Machine)", Path = function() return Workspace:FindFirstChild("FusingMachine") end, Fallback = Vector3.new(229.0, 332.6, 1.5) },
     { Name = "✨ Toko Trait (Trait Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("TraitShopPad") end, Fallback = Vector3.new(210, 330, -15) },
     { Name = "⭐ Toko Grade (Grade Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("GradeShopPad") end, Fallback = Vector3.new(215, 330, -30) },
-    { Name = "📜 Toko Quest (Quest Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("QuestShopPad") end, Fallback = Vector3.new(220, 330, -40) },
-    { Name = "🎡 Roda Putar (Spin Wheel)", Path = function() return Workspace:FindFirstChild("SpinWheel") end, Fallback = Vector3.new(235.5, 342.1, -53.7) },
     { Name = "🗼 Menara Pertarungan (TowersPad)", Path = function() return Workspace:FindFirstChild("TowersPad") end, Fallback = Vector3.new(-309.8, 333.5, -28.2) },
 }
 
@@ -2003,9 +1858,8 @@ for _, loc in ipairs(MapLocations) do
 end
 
 -- ============================================================================
--- 9. LOOP OTOMATISASI UTAMA (BACKGROUND WORKERS)
+-- 10. LOOP OTOMATISASI UTAMA (BACKGROUND WORKERS)
 -- ============================================================================
-
 ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
     if Config.InstantPrompt then
         prompt.HoldDuration = 0
@@ -2020,15 +1874,11 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
--- Loop 1: Auto Roll Cepat + Auto Tap Pertarungan Menara
 task.spawn(function()
     while task.wait(Config.RollDelay) do
         if Config.AutoRoll and Remotes.RequestRoll then
-            pcall(function()
-                Remotes.RequestRoll:InvokeServer(false)
-            end)
+            pcall(function() Remotes.RequestRoll:InvokeServer(false) end)
         end
-
         if Config.AutoTower and Config.AutoTapTowerCombat and TowerRuntime.InTower then
             pcall(function()
                 VirtualUser:CaptureController()
@@ -2038,91 +1888,56 @@ task.spawn(function()
     end
 end)
 
--- Loop 2: Auto Kumpul Uang Podium + Auto Halloween Candy
 task.spawn(function()
     while task.wait(0.5) do
         if Config.AutoCollectCash then
             local hrp = GetHRP()
-            local podiums = GetMyPodiums()
-            for _, podium in ipairs(podiums) do
+            for _, podium in ipairs(GetMyPodiums()) do
                 if podium:GetAttribute("Locked") ~= true then
                     local pad = podium:FindFirstChild("CollectPad")
                     local slot = tonumber(podium:GetAttribute("Slot"))
-                    if pad and pad:IsA("BasePart") and hrp then
-                        if typeof(firetouchinterest) == "function" then
-                            pcall(function()
-                                firetouchinterest(hrp, pad, 0)
-                                firetouchinterest(hrp, pad, 1)
-                            end)
-                        end
+                    if pad and pad:IsA("BasePart") and hrp and typeof(firetouchinterest) == "function" then
+                        pcall(function()
+                            firetouchinterest(hrp, pad, 0)
+                            firetouchinterest(hrp, pad, 1)
+                        end)
                     end
                     if Remotes.CashCollected and slot then
-                        pcall(function()
-                            Remotes.CashCollected:FireServer(slot)
-                        end)
+                        pcall(function() Remotes.CashCollected:FireServer(slot) end)
                     end
                 end
             end
         end
-
-        if Config.AutoClaimCandy then
-            pcall(CollectHalloweenCandies)
-        end
-
+        if Config.AutoClaimCandy then pcall(CollectHalloweenCandies) end
         if Config.AutoBuyAutoCollect then
             local plot = GetMyPlot()
             local board = plot and plot:FindFirstChild("AutoCollectBoard")
             local panel = board and board:FindFirstChild("Panel")
             local buyPrompt = panel and panel:FindFirstChild("BuyPrompt")
-            if buyPrompt and buyPrompt.Enabled then
-                local hrp = GetHRP()
-                if hrp and panel:IsA("BasePart") and (hrp.Position - panel.Position).Magnitude > 12 then
-                    SafeTeleport(panel.CFrame + Vector3.new(0, 3, 0))
-                    task.wait(0.1)
-                end
-                SafeFirePrompt(buyPrompt)
-            end
+            if buyPrompt and buyPrompt.Enabled then SafeFirePrompt(buyPrompt) end
         end
     end
 end)
 
--- Loop 3: Auto Buy Semua Peningkatan, Dadu Terbaik, Trait Terbaik, Grade Terbaik & Podium
 task.spawn(function()
     local refreshCounter = 0
     while task.wait(1.0) do
         refreshCounter = refreshCounter + 1
-        if refreshCounter >= 12 then
+        if refreshCounter >= 10 then
             refreshCounter = 0
-            task.spawn(RefreshGameKnowledge)
+            task.spawn(function()
+                RefreshGameKnowledge()
+                UpdateDiceDisplay()
+            end)
         end
-
-        if Config.AutoBuyAllUpgrades then
-            RunAutoBuyAllUpgrades()
-        end
-
-        if Config.AutoBuyRebirthUpgrades then
-            RunAutoBuyRebirthUpgrades()
-        end
-
-        if Config.AutoBuyAndEquipDice then
-            RunAutoBuyAndEquipDice()
-        end
-
-        if Config.AutoRerollTrait then
-            RunAutoBestTrait()
-        end
-
-        if Config.AutoRollGrade then
-            RunAutoBestGrade()
-        end
-
-        if Config.AutoBuyCandyShop or Config.AutoBuyQuestShop then
-            RunAutoBuyEventShops()
-        end
-
+        if Config.AutoBuyAllUpgrades then RunAutoBuyAllUpgrades() end
+        if Config.AutoBuyRebirthUpgrades then RunAutoBuyRebirthUpgrades() end
+        if Config.AutoBuyAndEquipDice then RunAutoBuyAndEquipDice() end
+        if Config.AutoRerollTrait then RunAutoBestTrait() end
+        if Config.AutoRollGrade then RunAutoBestGrade() end
+        if Config.AutoBuyCandyShop or Config.AutoBuyQuestShop then RunAutoBuyEventShops() end
         if Config.AutoUpgradePodium then
-            local podiums = GetMyPodiums()
-            for _, podium in ipairs(podiums) do
+            for _, podium in ipairs(GetMyPodiums()) do
                 if not Config.AutoUpgradePodium then break end
                 if podium:GetAttribute("Locked") ~= true then
                     UpgradeSinglePodium(podium, Config.AutoTeleportUpgrade and not TowerRuntime.InTower)
@@ -2130,14 +1945,12 @@ task.spawn(function()
                 end
             end
         end
-
         if Config.AutoRebirth and Remotes.Rebirth then
             pcall(function() Remotes.Rebirth:InvokeServer() end)
         end
     end
 end)
 
--- Loop 4: Auto Menara & Stage Selector
 task.spawn(function()
     while task.wait(1.5) do
         if Config.AutoTower then
@@ -2147,35 +1960,25 @@ task.spawn(function()
     end
 end)
 
--- Loop 5: Auto Equip Best, Fuse, Sell, Klaim Hadiah & Spin Wheel
 task.spawn(function()
     while task.wait(3.5) do
         if Config.AutoEquipBest then
             if Remotes.EquipBestPets then pcall(function() Remotes.EquipBestPets:InvokeServer() end) end
             if Remotes.EquipBestTeam then pcall(function() Remotes.EquipBestTeam:InvokeServer() end) end
         end
-
         if Config.AutoFuse and Remotes.FusePets then
             pcall(function() Remotes.FusePets:InvokeServer() end)
             pcall(function() Remotes.FusePets:InvokeServer("All") end)
         end
-
         if Config.AutoSellWeakest and Remotes.SellWeakest then
             pcall(function() Remotes.SellWeakest:InvokeServer() end)
         end
-
-        if Config.AutoSpinWheel then
-            if Remotes.SpinWheel then pcall(function() Remotes.SpinWheel:InvokeServer() end) end
-            local sw = Workspace:FindFirstChild("SpinWheel")
-            local base = sw and sw:FindFirstChild("Base")
-            local prompt = base and base:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then SafeFirePrompt(prompt) end
+        if Config.AutoSpinWheel and Remotes.SpinWheel then
+            pcall(function() Remotes.SpinWheel:InvokeServer() end)
         end
-
         if Config.AutoWatchSkipAd and Remotes.WatchSkipAd then
             pcall(function() Remotes.WatchSkipAd:InvokeServer() end)
         end
-
         if Config.AutoClaimRewards then
             if Remotes.ClaimDaily then pcall(function() Remotes.ClaimDaily:InvokeServer() end) end
             if Remotes.ClaimStarterQuest then pcall(function() Remotes.ClaimStarterQuest:InvokeServer() end) end
@@ -2184,17 +1987,14 @@ task.spawn(function()
             if Remotes.ClaimFriendChest then pcall(function() Remotes.ClaimFriendChest:InvokeServer() end) end
             if Remotes.ClaimFreePet then pcall(function() Remotes.ClaimFreePet:InvokeServer() end) end
             if Remotes.ClaimPlaytime then
-                for i = 1, 12 do
-                    pcall(function() Remotes.ClaimPlaytime:InvokeServer(i) end)
-                end
+                for i = 1, 12 do pcall(function() Remotes.ClaimPlaytime:InvokeServer(i) end) end
             end
             if Remotes.ClaimQuest then
-                for i = 1, 15 do
-                    pcall(function() Remotes.ClaimQuest:InvokeServer(i) end)
-                end
+                for i = 1, 15 do pcall(function() Remotes.ClaimQuest:InvokeServer(i) end) end
             end
         end
     end
 end)
 
-Notify("Rockstar Hub v6.7 Aktif", "Fix Auto Dadu Terbaik & Auto Trait Terbaik (PetUuid) siap!")
+task.delay(1, UpdateDiceDisplay)
+Notify("Rockstar Hub v6.8 Aktif", "Fix Luck Dadu Terbaik, Skip Void & Auto Trait siap!")
