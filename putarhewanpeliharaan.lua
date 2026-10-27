@@ -1,23 +1,22 @@
 -- ============================================================================
--- * ROCKSTAR HUB v8.4 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
+-- * ROCKSTAR HUB v8.5 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EDITION) *
 -- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v8.4:
---   [[OK]] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
---   [[OK]] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
---   [[OK]] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
---   [[OK]] SAFE GETCONNECTIONS: Anti-crash pada executor tanpa getconnections
---   [[OK]]
---   [[OK]] UPGRADE PET / PODIUM JARAK JAUH: 100% Tanpa Teleport (Bypass Proximity & Remote)
---   [[OK]] FIX AUTO TREADMILL: Berdiri di Belt + Touch Physics + Auto Run aktif
---   [[OK]] FIX AUTO MENARA OTOMATIS PENUH:
---       - AutoClick GUI (Deteksi luas: Start/Fight/Battle/Mulai/Tarung/Stage)
---       - Auto Combat Tap aman (tanpa klik layar acak)
---   [[OK]] v8.4: SafeCall auto-deteksi RemoteEvent/RemoteFunction + timeout
---   [[OK]] v8.4: Blokir popup beli Robux & gabung komunitas
---   [[OK]] v8.4: Fix tombol R* (single handler) & fix pattern scan Toko Dadu
---       - Auto Retry & Decline Revive instan
---   [[OK]] DADU TERBAIK & AUTO BUY TOKO DADU: Stabil & True Luck (Tanpa Skip Void)
---   [[OK]] AUTO SELL: Jual Pet Terlemah & Jual Semua Pet Cadangan
+-- Update v8.5:
+--   [[OK]] FITUR AUTO FUSE LENGKAP:
+--       - Remote FusePets ("All" / true / generic)
+--       - Interaksi Proximity Prompt StandFusing & FusingMachine Zone
+--       - GUI Auto-Clicker untuk konfirmasi tombol Gabung / Fuse / Craft
+--       - Tombol cepat "[Fast] Gabung Semua Hewan Sekarang" di Tab 1
+--       - Opsi Teleport ke Mesin Fusing
+--   [[OK]] FITUR AUTO GRADES LENGKAP:
+--       - Remote RollGrade + Deteksi PetGrade pada tiap Podium pemain
+--       - Target Grade Selector dinamis (A, S, SS, SSS, X)
+--       - Auto Teleport ke GradeShopPad & Proximity StandGrades
+--       - Tombol cepat "[Fast] Roll Grade Sekarang" di Tab 3
+--       - Dukungan Auto Reroll Trait & Teleport TraitShopPad
+--   [[OK]] RUN INDEPENDENT: Auto Fuse & Auto Grades berjalan mandiri tanpa harus menyalakan Auto Roll
+--   [[OK]] MENARA & SHORTCUT STABIL: Mempertahankan perbaikan Menara v8.4 & Floating Button R* anti-macet
+--   [[OK]] 100% UNIVERSAL EXECUTOR (DELTA PC & MOBILE): SafeCall anti-lag, 0 klik layar liar (Anti-Robux)
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -56,6 +55,7 @@ local Config = {
     RollDelay = 0.15,
     AutoEquipBest = false,
     AutoFuse = false,
+    AutoTeleportFusing = false,
     AutoSellWeakest = false,
     AutoSellAll = false,
 
@@ -73,7 +73,7 @@ local Config = {
     AutoTreadmill = false,
     AutoWatchSkipAd = false,
 
-    -- Auto Peningkatan Jarak Jauh
+    -- Auto Peningkatan Jarak Jauh & Reroll (Grades & Traits)
     AutoUpgradePodium = false,
     RemoteUpgradeOnly = true,       -- Upgrade 100% jarak jauh tanpa teleport
     AutoBuyAllUpgrades = false,
@@ -81,7 +81,8 @@ local Config = {
     AutoRerollTrait = false,
     TraitTargetMode = "BestOnly",
     AutoRollGrade = false,
-    GradeTargetMode = "BestOnly",
+    GradeTargetMode = "S",          -- "A", "S", "SS", "SSS", "X", "BestOnly"
+    AutoTeleportGradeShop = false,
     AutoTeleportTraitShop = false,
     AutoBuyCandyShop = false,
     AutoBuyQuestShop = false,
@@ -801,6 +802,177 @@ local function StartTowerStage(stageNum)
 end
 
 -- ============================================================================
+-- 7B. SISTEM AUTO FUSE & AUTO ROLL GRADE (PET UPGRADE SYSTEMS)
+-- ============================================================================
+local function TriggerFuseGUI()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not pGui then return end
+
+    for _, g in ipairs(pGui:GetChildren()) do
+        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub", 1, true) then
+            for _, desc in ipairs(g:GetDescendants()) do
+                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                    local bText = (desc:IsA("TextButton") and string.lower(desc.Text)) or ""
+                    local bName = string.lower(desc.Name)
+                    if not IsRobuxButton(bText, bName) then
+                        if string.find(bText, "fuse", 1, true) or string.find(bText, "gabung", 1, true)
+                           or string.find(bText, "craft", 1, true) or string.find(bName, "fuse", 1, true)
+                           or string.find(bName, "gabung", 1, true) or string.find(bName, "craft", 1, true) then
+                            FireGuiButtonSafe(desc)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function ExecuteFuseAll()
+    -- Teleport ke Mesin Fusing jika diaktifkan
+    if Config.AutoTeleportFusing then
+        local fusingMachine = Workspace:FindFirstChild("FusingMachine", true)
+        local fZone = fusingMachine and (fusingMachine:FindFirstChild("Zone", true) or fusingMachine:FindFirstChild("TravelPoint", true) or fusingMachine:FindFirstChildOfClass("BasePart"))
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if fZone and hrp and (hrp.Position - fZone.Position).Magnitude > 20 then
+            hrp.CFrame = fZone.CFrame + Vector3.new(0, 3, 0)
+            task.wait(0.2)
+        end
+    end
+
+    -- Trigger Proximity Prompt Fusing
+    local fusingMachine = Workspace:FindFirstChild("FusingMachine", true)
+    local standPrompt = fusingMachine and (fusingMachine:FindFirstChild("StandFusing", true) or fusingMachine:FindFirstChildOfClass("ProximityPrompt"))
+    if standPrompt then
+        FirePromptRemote(standPrompt)
+    end
+
+    -- Remote FusePets (All / Generic / True)
+    SafeCall("FusePets", false, "All")
+    SafeCall("FusePets", false)
+    SafeCall("FusePets", false, true)
+
+    -- Auto-click konfirmasi tombol Fuse di GUI
+    TriggerFuseGUI()
+end
+
+local GradeRankMap = {
+    ["F"] = 1,
+    ["E"] = 2,
+    ["D"] = 3,
+    ["C"] = 4,
+    ["B"] = 5,
+    ["A"] = 6,
+    ["S"] = 7,
+    ["SS"] = 8,
+    ["SSS"] = 9,
+    ["X"] = 10,
+    ["BESTONLY"] = 8,
+}
+
+local function GetPodiumGrade(podium)
+    if not podium then return nil end
+    local attr = podium:GetAttribute("PetGrade") or podium:GetAttribute("Grade")
+    if attr then return tostring(attr) end
+    for _, child in ipairs(podium:GetDescendants()) do
+        if child:IsA("StringValue") and (string.lower(child.Name) == "grade" or string.lower(child.Name) == "petgrade") then
+            return child.Value
+        elseif child:IsA("TextLabel") and (string.find(string.lower(child.Name), "grade", 1, true) or string.find(string.lower(child.Text), "grade", 1, true)) then
+            local g = string.match(child.Text, "Grade%s*:%s*([A-Za-z0-9+-]+)") or string.match(child.Text, "([A-Za-z0-9+-]+)")
+            if g then return g end
+        end
+    end
+    return nil
+end
+
+local function TriggerGradeGUI()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not pGui then return end
+
+    for _, g in ipairs(pGui:GetChildren()) do
+        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub", 1, true) then
+            for _, desc in ipairs(g:GetDescendants()) do
+                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                    local bText = (desc:IsA("TextButton") and string.lower(desc.Text)) or ""
+                    local bName = string.lower(desc.Name)
+                    if not IsRobuxButton(bText, bName) then
+                        if (string.find(bText, "roll", 1, true) or string.find(bText, "reroll", 1, true) or string.find(bText, "spin", 1, true)
+                           or string.find(bName, "roll", 1, true) or string.find(bName, "reroll", 1, true))
+                           and (string.find(bText, "grade", 1, true) or string.find(bName, "grade", 1, true)
+                           or string.find(g.Name, "grade", 1, true) or string.find(g.Name, "Grade", 1, true)) then
+                            FireGuiButtonSafe(desc)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function RollPetGrade(slotNum, petUuid)
+    -- Trigger Proximity Prompt StandGrades
+    local gradePad = Workspace:FindFirstChild("GradeShopPad", true)
+    local prompt = gradePad and (gradePad:FindFirstChild("StandGrades", true) or gradePad:FindFirstChildOfClass("ProximityPrompt"))
+    if prompt then
+        FirePromptRemote(prompt)
+    end
+
+    -- Panggil Remote RollGrade
+    if slotNum and petUuid then
+        SafeCall("RollGrade", false, slotNum, petUuid)
+    end
+    if slotNum then
+        SafeCall("RollGrade", false, slotNum)
+    end
+    if petUuid then
+        SafeCall("RollGrade", false, petUuid)
+    end
+    SafeCall("RollGrade", false)
+
+    -- Auto-click tombol Roll di GUI jika terbuka
+    TriggerGradeGUI()
+end
+
+local function ExecuteRollAllGrades()
+    if Config.AutoTeleportGradeShop then
+        local gradePad = Workspace:FindFirstChild("GradeShopPad", true)
+        local gZone = gradePad and (gradePad:FindFirstChild("Zone") or gradePad:FindFirstChildOfClass("BasePart"))
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if gZone and hrp and (hrp.Position - gZone.Position).Magnitude > 20 then
+            hrp.CFrame = gZone.CFrame + Vector3.new(0, 3, 0)
+            task.wait(0.2)
+        end
+    end
+
+    local targetKey = string.upper(tostring(Config.GradeTargetMode or "S"))
+    local targetRank = GradeRankMap[targetKey] or 7
+    local podiums = GetMyPodiums()
+    local rolledCount = 0
+
+    for idx, podium in ipairs(podiums) do
+        local slotNum = podium:GetAttribute("Slot") or idx
+        local petUuid = podium:GetAttribute("PetUuid")
+        local petId = podium:GetAttribute("PetId")
+        local curGrade = GetPodiumGrade(podium)
+        local curRank = curGrade and (GradeRankMap[string.upper(curGrade)] or 0) or 0
+
+        -- Roll jika pet ada di podium dan grade belum mencapai target
+        if (petUuid or petId) and curRank < targetRank then
+            RollPetGrade(slotNum, petUuid)
+            rolledCount = rolledCount + 1
+            task.wait(0.15)
+        end
+    end
+
+    if rolledCount == 0 then
+        -- Jika belum ada podium atau pet sedang tidak terbaca, kirim generic roll
+        RollPetGrade(nil, nil)
+    end
+    return rolledCount
+end
+
+-- ============================================================================
 -- 8. BACKGROUND LOOPS OTOMATISASI LENGKAP
 -- ============================================================================
 
@@ -814,8 +986,7 @@ task.spawn(function()
                 SafeCall("EquipBestPets", false)
             end
             if Config.AutoFuse then
-                SafeCall("FusePets", false, "All")
-                SafeCall("FusePets", false)
+                ExecuteFuseAll()
             end
             if Config.AutoSellWeakest then
                 SafeCall("SellWeakest", false)
@@ -825,6 +996,13 @@ task.spawn(function()
             end
             task.wait(Config.RollDelay)
         else
+            -- Menjalankan Fuse, Equip Best & Sell bahkan saat AutoRoll mati
+            if Config.AutoEquipBest then
+                SafeCall("EquipBestPets", false)
+            end
+            if Config.AutoFuse then
+                ExecuteFuseAll()
+            end
             if Config.AutoSellWeakest then
                 SafeCall("SellWeakest", false)
             end
@@ -1642,6 +1820,27 @@ local p1Card = CreateCard(TabFrames["Roll"], "Otomatisasi Putar Hewan")
 CreateToggle(p1Card, "Auto Putar (Auto Roll)", "Putar gacha hewan peliharaan otomatis", "AutoRoll")
 CreateToggle(p1Card, "Auto Pasang Hewan Terbaik", "Pasang otomatis pet dengan bonus tertinggi", "AutoEquipBest")
 CreateToggle(p1Card, "Auto Gabung Hewan (Fuse)", "Gabungkan pet duplikat untuk menaikkan tier", "AutoFuse")
+CreateToggle(p1Card, "Teleport ke Mesin Fusing", "Dekati FusingMachine otomatis saat menggabungkan", "AutoTeleportFusing")
+
+local ManualFuseNowBtn = Instance.new("TextButton")
+ManualFuseNowBtn.Size = UDim2.new(1, 0, 0, 28)
+ManualFuseNowBtn.BackgroundColor3 = Color3.fromRGB(24, 48, 80)
+ManualFuseNowBtn.Text = "[Fast] Gabung Semua Hewan Sekarang (Fuse All Now)"
+ManualFuseNowBtn.TextColor3 = Theme.Accent
+ManualFuseNowBtn.Font = Enum.Font.GothamBold
+ManualFuseNowBtn.TextSize = 11
+ManualFuseNowBtn.BorderSizePixel = 0
+ManualFuseNowBtn.Parent = p1Card
+
+local mfbCorner = Instance.new("UICorner")
+mfbCorner.CornerRadius = UDim.new(0, 6)
+mfbCorner.Parent = ManualFuseNowBtn
+
+ManualFuseNowBtn.MouseButton1Click:Connect(function()
+    ExecuteFuseAll()
+    Log("Manual Fuse: Mengirim permintaan gabung pet...")
+end)
+
 CreateToggle(p1Card, "Auto Jual Hewan Terlemah", "Jual otomatis hewan dengan stat terlemah di tas", "AutoSellWeakest")
 CreateToggle(p1Card, "Auto Jual Semua Pet Cadangan", "Jual semua pet yang tidak sedang terpasang", "AutoSellAll")
 
@@ -1750,6 +1949,60 @@ end)
 CreateToggle(p3Card, "Auto Beli Semua Peningkatan", "Beli upgrade general yang telah dipelajari", "AutoBuyAllUpgrades")
 CreateToggle(p3Card, "Auto Beli Peningkatan Rebirth", "Beli peningkatan toko rebirth otomatis", "AutoBuyRebirthUpgrades")
 CreateToggle(p3Card, "Auto Rebirth", "Lakukan Rebirth otomatis saat persyaratan terpenuhi", "AutoRebirth")
+
+-- KARTU REROLL GRADE & TRAIT
+local p3GradeCard = CreateCard(TabFrames["Upgrade"], "Reroll Nilai Grade & Trait Pet")
+CreateToggle(p3GradeCard, "Auto Roll Grade Pet", "Reroll nilai grade pet otomatis sampai target tercapai", "AutoRollGrade")
+
+local GradeTargetBtn = Instance.new("TextButton")
+GradeTargetBtn.Size = UDim2.new(1, 0, 0, 30)
+GradeTargetBtn.BackgroundColor3 = Color3.fromRGB(24, 48, 80)
+GradeTargetBtn.Text = "Target Grade Minimum: [" .. Config.GradeTargetMode .. "] (Klik Ubah)"
+GradeTargetBtn.TextColor3 = Theme.Accent
+GradeTargetBtn.Font = Enum.Font.GothamBold
+GradeTargetBtn.TextSize = 11
+GradeTargetBtn.BorderSizePixel = 0
+GradeTargetBtn.Parent = p3GradeCard
+
+local gtbCorner = Instance.new("UICorner")
+gtbCorner.CornerRadius = UDim.new(0, 6)
+gtbCorner.Parent = GradeTargetBtn
+
+local GradeCycle = { "A", "S", "SS", "SSS", "X" }
+GradeTargetBtn.MouseButton1Click:Connect(function()
+    local curIdx = 1
+    for i, v in ipairs(GradeCycle) do
+        if v == Config.GradeTargetMode then curIdx = i break end
+    end
+    local nextIdx = (curIdx % #GradeCycle) + 1
+    Config.GradeTargetMode = GradeCycle[nextIdx]
+    GradeTargetBtn.Text = "Target Grade Minimum: [" .. Config.GradeTargetMode .. "] (Klik Ubah)"
+    Log("Target Grade diubah ke: " .. Config.GradeTargetMode)
+end)
+
+CreateToggle(p3GradeCard, "Teleport ke Pad Grade Shop", "Dekati GradeShopPad otomatis saat reroll grade", "AutoTeleportGradeShop")
+
+local RollGradeNowBtn = Instance.new("TextButton")
+RollGradeNowBtn.Size = UDim2.new(1, 0, 0, 30)
+RollGradeNowBtn.BackgroundColor3 = Color3.fromRGB(24, 48, 80)
+RollGradeNowBtn.Text = "[Fast] Roll Grade Sekarang (Semua Pet Belum Max)"
+RollGradeNowBtn.TextColor3 = Theme.Accent
+RollGradeNowBtn.Font = Enum.Font.GothamBold
+RollGradeNowBtn.TextSize = 11
+RollGradeNowBtn.BorderSizePixel = 0
+RollGradeNowBtn.Parent = p3GradeCard
+
+local rgnbCorner = Instance.new("UICorner")
+rgnbCorner.CornerRadius = UDim.new(0, 6)
+rgnbCorner.Parent = RollGradeNowBtn
+
+RollGradeNowBtn.MouseButton1Click:Connect(function()
+    local n = ExecuteRollAllGrades()
+    Log("Roll grade dikirim ke " .. tostring(n) .. " pet")
+end)
+
+CreateToggle(p3GradeCard, "Auto Reroll Trait Pet", "Reroll trait pet otomatis hingga dapat trait terbaik", "AutoRerollTrait")
+CreateToggle(p3GradeCard, "Teleport ke Pad Trait Shop", "Dekati TraitShopPad otomatis saat reroll trait", "AutoTeleportTraitShop")
 
 -- TAB 4: MENARA PERTARUNGAN (FULL AUTOMATIC)
 local p4Card = CreateCard(TabFrames["Tower"], "Pengaturan Menara Pertarungan (Otomatis)")
