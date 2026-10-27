@@ -1,7 +1,12 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v7.8 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
+-- ★ ROCKSTAR HUB v7.9 - [🎃] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) ★
 -- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v7.8:
+-- Update v7.9:
+--   [✓] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
+--   [✓] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
+--   [✓] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
+--   [✓] SAFE GETCONNECTIONS: Anti-crash pada executor tanpa getconnections
+--   [✓]
 --   [✓] UPGRADE PET / PODIUM JARAK JAUH: 100% Tanpa Teleport (Bypass Proximity & Remote)
 --   [✓] FIX AUTO TREADMILL: Berdiri di Belt + Touch Physics + Auto Run aktif
 --   [✓] FIX AUTO MENARA OTOMATIS PENUH:
@@ -30,6 +35,10 @@ pcall(function()
 end)
 
 local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+    task.wait(0.1)
+    LocalPlayer = Players.LocalPlayer
+end
 
 -- ============================================================================
 -- 1. PENGATURAN & STATE GLOBAL
@@ -235,7 +244,8 @@ local KnownDiceCatalog = {
 
 local function ParseMultiplierString(str)
     if not str then return nil end
-    local clean = string.gsub(str, "[,%+xX🍀]", "")
+    local clean = string.gsub(str, "[,%+xX]", "")
+    clean = string.gsub(clean, "[^%d%.kKmMbBtT]", "")
     clean = string.gsub(clean, "%s+", "")
     local numStr, unit = string.match(clean, "([%d%.]+)%s*([kKmMbBtT]?)")
     if numStr then
@@ -286,11 +296,7 @@ local function GetDiceCardsFromGui()
 
     local targetContainers = {}
     for _, gui in ipairs(playerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and gui.Enabled then
-            if string.find(gui.Name, "RockstarHub") then
-                continue
-            end
-
+        if gui:IsA("ScreenGui") and gui.Enabled and not string.find(gui.Name, "RockstarHub") then
             local isShopGui = false
             local gName = string.lower(gui.Name)
             if string.find(gName, "dice") or string.find(gName, "shop") or string.find(gName, "dadu") or string.find(gName, "toko") then
@@ -641,16 +647,20 @@ local function AutoClickTowerGUI(stageNum)
                        or bText:find("retry") or bText:find("ulang") or bText:find("next") or bText:find("lanjut")
                        or bName:find("start") or bName:find("fight") or bName:find("battle") or bName:find("enter") then
                         pcall(function()
-                            for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do conn:Fire() end
-                            for _, conn in ipairs(getconnections(desc.Activated)) do conn:Fire() end
+                            if typeof(getconnections) == "function" then
+                                for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+                                for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                            end
                         end)
                     end
 
                     -- Klik tombol stage
                     if stageNum and (bText == tostring(stageNum) or bName == "stage" .. tostring(stageNum) or bName == tostring(stageNum)) then
                         pcall(function()
-                            for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do conn:Fire() end
-                            for _, conn in ipairs(getconnections(desc.Activated)) do conn:Fire() end
+                            if typeof(getconnections) == "function" then
+                                for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+                                for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                            end
                         end)
                     end
                 end
@@ -983,8 +993,10 @@ task.spawn(function()
                             local n = desc.Name:lower()
                             if n:find("tap") or n:find("attack") or n:find("hit") or txt:find("tap") or txt:find("serang") then
                                 pcall(function()
-                                    for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do conn:Fire() end
-                                    for _, conn in ipairs(getconnections(desc.Activated)) do conn:Fire() end
+                                    if typeof(getconnections) == "function" then
+                                        for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+                                        for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                                    end
                                 end)
                             end
                         end
@@ -1083,18 +1095,42 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 pcall(function()
-    if syn and syn.protect_gui then
-        syn.protect_gui(ScreenGui)
-        ScreenGui.Parent = CoreGui
-    elseif gethui then
-        ScreenGui.Parent = gethui()
-    else
-        ScreenGui.Parent = CoreGui
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if pGui then
+        for _, g in ipairs(pGui:GetChildren()) do
+            if g.Name:find("RockstarHub") then g:Destroy() end
+        end
+    end
+    if CoreGui then
+        for _, g in ipairs(CoreGui:GetChildren()) do
+            if g.Name:find("RockstarHub") then pcall(function() g:Destroy() end) end
+        end
     end
 end)
 
-if not ScreenGui.Parent then
-    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local guiParented = false
+if typeof(gethui) == "function" then
+    pcall(function()
+        ScreenGui.Parent = gethui()
+        guiParented = true
+    end)
+end
+if not guiParented and typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+    pcall(function()
+        syn.protect_gui(ScreenGui)
+        ScreenGui.Parent = CoreGui
+        guiParented = true
+    end)
+end
+if not guiParented then
+    pcall(function()
+        local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
+        ScreenGui.Parent = pGui
+        guiParented = true
+    end)
+end
+if not guiParented or not ScreenGui.Parent then
+    pcall(function() ScreenGui.Parent = CoreGui end)
 end
 
 -- Floating Toggle Button (R★)
