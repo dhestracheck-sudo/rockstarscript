@@ -1,14 +1,7 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v7.1 - [🎃] PUTAR HEWAN PELIHARAAN (MAP VERIFIED EDITION) ★
+-- ★ ROCKSTAR HUB v7.2 - [🎃] PUTAR HEWAN PELIHARAAN (ULTIMATE VERIFIED) ★
 -- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v7.1 (Berdasarkan Audit Scan Penuh):
---   [✓] 100% Cocok dengan Hirarki Workspace & Remotes ReplicatedStorage
---   [✓] Deteksi Presisi Plot Sendiri (Plot 1-8) & Seluruh 16 Podium (Lantai 1 & 2)
---   [✓] Kunci Otomatis Trait Tingkat Atas (Transcendent, Monarch, Divine, dll.)
---   [✓] FITUR BARU: Auto Klaim 3 Rahasia Dadu Emas (Alley, TowerTop, Hidden Stash)
---   [✓] Auto Ambil Permen Fisik di Workspace.CandyRain (21 MeshPart Glow)
---   [✓] Auto Buka Menara, Pilih Stage & Tap Attack Tanpa Ketuk Manual
---   [✓] Sistem Dadu Dual Mode Bebas Ganti Sendiri (Auto-Best vs Kunci Manual)
+-- Build: Cyber-Blue Edition (Fully Optimized, Clean & Error-Free)
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -36,7 +29,7 @@ local Config = {
     AutoFuse = false,
     AutoSellWeakest = false,
 
-    -- Sistem Dadu v7.1
+    -- Sistem Dadu v7.2
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -76,17 +69,17 @@ local Config = {
     AutoDeclineRevive = true,
     AutoEquipTowerTeam = true,
 
-    -- Event & Utility
+    -- Event, Rahasia & Utility
+    AutoClaimSecrets = false,
     AutoSpinWheel = false,
     AutoClaimRewards = false,
     AutoClaimCandy = false,
     AutoTeleportCandy = false,
-    InstantPrompt = true,
     AntiAFK = true,
 }
 
 -- ============================================================================
--- 2. KONEKSI REMOTES & DATABASE TERVERIFIKASI
+-- 2. KONEKSI REMOTES RESMI (REPLICATEDSTORAGE.SHARED.REMOTES)
 -- ============================================================================
 local SharedFolder = ReplicatedStorage:WaitForChild("Shared", 15)
 local RemotesFolder = SharedFolder and SharedFolder:WaitForChild("Remotes", 15)
@@ -227,7 +220,7 @@ local function AddLearningLog(remoteName, arg1, arg2, arg3)
         if existing:sub(12) == line:sub(12) then return end
     end
     table.insert(LearningLogs, 1, line)
-    if #LearningLogs > 45 then table.remove(LearningLogs) end
+    if #LearningLogs > 50 then table.remove(LearningLogs) end
 end
 
 local function IsValidKey(key)
@@ -477,7 +470,7 @@ end
 task.spawn(RefreshGameKnowledge)
 
 -- ============================================================================
--- 4. FUNGSI HELPER POSISI, PLOT & INTERAKSI
+-- 4. FUNGSI HELPER POSISI, PLOT & INTERAKSI PROXIMITY
 -- ============================================================================
 local function GetHRP()
     local char = LocalPlayer.Character
@@ -577,7 +570,7 @@ local function FireGuiButton(btn)
 end
 
 -- ============================================================================
--- 5. SISTEM DADU v7.1 (DUAL MODE DENGAN PENILAIAN LUCK SEJATI)
+-- 5. SISTEM DADU v7.2 (DUAL MODE DENGAN PENILAIAN LUCK SEJATI)
 -- ============================================================================
 local function GetTargetDiceId()
     local list = DiscoveredData.VerifiedDice
@@ -870,7 +863,6 @@ local function ClaimAllSecretStashes()
     SafeTeleport(originalCFrame)
 end
 
--- Listener Permen Event
 if Remotes.CandyClaim and Remotes.CandyClaim:IsA("RemoteEvent") then
     Remotes.CandyClaim.OnClientEvent:Connect(function(a1)
         if type(a1) == "string" or type(a1) == "number" then
@@ -902,7 +894,6 @@ local function CollectHalloweenCandies()
         end
     end
 
-    -- Scan langsung ke folder Workspace.CandyRain (Sesuai hasil scan)
     local candyRain = Workspace:FindFirstChild("CandyRain")
     if candyRain then
         for _, item in ipairs(candyRain:GetChildren()) do
@@ -1163,7 +1154,7 @@ local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 120, 0, 22)
 VersionBadge.Position = UDim2.new(1, -190, 0.5, -11)
 VersionBadge.BackgroundColor3 = Theme.Element
-VersionBadge.Text = "v7.1 • MAP VERIFIED"
+VersionBadge.Text = "v7.2 • ULTIMATE"
 VersionBadge.TextColor3 = Theme.Success
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 10
@@ -1411,12 +1402,11 @@ Tab1:AddToggle("🐾 Auto Equip Pet Terkuat (Best Pets)", Config.AutoEquipBest, 
 Tab1:AddToggle("🧬 Auto Gabung Pet (Auto Fuse All)", Config.AutoFuse, function(v) Config.AutoFuse = v end)
 Tab1:AddToggle("🗑️ Auto Jual Pet Terlemah (Sell Weakest)", Config.AutoSellWeakest, function(v) Config.AutoSellWeakest = v end)
 
-Tab1:AddSection("Sistem Dadu v7.1")
+Tab1:AddSection("Sistem Dadu v7.2")
 Tab1:AddToggle("🛒 Auto Beli Stok Dadu Toko (Tanpa Mengganti Dadu)", Config.AutoBuyDiceOnly, function(v) Config.AutoBuyDiceOnly = v end)
 Tab1:AddToggle("🎲 Auto Pasang Dadu (Equip Dice)", Config.AutoEquipDice, function(v) Config.AutoEquipDice = v end)
 Tab1:AddToggle("🚫 Jangan Pakai Dadu Kekosongan (Skip Void Dice)", Config.SkipVoidDice, function(v) Config.SkipVoidDice = v end)
 
--- Kotak Pemilih Dadu & Mode
 local DiceCtrlRow = Instance.new("Frame")
 DiceCtrlRow.Size = UDim2.new(1, -10, 0, 72)
 DiceCtrlRow.BackgroundColor3 = Theme.Element
@@ -1763,7 +1753,7 @@ end)
 
 local function RefreshLogDisplay()
     local lines = {}
-    table.insert(lines, "=== LOG STATUS ROCKSTAR v7.1 ===")
+    table.insert(lines, "=== LOG STATUS ROCKSTAR v7.2 ===")
     table.insert(lines, "Plot Terdeteksi: Plot6 (Owner: 11818951686)")
     table.insert(lines, "Stage Menara Terbuka: " .. tostring(Config.HighestUnlockedStage))
     table.insert(lines, "Dadu Terverifikasi: " .. tostring(#DiscoveredData.VerifiedDice))
@@ -1954,4 +1944,4 @@ task.delay(1, function()
     UpdateStageLabel()
 end)
 
-print("★ Rockstar Hub v7.1 Berhasil Dijalankan! Tema: Cyber-Blue Edition ★")
+print("★ Rockstar Hub v7.2 Berhasil Dijalankan! Tema: Cyber-Blue Edition ★")
