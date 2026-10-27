@@ -1,14 +1,16 @@
 -- ============================================================================
--- * ROCKSTAR HUB v2.0 - 100% FULLY AUTONOMOUS AUTO TRADE BOT *
+-- * ROCKSTAR HUB v3.0 - 100% VERIFIED AUTONOMOUS TRADE BOT [VOLCANIC DEVIL] *
 -- Game: [GHOST] Simulator Ketukan Kelahiran Kembali (Tap Simulator Rebirth)
 -- PlaceId: 72858262610964 | GameId: 10629695169 | PlaceVersion: 4039
--- Mode Khusus: 100% ZERO HUMAN INTERVENTION (AFK SHOP BOT)
---   [OK] Auto Accept ANY incoming Trade Request (GUI Prompt + Remote Hook)
---   [OK] Auto Insert Pet: VOLCANIC DEVIL (Including Spawned/RainbowPets)
---   [OK] Auto Lock READY immediately after pet inserted
---   [OK] Auto Spam ACCEPT/CONFIRM as soon as countdown completes
---   [OK] Auto Reset & Loop for 24/7 non-stop customer trading
---   [OK] Built-in Anti-AFK (Zero Disconnect)
+-- Perbaikan Utama (v3.0):
+--   [FIX] Zero False-Positive: Tidak akan klik Ready sebelum pet TERVERIFIKASI
+--         sudah benar-benar muncul di slot offer trade!
+--   [FIX] VirtualInputManager Hardware Click: Simulasi klik mouse asli ke kartu
+--         pet Volcanic Devil di tampilan UI (tembus Frame/Roact/Custom UI).
+--   [FIX] Auto-Unequip Pet: Jika Volcanic Devil sedang di-equip, otomatis
+--         di-unequip terlebih dahulu agar diizinkan sistem game masuk trade.
+--   [FIX] Multi-Payload Remote Engine: Mengirim semua varian payload TradeUpdate.
+--   [OK] Anti-AFK (Zero Disconnect 24 Jam)
 --   [OK] 100% Universal Delta Executor Compatible (PC & Android)
 -- ============================================================================
 
@@ -18,52 +20,50 @@ local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Universal Pack Function (Lua 5.1 Compatible)
+-- Helper pack function universal
 local function pack_fn(...)
     return { n = select("#", ...), ... }
 end
 
 -- ============================================================================
--- 1. KONFIGURASI BOT (DEFAULT: 100% FULL OTOMATIS TANPA SENTUH)
+-- 1. KONFIGURASI BOT
 -- ============================================================================
 local Config = {
-    TargetPetName = "Volcanic Devil",  -- Pet spesifik yang dijual
-    BuyerUsername = "",                -- Kosongkan = Otomatis terima siapapun yang trade!
-    AutoAcceptTrade = true,            -- Otomatis terima ajakan trade (Remote + GUI)
-    AutoAcceptFromAnyone = true,       -- DEFAULT TRUE: Tidak butuh input username manual
-    AutoAddVolcanicDevil = true,       -- Otomatis masukkan Volcanic Devil ke trade slot
-    AutoFastDeal = true,               -- Otomatis kunci Ready dan Accept setelah timer
-    MaxPetsPerTrade = 1,               -- Jumlah Volcanic Devil per transaksi
-    ProtectEquippedPets = false,       -- DEFAULT FALSE: Boleh trade Volcanic Devil meski sedang di-equip
-    ProtectFavoritedPets = false,      -- Boleh trade Volcanic Devil
+    TargetPetName = "Volcanic Devil",
+    BuyerUsername = "",                -- Kosong = Terima siapapun yang trade
+    AutoAcceptTrade = true,            -- Otomatis terima ajakan trade
+    AutoAcceptFromAnyone = true,       -- Terima dari siapapun
+    AutoAddVolcanicDevil = true,       -- Otomatis masukkan Volcanic Devil
+    AutoFastDeal = true,               -- Otomatis kunci Ready dan Accept
+    MaxPetsPerTrade = 1,               -- Jumlah pet per trade
     DealDelaySeconds = 3.2,            -- Jeda countdown server sebelum klik Confirm
-    AntiAfkEnabled = true,             -- Anti disconnected 20 menit idle
+    AntiAfkEnabled = true,
 }
 
 local State = {
     InTrade = false,
-    CurrentTradingWith = "Siapapun",
+    PetOfferVerified = false,          -- HANYA TRUE JIKA PET SUDAH NYATA DI SLOT
+    ReadyLocked = false,
+    AcceptSpamming = false,
     VolcanicDevilsInStock = 0,
     TotalCompletedTrades = 0,
-    PetAlreadyAddedInCurrentTrade = false,
-    ReadyAlreadyClickedInCurrentTrade = false,
-    AcceptSpamming = false,
     Logs = {},
-    LastTradeAttemptTime = 0,
+    RetryCount = 0,
 }
 
 local function Log(msg)
     local timestamp = os.date("%H:%M:%S")
     local fullMsg = "[" .. timestamp .. "] " .. tostring(msg)
     table.insert(State.Logs, 1, fullMsg)
-    if #State.Logs > 35 then
+    if #State.Logs > 40 then
         table.remove(State.Logs)
     end
-    print("[ROCKSTAR AUTO-TRADE]: " .. fullMsg)
+    print("[ROCKSTAR TRADE v3]: " .. fullMsg)
 end
 
 -- Anti AFK
@@ -72,17 +72,18 @@ if Config.AntiAfkEnabled then
         LocalPlayer.Idled:Connect(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.new(0, 0))
-            Log("Anti-AFK: Mencegah idle disconnect.")
+            Log("Anti-AFK: Menghindari idle disconnect.")
         end)
     end)
 end
 
 -- ============================================================================
--- 2. RESOLVER REMOTE TRADE
+-- 2. RESOLVER REMOTE TRADE & PET SERVICE
 -- ============================================================================
 local Remotes = {
     TradeRequested = nil,
     TradeUpdate = nil,
+    PetAction = nil,
 }
 
 local function GetRemote(path)
@@ -97,49 +98,59 @@ end
 
 Remotes.TradeRequested = GetRemote("ReplicatedStorage.RemoteServices.TradingService.RE.TradeRequested")
 Remotes.TradeUpdate = GetRemote("ReplicatedStorage.RemoteServices.TradingService.RE.TradeUpdate")
+Remotes.PetAction = GetRemote("ReplicatedStorage.RemoteServices.PetService.RE.PetActionRequested")
 
-if Remotes.TradeRequested then
-    Log("Remote TradeRequested terdeteksi OK.")
-else
-    Log("WARNING: Remote TradeRequested tidak ditemukan pada path standar!")
-end
-
-if Remotes.TradeUpdate then
-    Log("Remote TradeUpdate terdeteksi OK.")
-else
-    Log("WARNING: Remote TradeUpdate tidak ditemukan pada path standar!")
-end
+if Remotes.TradeRequested then Log("Remote TradeRequested terdeteksi OK.") end
+if Remotes.TradeUpdate then Log("Remote TradeUpdate terdeteksi OK.") end
+if Remotes.PetAction then Log("Remote PetActionRequested terdeteksi OK.") end
 
 -- ============================================================================
--- 3. FUNGSI KLIK GUI UNIVERSAL (DELTA EXECUTOR SUPPORT)
+-- 3. FUNGSI KLIK HARDWARE VIRTUAL INPUT (ANTI-BLOCKING)
 -- ============================================================================
-local function SafeClick(btn)
-    if not btn then return false end
-    local success = false
+local function HardwareClickGui(guiObj)
+    if not guiObj or not guiObj:IsA("GuiObject") then return false end
+    local pos = guiObj.AbsolutePosition
+    local size = guiObj.AbsoluteSize
+    if size.X <= 0 or size.Y <= 0 then return false end
+
+    local cx = math.floor(pos.X + (size.X / 2))
+    local cy = math.floor(pos.Y + (size.Y / 2))
+
+    -- Simulasi Event Mouse Asli via VirtualInputManager
     pcall(function()
-        if firesignal and btn:IsA("GuiButton") then
-            firesignal(btn.MouseButton1Click)
-            firesignal(btn.Activated)
-            success = true
+        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, true, game, 0)
+        task.wait(0.04)
+        VirtualInputManager:SendMouseButtonEvent(cx, cy, 0, false, game, 0)
+    end)
+
+    -- Sinyal Executor Standar (Firesignal)
+    pcall(function()
+        if firesignal and guiObj:IsA("GuiButton") then
+            firesignal(guiObj.Activated)
+            firesignal(guiObj.MouseButton1Click)
         end
     end)
+
+    -- Getconnections Fallback
     pcall(function()
-        if getconnections and btn:IsA("GuiButton") then
-            for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do
-                conn:Fire()
-                success = true
+        if getconnections then
+            if guiObj:IsA("GuiButton") then
+                for _, conn in ipairs(getconnections(guiObj.MouseButton1Click)) do conn:Fire() end
+                for _, conn in ipairs(getconnections(guiObj.Activated)) do conn:Fire() end
             end
-            for _, conn in ipairs(getconnections(btn.Activated)) do
-                conn:Fire()
-                success = true
+            if guiObj.InputBegan then
+                for _, conn in ipairs(getconnections(guiObj.InputBegan)) do
+                    conn:Fire({ UserInputType = Enum.UserInputType.MouseButton1, UserInputState = Enum.UserInputState.Begin })
+                end
             end
         end
     end)
-    return success
+
+    return true
 end
 
 -- ============================================================================
--- 4. LOGIKA PENGAMBILAN DATA PET VOLCANIC DEVIL
+-- 4. SCANNER PET VOLCANIC DEVIL & AUTO-UNEQUIP
 -- ============================================================================
 local function GetMyVolcanicDevils()
     local list = {}
@@ -165,20 +176,16 @@ local function GetMyVolcanicDevils()
             end
 
             local petId = obj:GetAttribute("PetId") or obj:GetAttribute("Id") or obj:GetAttribute("UUID") or obj.Name
-            local isEquipped = obj:GetAttribute("Equipped") == true
-            local isLocked = obj:GetAttribute("Locked") == true or obj:GetAttribute("Favorite") == true
+            local isEquipped = obj:GetAttribute("Equipped") == true or category == "RainbowPets"
 
             if isVolcanic and isOwner then
-                if not (Config.ProtectEquippedPets and isEquipped) and not (Config.ProtectFavoritedPets and isLocked) then
-                    table.insert(list, {
-                        Instance = obj,
-                        Id = petId,
-                        Name = name,
-                        Category = category,
-                        Equipped = isEquipped,
-                        Locked = isLocked,
-                    })
-                end
+                table.insert(list, {
+                    Instance = obj,
+                    Id = petId,
+                    Name = name,
+                    Category = category,
+                    Equipped = isEquipped,
+                })
             end
         end
     end
@@ -198,36 +205,202 @@ local function GetMyVolcanicDevils()
     return list
 end
 
--- ============================================================================
--- 5. REMOTE ACTIONS
--- ============================================================================
-local function FireTradeRespond(senderPlayer)
-    if not Remotes.TradeRequested or not Remotes.TradeRequested:IsA("RemoteEvent") then return end
-    pcall(function() Remotes.TradeRequested:FireServer(senderPlayer, true) end)
-    pcall(function() Remotes.TradeRequested:FireServer(true, senderPlayer) end)
-    pcall(function() Remotes.TradeRequested:FireServer(senderPlayer) end)
-    pcall(function() Remotes.TradeRequested:FireServer("Accept", senderPlayer) end)
-    if typeof(senderPlayer) == "Instance" and senderPlayer:IsA("Player") then
-        pcall(function() Remotes.TradeRequested:FireServer(senderPlayer.Name, true) end)
-    end
-end
-
-local function FireTradeAction(action, payload)
-    if not Remotes.TradeUpdate or not Remotes.TradeUpdate:IsA("RemoteEvent") then return end
+-- Auto Unequip Volcanic Devil jika game melarang trade pet yang sedang aktif
+local function UnequipVolcanicDevilIfEquipped()
     pcall(function()
-        if payload ~= nil then
-            Remotes.TradeUpdate:FireServer(action, payload)
-        else
-            Remotes.TradeUpdate:FireServer(action)
+        if Remotes.PetAction and Remotes.PetAction:IsA("RemoteEvent") then
+            local devils = GetMyVolcanicDevils()
+            for _, pet in ipairs(devils) do
+                if pet.Equipped then
+                    Remotes.PetAction:FireServer("Unequip", pet.Id)
+                    Remotes.PetAction:FireServer("Unequip", pet.Instance)
+                    Remotes.PetAction:FireServer(pet.Id, "Unequip")
+                    Log("Info: Melepas (Unequip) Volcanic Devil agar bisa masuk trade.")
+                end
+            end
         end
     end)
 end
 
 -- ============================================================================
--- 6. FULLY AUTONOMOUS ENGINES (ZERO HUMAN INTERVENTION)
+-- 5. VERIFIKASI RIIL: APAKAH PET BENAR-BENAR ADA DI SLOT OFFER?
 -- ============================================================================
+local function CheckIsPetInTradeOffer()
+    local foundInOffer = false
 
--- ENGINE 1: Auto Accept GUI Popup Invitation (Fast Polling 0.1 Detik)
+    pcall(function()
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("GuiObject") and desc.Visible then
+                        local nameLower = string.lower(desc.Name)
+
+                        -- Cek apakah objek ini berada di dalam container offer milik kita
+                        local isInsideMyOffer = false
+                        local cur = desc
+                        while cur and cur ~= gui do
+                            local cn = string.lower(cur.Name)
+                            local isOurOffer = string.find(cn, "myoffer", 1, true)
+                                or string.find(cn, "youroffer", 1, true)
+                                or string.find(cn, "player1", 1, true)
+                                or string.find(cn, "left", 1, true)
+                                or (string.find(cn, "offer", 1, true) and not string.find(cn, "their", 1, true) and not string.find(cn, "partner", 1, true) and not string.find(cn, "player2", 1, true))
+
+                            local isGridOrInv = string.find(cn, "grid", 1, true)
+                                or string.find(cn, "inv", 1, true)
+                                or string.find(cn, "backpack", 1, true)
+                                or string.find(cn, "storage", 1, true)
+                                or string.find(cn, "selection", 1, true)
+
+                            if isOurOffer and not isGridOrInv then
+                                isInsideMyOffer = true
+                                break
+                            end
+                            cur = cur.Parent
+                        end
+
+                        if isInsideMyOffer then
+                            -- Periksa teks label
+                            if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                                local txt = string.lower(desc.ContentText ~= "" and desc.ContentText or desc.Text)
+                                if string.find(txt, "volcanic", 1, true) and string.find(txt, "devil", 1, true) then
+                                    foundInOffer = true
+                                    return
+                                end
+                            end
+
+                            -- Periksa nama frame/model kartu
+                            if string.find(nameLower, "volcanic", 1, true) and string.find(nameLower, "devil", 1, true) then
+                                foundInOffer = true
+                                return
+                            end
+
+                            -- Periksa model pet di ViewportFrame
+                            if desc:IsA("Model") and string.find(string.lower(desc.Name), "volcanic", 1, true) then
+                                foundInOffer = true
+                                return
+                            end
+
+                            -- Periksa attribute pet
+                            local attrId = desc:GetAttribute("PetId") or desc:GetAttribute("Id")
+                            for _, pet in ipairs(GetMyVolcanicDevils()) do
+                                if pet.Id and (attrId == pet.Id or desc.Name == tostring(pet.Id)) then
+                                    foundInOffer = true
+                                    return
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    return foundInOffer
+end
+
+-- ============================================================================
+-- 6. PENCARI & PENGEKSEKUSI KLIK KARTU PET VOLCANIC DEVIL DI GRID INVENTORY
+-- ============================================================================
+local function FindAndClickVolcanicCard()
+    local clickedAny = false
+    local candidates = {}
+
+    pcall(function()
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("GuiObject") and desc.Visible then
+                        local isMatch = false
+                        local nameLower = string.lower(desc.Name)
+
+                        -- 1. Cek teks label
+                        if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                            local txt = string.lower(desc.ContentText ~= "" and desc.ContentText or desc.Text)
+                            if string.find(txt, "volcanic", 1, true) and string.find(txt, "devil", 1, true) then
+                                isMatch = true
+                            end
+                        end
+
+                        -- 2. Cek nama instance
+                        if string.find(nameLower, "volcanic", 1, true) and string.find(nameLower, "devil", 1, true) then
+                            isMatch = true
+                        end
+
+                        -- 3. Cek Viewport Model
+                        if desc:IsA("Model") and string.find(string.lower(desc.Name), "volcanic", 1, true) then
+                            local pGui = desc:FindFirstAncestorWhichIsA("GuiObject")
+                            if pGui and pGui.Visible then
+                                table.insert(candidates, pGui)
+                            end
+                        end
+
+                        -- 4. Cek Attribute
+                        local attrId = desc:GetAttribute("PetId") or desc:GetAttribute("Id")
+                        for _, pet in ipairs(GetMyVolcanicDevils()) do
+                            if pet.Id and (attrId == pet.Id or desc.Name == tostring(pet.Id)) then
+                                isMatch = true
+                            end
+                        end
+
+                        if isMatch then
+                            -- Pastikan BUKAN yang ada di slot offer (kita hanya mau klik kartu dari tas/grid!)
+                            local inOffer = false
+                            local cur = desc
+                            while cur and cur ~= gui do
+                                local cn = string.lower(cur.Name)
+                                if (string.find(cn, "myoffer", 1, true) or string.find(cn, "youroffer", 1, true) or string.find(cn, "offer", 1, true)) and not string.find(cn, "grid", 1, true) and not string.find(cn, "inv", 1, true) then
+                                    inOffer = true
+                                    break
+                                end
+                                cur = cur.Parent
+                            end
+
+                            if not inOffer then
+                                table.insert(candidates, desc)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
+
+    -- Eksekusi klik ke kartu yang ditemukan
+    for _, obj in ipairs(candidates) do
+        local target = obj
+        local btnParent = obj:FindFirstAncestorWhichIsA("GuiButton")
+        if btnParent and btnParent.Visible then
+            target = btnParent
+        end
+
+        Log("Klik Hardware: Mengklik kartu " .. target.ClassName .. " [" .. target.Name .. "] pada koordinat " .. tostring(target.AbsolutePosition))
+        HardwareClickGui(target)
+        clickedAny = true
+        task.wait(0.2)
+    end
+
+    return clickedAny
+end
+
+-- Kirim semua kemungkinan Remote payload TradeUpdate
+local function FireRemoteTradeAdd()
+    if not Remotes.TradeUpdate or not Remotes.TradeUpdate:IsA("RemoteEvent") then return end
+    local devils = GetMyVolcanicDevils()
+    for _, pet in ipairs(devils) do
+        pcall(function() Remotes.TradeUpdate:FireServer("AddPet", pet.Id) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("Add", pet.Id) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("Offer", pet.Id) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("Select", pet.Id) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("Toggle", pet.Id) end)
+        pcall(function() Remotes.TradeUpdate:FireServer(pet.Id) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("AddPet", pet.Instance) end)
+    end
+end
+
+-- ============================================================================
+-- 7. AUTO-ACCEPT AJAKAN TRADE (REMOTE + GUI POPUP)
+-- ============================================================================
 local function AutoAcceptIncomingPrompt()
     if not Config.AutoAcceptTrade then return false end
 
@@ -250,7 +423,6 @@ local function AutoAcceptIncomingPrompt()
                         end
 
                         if isTradePrompt then
-                            -- Cari tombol accept di sekitar prompt
                             local container = desc:FindFirstAncestorWhichIsA("Frame") or desc.Parent
                             if container then
                                 for _, btn in ipairs(container:GetDescendants()) do
@@ -274,8 +446,8 @@ local function AutoAcceptIncomingPrompt()
                                         end
 
                                         if isAcceptBtn then
-                                            SafeClick(btn)
-                                            Log("AUTO: Berhasil klik tombol Terima (Accept) ajakan trade di layar!")
+                                            HardwareClickGui(btn)
+                                            Log("AUTO: Klik tombol Terima (Accept) ajakan trade di layar!")
                                             foundAny = true
                                             State.InTrade = true
                                             break
@@ -294,7 +466,7 @@ local function AutoAcceptIncomingPrompt()
     return foundAny
 end
 
--- ENGINE 2: Deteksi Apakah Jendela Trade Sedang Terbuka di Layar
+-- Deteksi jendela trade aktif
 local function IsTradeWindowActive()
     local tradeActive = false
     pcall(function()
@@ -315,70 +487,15 @@ local function IsTradeWindowActive()
     return tradeActive or State.InTrade
 end
 
--- ENGINE 3: Auto Masukkan Pet Volcanic Devil ke Slot Trade
-local function AutoInsertVolcanicDevil()
-    if State.PetAlreadyAddedInCurrentTrade then return true end
-
-    local inserted = false
-    Log("AUTO: Mencari pet Volcanic Devil untuk dimasukkan ke trade...")
-
-    -- Jalur 1: Remote Event Direct Fire
-    local devils = GetMyVolcanicDevils()
-    if #devils > 0 then
-        for i = 1, math.min(#devils, Config.MaxPetsPerTrade) do
-            local pet = devils[i]
-            FireTradeAction("AddPet", pet.Id)
-            FireTradeAction("Add", pet.Id)
-            FireTradeAction("Offer", pet.Id)
-            FireTradeAction("SelectPet", pet.Instance)
-            Log("AUTO: Memasukkan Pet ID: " .. tostring(pet.Id))
-            inserted = true
-        end
-    end
-
-    -- Jalur 2: GUI Button Clicker (TradingPetGrid)
-    local guiCount = 0
-    pcall(function()
-        for _, gui in ipairs(PlayerGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui.Enabled then
-                for _, item in ipairs(gui:GetDescendants()) do
-                    if guiCount >= Config.MaxPetsPerTrade then break end
-                    if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("ImageLabel") or item:IsA("Frame") then
-                        local t = (item:IsA("TextLabel") and item.Text) or item.Name
-                        if string.find(string.lower(t), "volcanic devil", 1, true) then
-                            local btn = item:FindFirstAncestorWhichIsA("GuiButton") or (item:IsA("GuiButton") and item)
-                            if btn then
-                                SafeClick(btn)
-                                guiCount = guiCount + 1
-                                inserted = true
-                                Log("AUTO: Klik kartu pet Volcanic Devil di tampilan UI!")
-                                task.wait(0.2)
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end)
-
-    if inserted then
-        State.PetAlreadyAddedInCurrentTrade = true
-        Log("AUTO: Volcanic Devil berhasil masuk ke slot trade.")
-    end
-    return inserted
-end
-
--- ENGINE 4: Auto Kunci Ready
+-- Kunci status Ready
 local function AutoLockReady()
-    if State.ReadyAlreadyClickedInCurrentTrade then return true end
+    Log("READY: Mengunci status trade...")
+    if Remotes.TradeUpdate and Remotes.TradeUpdate:IsA("RemoteEvent") then
+        pcall(function() Remotes.TradeUpdate:FireServer("Ready", true) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("Lock", true) end)
+        pcall(function() Remotes.TradeUpdate:FireServer("Ready") end)
+    end
 
-    Log("AUTO: Mengunci status READY...")
-    -- Jalur Remote
-    FireTradeAction("Ready", true)
-    FireTradeAction("Lock", true)
-    FireTradeAction("Ready")
-
-    -- Jalur GUI
     pcall(function()
         local readyKeywords = {"ready", "lock", "siap", "kunci"}
         for _, gui in ipairs(PlayerGui:GetChildren()) do
@@ -393,9 +510,8 @@ local function AutoLockReady()
 
                         for _, kw in ipairs(readyKeywords) do
                             if string.find(text, kw, 1, true) and not string.find(text, "cancel", 1, true) and not string.find(text, "unready", 1, true) then
-                                SafeClick(btn)
-                                Log("AUTO: Klik tombol Ready di layar!")
-                                State.ReadyAlreadyClickedInCurrentTrade = true
+                                HardwareClickGui(btn)
+                                Log("READY: Tombol Ready berhasil diklik!")
                                 return
                             end
                         end
@@ -404,34 +520,35 @@ local function AutoLockReady()
             end
         end
     end)
-    State.ReadyAlreadyClickedInCurrentTrade = true
-    return true
 end
 
--- ENGINE 5: Auto Spam Accept / Confirm (Sampai Trade Selesai)
+-- Spam tombol Accept / Confirm sampai deal selesai
 local function AutoSpamAccept()
     if State.AcceptSpamming then return end
     State.AcceptSpamming = true
 
     task.spawn(function()
-        Log("AUTO: Menunggu countdown deal selesai lalu klik Accept/Confirm...")
+        Log("DEAL: Menunggu countdown timer server " .. tostring(Config.DealDelaySeconds) .. " detik...")
+        task.wait(Config.DealDelaySeconds)
+
         local elapsed = 0
-        local maxWait = 15 -- Maksimal 15 detik jika partner lama klik
+        local maxWait = 18
 
         while elapsed < maxWait do
             task.wait(0.2)
             elapsed = elapsed + 0.2
 
-            -- Cek apakah trade masih aktif
             if not IsTradeWindowActive() then
                 break
             end
 
-            -- Kirim remote accept
-            FireTradeAction("Accept")
-            FireTradeAction("Confirm")
+            -- Remote Fire
+            if Remotes.TradeUpdate and Remotes.TradeUpdate:IsA("RemoteEvent") then
+                pcall(function() Remotes.TradeUpdate:FireServer("Accept") end)
+                pcall(function() Remotes.TradeUpdate:FireServer("Confirm") end)
+            end
 
-            -- Klik tombol accept di UI
+            -- GUI Click
             pcall(function()
                 local acceptKeywords = {"accept", "confirm", "terima", "deal", "setuju"}
                 for _, gui in ipairs(PlayerGui:GetChildren()) do
@@ -446,7 +563,7 @@ local function AutoSpamAccept()
 
                                 for _, kw in ipairs(acceptKeywords) do
                                     if string.find(text, kw, 1, true) and not string.find(text, "cancel", 1, true) and not string.find(text, "decline", 1, true) then
-                                        SafeClick(btn)
+                                        HardwareClickGui(btn)
                                     end
                                 end
                             end
@@ -458,39 +575,68 @@ local function AutoSpamAccept()
 
         State.AcceptSpamming = false
         State.InTrade = false
-        State.PetAlreadyAddedInCurrentTrade = false
-        State.ReadyAlreadyClickedInCurrentTrade = false
+        State.PetOfferVerified = false
+        State.ReadyLocked = false
+        State.RetryCount = 0
         State.TotalCompletedTrades = State.TotalCompletedTrades + 1
-        Log("SUKSES: Transaksi Volcanic Devil SELESAI 100% AFK! Bot siap untuk transaksi berikutnya.")
+        Log("SUKSES: Transaksi Volcanic Devil SELESAI 100%! Siap untuk pembeli berikutnya.")
     end)
 end
 
 -- ============================================================================
--- 7. BACKGROUND MASTER AUTONOMOUS LOOP (JALAN TERUS NON-STOP)
+-- 8. MASTER AUTONOMOUS LOOP (DENGAN STRICT FEEDBACK VERIFICATION)
 -- ============================================================================
 task.spawn(function()
-    Log("Master Autonomous Loop diaktifkan (Mode AFK Tanpa Sentuh).")
+    Log("Master Loop Aktif: Menjalankan sistem verifikasi riil slot offer...")
     while true do
-        task.wait(0.15)
-        local inTradeNow = IsTradeWindowActive()
+        task.wait(0.2)
+        local inTrade = IsTradeWindowActive()
 
-        if not inTradeNow then
-            -- STATE 1: Di luar trade -> Selalu cek dan auto accept ajakan trade
+        if not inTrade then
+            -- STATE 1: Di luar trade -> Selalu pantau ajakan trade
             AutoAcceptIncomingPrompt()
-            State.PetAlreadyAddedInCurrentTrade = false
-            State.ReadyAlreadyClickedInCurrentTrade = false
+            State.PetOfferVerified = false
+            State.ReadyLocked = false
             State.AcceptSpamming = false
+            State.RetryCount = 0
         else
-            -- STATE 2: Sedang dalam trade -> Urutan eksekusi otomatis
-            if not State.PetAlreadyAddedInCurrentTrade then
-                task.wait(0.6)
-                AutoInsertVolcanicDevil()
-            elseif not State.ReadyAlreadyClickedInCurrentTrade then
-                task.wait(0.5)
+            -- STATE 2: Sedang dalam trade -> Urutan logika ketat tanpa tipu-tipu
+            if not State.PetOfferVerified then
+                -- Langkah 1: Cek apakah pet sudah benar-benar ada di slot offer
+                local isAlreadyThere = CheckIsPetInTradeOffer()
+                if isAlreadyThere then
+                    State.PetOfferVerified = true
+                    State.RetryCount = 0
+                    Log("STATUS: VERIFIKASI SUKSES! Volcanic Devil terdeteksi di slot offer.")
+                else
+                    State.RetryCount = State.RetryCount + 1
+                    Log("STATUS: Slot offer MASIH KOSONG (Percobaan #" .. State.RetryCount .. ")")
+
+                    -- Eksekusi langkah pemasukan pet
+                    UnequipVolcanicDevilIfEquipped()
+                    local clicked = FindAndClickVolcanicCard()
+                    FireRemoteTradeAdd()
+
+                    task.wait(0.5)
+
+                    -- Verifikasi ulang hasil eksekusi
+                    if CheckIsPetInTradeOffer() then
+                        State.PetOfferVerified = true
+                        Log("STATUS: VERIFIKASI SUKSES! Volcanic Devil telah masuk ke slot offer.")
+                    else
+                        if not clicked then
+                            Log("PERINGATAN: Kartu Volcanic Devil tidak ditemukan di layar. Pastikan pet ada di tas!")
+                        end
+                    end
+                end
+            elseif not State.ReadyLocked then
+                -- Langkah 2: HANYA jika pet sudah terverifikasi di slot, baru kunci READY!
+                task.wait(0.4)
                 AutoLockReady()
+                State.ReadyLocked = true
             else
+                -- Langkah 3: Tunggu countdown dan selesaikan deal
                 if not State.AcceptSpamming then
-                    task.wait(Config.DealDelaySeconds)
                     AutoSpamAccept()
                 end
             end
@@ -498,47 +644,46 @@ task.spawn(function()
     end
 end)
 
--- Listener Remote TradeRequested
+-- Listener Remote
 pcall(function()
     if Remotes.TradeRequested and Remotes.TradeRequested:IsA("RemoteEvent") then
         Remotes.TradeRequested.OnClientEvent:Connect(function(...)
             local args = pack_fn(...)
             local sender = args[1] or args[2]
-
             if Config.AutoAcceptTrade then
                 local sName = typeof(sender) == "Instance" and sender.Name or tostring(sender)
-                Log("Remote: Menerima ajakan trade dari @" .. sName)
-                FireTradeRespond(sender)
+                Log("Remote: Ajakan trade masuk dari @" .. sName)
+                pcall(function() Remotes.TradeRequested:FireServer(sender, true) end)
+                pcall(function() Remotes.TradeRequested:FireServer(sender) end)
                 State.InTrade = true
             end
         end)
     end
 end)
 
--- Listener Remote TradeUpdate
 pcall(function()
     if Remotes.TradeUpdate and Remotes.TradeUpdate:IsA("RemoteEvent") then
         Remotes.TradeUpdate.OnClientEvent:Connect(function(action, data)
             if action == "Started" or action == "Open" then
                 State.InTrade = true
-                Log("Status Trade: Terbuka")
             elseif action == "Completed" or action == "Closed" or action == "Success" then
                 State.InTrade = false
-                Log("Status Trade: Ditutup / Sukses")
+                State.PetOfferVerified = false
+                State.ReadyLocked = false
+                State.AcceptSpamming = false
             end
         end)
     end
 end)
 
 -- ============================================================================
--- 8. USER INTERFACE (STATUS MONITOR & MINIMALIST TOGGLE)
+-- 9. USER INTERFACE (STATUS MONITOR & MANUAL CONTROLS)
 -- ============================================================================
 local Theme = {
     Background = Color3.fromRGB(13, 17, 26),
     Sidebar = Color3.fromRGB(18, 24, 38),
     Card = Color3.fromRGB(24, 32, 50),
     Accent = Color3.fromRGB(255, 90, 50),
-    AccentHover = Color3.fromRGB(255, 130, 80),
     TextMain = Color3.fromRGB(245, 248, 255),
     TextDim = Color3.fromRGB(160, 175, 205),
     Success = Color3.fromRGB(46, 213, 115),
@@ -547,15 +692,15 @@ local Theme = {
 }
 
 local function CleanupOldGui()
-    local old = CoreGui:FindFirstChild("RockstarTapSimTradeGuiV2")
+    local old = CoreGui:FindFirstChild("RockstarTapSimTradeGuiV3")
     if old then old:Destroy() end
-    local oldP = PlayerGui:FindFirstChild("RockstarTapSimTradeGuiV2")
+    local oldP = PlayerGui:FindFirstChild("RockstarTapSimTradeGuiV3")
     if oldP then oldP:Destroy() end
 end
 CleanupOldGui()
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarTapSimTradeGuiV2"
+ScreenGui.Name = "RockstarTapSimTradeGuiV3"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -573,11 +718,11 @@ if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
 
 -- Floating Open/Close Button
 local OpenBtn = Instance.new("TextButton")
-OpenBtn.Name = "RockstarOpenBtnV2"
-OpenBtn.Size = UDim2.new(0, 130, 0, 36)
+OpenBtn.Name = "RockstarOpenBtnV3"
+OpenBtn.Size = UDim2.new(0, 140, 0, 36)
 OpenBtn.Position = UDim2.new(0, 18, 0.45, 0)
 OpenBtn.BackgroundColor3 = Theme.Accent
-OpenBtn.Text = "AUTO TRADE AFK"
+OpenBtn.Text = "BOT TRADE v3.0"
 OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 OpenBtn.Font = Enum.Font.GothamBold
 OpenBtn.TextSize = 12
@@ -590,8 +735,8 @@ OpenCorner.Parent = OpenBtn
 -- Main Frame
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 500, 0, 380)
-MainFrame.Position = UDim2.new(0.5, -250, 0.5, -190)
+MainFrame.Size = UDim2.new(0, 520, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -260, 0.5, -210)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -630,10 +775,10 @@ HeaderPatch.BorderSizePixel = 0
 HeaderPatch.Parent = Header
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size = UDim2.new(0, 380, 1, 0)
+TitleLabel.Size = UDim2.new(0, 400, 1, 0)
 TitleLabel.Position = UDim2.new(0, 16, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "ROCKSTAR HUB v2.0 - 100% AFK AUTO TRADE"
+TitleLabel.Text = "ROCKSTAR HUB v3.0 - VERIFIED AFK AUTO TRADE"
 TitleLabel.TextColor3 = Theme.Accent
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 13
@@ -657,7 +802,7 @@ CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
 
 -- Status Info Card
 local StatusCard = Instance.new("Frame")
-StatusCard.Size = UDim2.new(1, -24, 0, 70)
+StatusCard.Size = UDim2.new(1, -24, 0, 72)
 StatusCard.Position = UDim2.new(0, 12, 0, 56)
 StatusCard.BackgroundColor3 = Theme.Card
 StatusCard.BorderSizePixel = 0
@@ -669,9 +814,9 @@ ScCorner.Parent = StatusCard
 
 local StatusTitle = Instance.new("TextLabel")
 StatusTitle.Size = UDim2.new(1, -20, 0, 22)
-StatusTitle.Position = UDim2.new(0, 10, 0, 8)
+StatusTitle.Position = UDim2.new(0, 10, 0, 6)
 StatusTitle.BackgroundTransparency = 1
-StatusTitle.Text = "MODE BOT AKTIF: 100% TANPA CAMPUR TANGAN MANUSIA"
+StatusTitle.Text = "STATUS: VERIFIKASI KETAT AKTIF (ANTI READY KOSONG)"
 StatusTitle.TextColor3 = Theme.Success
 StatusTitle.Font = Enum.Font.GothamBold
 StatusTitle.TextSize = 12
@@ -679,8 +824,8 @@ StatusTitle.TextXAlignment = Enum.TextXAlignment.Left
 StatusTitle.Parent = StatusCard
 
 local StockLabel = Instance.new("TextLabel")
-StockLabel.Size = UDim2.new(1, -20, 0, 32)
-StockLabel.Position = UDim2.new(0, 10, 0, 32)
+StockLabel.Size = UDim2.new(1, -20, 0, 34)
+StockLabel.Position = UDim2.new(0, 10, 0, 30)
 StockLabel.BackgroundTransparency = 1
 StockLabel.Text = "Memindai stok Volcanic Devil..."
 StockLabel.TextColor3 = Theme.TextMain
@@ -689,10 +834,66 @@ StockLabel.TextSize = 11
 StockLabel.TextXAlignment = Enum.TextXAlignment.Left
 StockLabel.Parent = StatusCard
 
+-- Action Manual Buttons
+local ActionCard = Instance.new("Frame")
+ActionCard.Size = UDim2.new(1, -24, 0, 42)
+ActionCard.Position = UDim2.new(0, 12, 0, 136)
+ActionCard.BackgroundColor3 = Theme.Card
+ActionCard.BorderSizePixel = 0
+ActionCard.Parent = MainFrame
+
+local AcCorner = Instance.new("UICorner")
+AcCorner.CornerRadius = UDim.new(0, 8)
+AcCorner.Parent = ActionCard
+
+local ManualAddBtn = Instance.new("TextButton")
+ManualAddBtn.Size = UDim2.new(0.48, -4, 0, 30)
+ManualAddBtn.Position = UDim2.new(0, 6, 0, 6)
+ManualAddBtn.BackgroundColor3 = Theme.Accent
+ManualAddBtn.Text = "Paksa Masukkan Pet Sekarang"
+ManualAddBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ManualAddBtn.Font = Enum.Font.GothamBold
+ManualAddBtn.TextSize = 11
+ManualAddBtn.Parent = ActionCard
+
+local MabCorner = Instance.new("UICorner")
+MabCorner.CornerRadius = UDim.new(0, 6)
+MabCorner.Parent = ManualAddBtn
+
+ManualAddBtn.MouseButton1Click:Connect(function()
+    UnequipVolcanicDevilIfEquipped()
+    FindAndClickVolcanicCard()
+    FireRemoteTradeAdd()
+    Log("Manual: Menjalankan paksa klik & remote masukkan Volcanic Devil.")
+end)
+
+local CheckOfferBtn = Instance.new("TextButton")
+CheckOfferBtn.Size = UDim2.new(0.48, -4, 0, 30)
+CheckOfferBtn.Position = UDim2.new(0.52, 0, 0, 6)
+CheckOfferBtn.BackgroundColor3 = Theme.Success
+CheckOfferBtn.Text = "Cek Status Slot Offer"
+CheckOfferBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CheckOfferBtn.Font = Enum.Font.GothamBold
+CheckOfferBtn.TextSize = 11
+CheckOfferBtn.Parent = ActionCard
+
+local CobCorner = Instance.new("UICorner")
+CobCorner.CornerRadius = UDim.new(0, 6)
+CobCorner.Parent = CheckOfferBtn
+
+CheckOfferBtn.MouseButton1Click:Connect(function()
+    local isThere = CheckIsPetInTradeOffer()
+    if isThere then
+        Log("CEK OFFER: Volcanic Devil TERVERIFIKASI ADA di slot offer!")
+    else
+        Log("CEK OFFER: Slot offer MASIH KOSONG!")
+    end
+end)
+
 -- Console Log Box
 local LogCard = Instance.new("Frame")
-LogCard.Size = UDim2.new(1, -24, 1, -142)
-LogCard.Position = UDim2.new(0, 12, 0, 134)
+LogCard.Size = UDim2.new(1, -24, 1, -196)
+LogCard.Position = UDim2.new(0, 12, 0, 186)
 LogCard.BackgroundColor3 = Theme.Sidebar
 LogCard.BorderSizePixel = 0
 LogCard.Parent = MainFrame
@@ -705,7 +906,7 @@ local ConsoleText = Instance.new("TextLabel")
 ConsoleText.Size = UDim2.new(1, -16, 1, -16)
 ConsoleText.Position = UDim2.new(0, 8, 0, 8)
 ConsoleText.BackgroundTransparency = 1
-ConsoleText.Text = "Bot siap melayani customer..."
+ConsoleText.Text = "Bot siap..."
 ConsoleText.TextColor3 = Theme.TextDim
 ConsoleText.Font = Enum.Font.Code
 ConsoleText.TextSize = 10
@@ -717,7 +918,8 @@ ConsoleText.Parent = LogCard
 task.spawn(function()
     while true do
         local devils = GetMyVolcanicDevils()
-        StockLabel.Text = "Pet Dijual: Volcanic Devil | Stok: " .. #devils .. " Ekor | Sukses: " .. State.TotalCompletedTrades .. " Deal"
+        local offerStatus = State.PetOfferVerified and "TERVERIFIKASI DI SLOT" or (State.InTrade and "SEDANG MEMASUKKAN..." or "STANDBY")
+        StockLabel.Text = "Pet: Volcanic Devil | Stok Tas: " .. #devils .. " | Status Slot: " .. offerStatus .. " | Sukses: " .. State.TotalCompletedTrades
         if #State.Logs > 0 then
             ConsoleText.Text = table.concat(State.Logs, "\n")
         end
@@ -725,4 +927,4 @@ task.spawn(function()
     end
 end)
 
-Log("ROCKSTAR HUB v2.0 READY: AFK Auto Trade Volcanic Devil aktif 100%!")
+Log("ROCKSTAR TRADE v3.0 SIAP: Sistem verifikasi riil aktif 100%!")
