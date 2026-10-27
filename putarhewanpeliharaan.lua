@@ -1,15 +1,15 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v7.7 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
+-- ★ ROCKSTAR HUB v7.8 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
 -- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v7.7:
---   [✓] HAPUS TOTAL "Abaikan Dadu Void" (Sesuai Permintaan User)
---   [✓] FIX AUTO DADU TERBAIK: Evaluasi Luck Murni (Solar 10Mx, Lunar 40Mx, Galaxy 100Mx)
---       - Fix deteksi UI: Cegah scan UI sendiri (Excl. RockstarHub)
---       - Stop total saat dadu terbaik sudah terpasang (Zero spam, Anti gonta-ganti)
---   [✓] FIX AUTO BUY DADU: Interaksi StandDiceShop + BuyDice Remote + Beli stok toko
---   [✓] TAMBAH AUTO SELL: Auto Jual Pet Terlemah & Jual Semua Pet Cadangan
---   [✓] FIX AUTO MENARA LENGKAP: TowersPad + StandTowers + AutoClick GUI + Combat Tap
---   [✓] SIDEBAR NAVIGATION & UI: 100% Bersih, Responsif & Stabil
+-- Update v7.8:
+--   [✓] UPGRADE PET / PODIUM JARAK JAUH: 100% Tanpa Teleport (Bypass Proximity & Remote)
+--   [✓] FIX AUTO TREADMILL: Berdiri di Belt + Touch Physics + Auto Run aktif
+--   [✓] FIX AUTO MENARA OTOMATIS PENUH:
+--       - AutoClick GUI (Deteksi luas: Start/Fight/Battle/Mulai/Tarung/Stage)
+--       - Auto Fast Combat Tap (VirtualInputManager + VirtualUser + 20 CPS)
+--       - Auto Retry & Decline Revive instan
+--   [✓] DADU TERBAIK & AUTO BUY TOKO DADU: Stabil & True Luck (Tanpa Skip Void)
+--   [✓] AUTO SELL: Jual Pet Terlemah & Jual Semua Pet Cadangan
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -23,6 +23,11 @@ local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
+
+local VIM
+pcall(function()
+    VIM = game:GetService("VirtualInputManager")
+end)
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -38,7 +43,7 @@ local Config = {
     AutoSellWeakest = false,
     AutoSellAll = false,
 
-    -- Sistem Dadu v7.7 (True Luck & Anti-Spam)
+    -- Sistem Dadu v7.8
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -52,9 +57,9 @@ local Config = {
     AutoTreadmill = false,
     AutoWatchSkipAd = false,
 
-    -- Auto Peningkatan, Trait & Grade
+    -- Auto Peningkatan Jarak Jauh
     AutoUpgradePodium = false,
-    AutoTeleportUpgrade = true,
+    RemoteUpgradeOnly = true,       -- Upgrade 100% jarak jauh tanpa teleport
     AutoBuyAllUpgrades = false,
     AutoBuyRebirthUpgrades = false,
     AutoRerollTrait = false,
@@ -66,7 +71,7 @@ local Config = {
     AutoBuyQuestShop = false,
     AutoRebirth = false,
 
-    -- Auto Menara & Stage
+    -- Auto Menara (Full Automation)
     AutoTower = false,
     TowerStageMode = "Selected",    -- "Selected" atau "Highest"
     SelectedStage = 1,
@@ -273,7 +278,7 @@ local function EvaluateDiceLuck(rawTitle, rawTier, rawLuckStr)
 end
 
 -- ============================================================================
--- 4. SCANNING DICE SHOP GUI (BEBAS INTERFERENSI ROCKSTAR HUB)
+-- 4. SCANNING DICE SHOP GUI (BEBAS INTERFERENSI)
 -- ============================================================================
 local function GetDiceCardsFromGui()
     local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -282,7 +287,6 @@ local function GetDiceCardsFromGui()
     local targetContainers = {}
     for _, gui in ipairs(playerGui:GetChildren()) do
         if gui:IsA("ScreenGui") and gui.Enabled then
-            -- Lewati UI kita sendiri!
             if string.find(gui.Name, "RockstarHub") then
                 continue
             end
@@ -356,7 +360,9 @@ local function GetDiceCardsFromGui()
                 end
 
                 if titleLabel then
-                    local cleanName = string.match(titleLabel, "([^|%-\n\r]+)") or titleLabel
+                    local cleanName = string.match(titleLabel, "([^|%-
+
+]+)") or titleLabel
                     cleanName = string.gsub(cleanName, "^%s+", "")
                     cleanName = string.gsub(cleanName, "%s+$", "")
 
@@ -419,7 +425,7 @@ local function EquipTargetDiceNow(force)
         end
     end
 
-    -- Jika toko tertutup, periksa dari server GetData
+    -- Jika toko tertutup, periksa dari data server GetData
     if not targetCard and Remotes.GetData then
         local ok, pData = pcall(function() return Remotes.GetData:InvokeServer() end)
         if ok and type(pData) == "table" then
@@ -446,7 +452,6 @@ local function EquipTargetDiceNow(force)
             if #ownedDiceList > 0 then
                 local bestServerDice = ownedDiceList[1]
                 if State.CurrentDiceName == bestServerDice.Name then
-                    -- Sudah terpasang di server!
                     return
                 end
 
@@ -462,7 +467,6 @@ local function EquipTargetDiceNow(force)
 
     if not targetCard then return end
 
-    -- STOP CONDITION: Jika dadu terbaik sudah terpasang, stop total!
     if targetCard.Status == "equipped" then
         State.CurrentDiceName = targetCard.Name
         State.CurrentDiceLuck = targetCard.Luck
@@ -500,42 +504,7 @@ local function EquipTargetDiceNow(force)
 end
 
 -- ============================================================================
--- 6. HOOK PENGAMAN KLIK MANUAL
--- ============================================================================
-pcall(function()
-    local gmt = getrawmetatable(game)
-    setreadonly(gmt, false)
-    local oldNamecall = gmt.__namecall
-
-    gmt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        local args = {...}
-
-        if (method == "InvokeServer" or method == "FireServer") and self then
-            if Remotes.EquipDice and self == Remotes.EquipDice then
-                if not IsScriptCallingEquip then
-                    local diceArg = args[1]
-                    if diceArg and type(diceArg) == "string" then
-                        State.ManualOverrideUntil = tick() + 5
-                        Config.DiceMode = "Manual"
-                        Config.LockedDiceId = diceArg
-                        Log("Pemain Memasang Dadu Manual: " .. tostring(diceArg) .. " (Terkunci 5 Detik)")
-                    end
-                end
-            elseif Remotes.BuyUpgrade and self == Remotes.BuyUpgrade then
-                if #args >= 1 and type(args[1]) == "string" then
-                    State.LearnedUpgradeArgs[args[1]] = args
-                end
-            end
-        end
-
-        return oldNamecall(self, ...)
-    end)
-    setreadonly(gmt, true)
-end)
-
--- ============================================================================
--- 7. DETEKSI PLOT & PODIUM RESMI
+-- 6. DETEKSI PLOT & SISTEM UPGRADE JARAK JAUH
 -- ============================================================================
 local function GetMyPlot()
     if State.CachedMyPlot and State.CachedMyPlot.Parent == Workspace and State.CachedMyPlot:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
@@ -582,15 +551,47 @@ local function GetMyPodiums()
     return podiums
 end
 
-local function SafeFirePrompt(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return false end
-    prompt.HoldDuration = 0
-    pcall(function() fireproximityprompt(prompt) end)
-    return true
+-- UPGRADE 100% JARAK JAUH TANPA PERLU JALAN / TELEPORT
+local function UpgradeAllPodiumsRemote()
+    local podiums = GetMyPodiums()
+    for _, podium in ipairs(podiums) do
+        if not Config.AutoUpgradePodium then break end
+        local slotNum = tonumber(podium:GetAttribute("Slot")) or tonumber(podium.Name:match("%d+"))
+        local petUuid = podium:GetAttribute("PetUuid")
+
+        -- 1. Panggil Remote Resmi (Bisa dari jarak berapapun)
+        if slotNum then
+            SafeCall("PodiumAction", false, slotNum, "UpgradeMax")
+            SafeCall("PodiumAction", false, slotNum, "Upgrade")
+        end
+        if petUuid then
+            SafeCall("UpgradePet", false, petUuid)
+            SafeCall("LevelUpPet", false, petUuid)
+            SafeCall("PodiumAction", false, petUuid, "UpgradeMax")
+        end
+
+        -- 2. Trigger ClickDetector dari jarak jauh (fireclickdetector bypass jarak)
+        for _, desc in ipairs(podium:GetDescendants()) do
+            if desc:IsA("ClickDetector") and typeof(fireclickdetector) == "function" then
+                pcall(function() fireclickdetector(desc) end)
+            end
+        end
+
+        -- 3. Trigger ProximityPrompt dari jarak jauh (Bypass Jarak Maksimal)
+        for _, desc in ipairs(podium:GetDescendants()) do
+            if desc:IsA("ProximityPrompt") then
+                desc.MaxActivationDistance = math.huge
+                desc.RequiresLineOfSight = false
+                desc.HoldDuration = 0
+                pcall(function() fireproximityprompt(desc) end)
+            end
+        end
+        task.wait(0.04)
+    end
 end
 
 -- ============================================================================
--- 8. SISTEM AUTO MENARA LENGKAP (TOWERSPAD + STANDTOWERS + COMBAT TAP)
+-- 7. SISTEM AUTO MENARA OTOMATIS PENUH (AUTO-CLICK GUI & FAST COMBAT)
 -- ============================================================================
 local function GetTargetTowerStage()
     if Config.TowerStageMode == "Highest" then
@@ -629,25 +630,28 @@ local function AutoClickTowerGUI(stageNum)
 
     for _, g in ipairs(pGui:GetChildren()) do
         if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub") then
-            local gName = g.Name:lower()
-            if gName:find("tower") or gName:find("stage") or gName:find("floor") or gName:find("battle") then
-                for _, b in ipairs(g:GetDescendants()) do
-                    if b:IsA("TextButton") or b:IsA("ImageButton") then
-                        local bText = (b:IsA("TextButton") and b.Text:lower()) or ""
-                        local bName = b.Name:lower()
-                        if bText:find("start") or bText:find("fight") or bText:find("battle") or bText:find("enter") or bText:find("retry") or bText:find("next")
-                           or bName:find("start") or bName:find("fight") or bName:find("play") or bName:find("retry") or bName:find("next") then
-                            pcall(function()
-                                for _, conn in ipairs(getconnections(b.MouseButton1Click)) do conn:Fire() end
-                                for _, conn in ipairs(getconnections(b.Activated)) do conn:Fire() end
-                            end)
-                        end
-                        if tostring(stageNum) and (bText == tostring(stageNum) or bName == "stage" .. tostring(stageNum)) then
-                            pcall(function()
-                                for _, conn in ipairs(getconnections(b.MouseButton1Click)) do conn:Fire() end
-                                for _, conn in ipairs(getconnections(b.Activated)) do conn:Fire() end
-                            end)
-                        end
+            for _, desc in ipairs(g:GetDescendants()) do
+                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                    local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                    local bName = desc.Name:lower()
+
+                    -- Klik tombol mulai / bertarung
+                    if bText:find("start") or bText:find("fight") or bText:find("battle") or bText:find("mulai") 
+                       or bText:find("tarung") or bText:find("masuk") or bText:find("play") or bText:find("enter") 
+                       or bText:find("retry") or bText:find("ulang") or bText:find("next") or bText:find("lanjut")
+                       or bName:find("start") or bName:find("fight") or bName:find("battle") or bName:find("enter") then
+                        pcall(function()
+                            for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do conn:Fire() end
+                            for _, conn in ipairs(getconnections(desc.Activated)) do conn:Fire() end
+                        end)
+                    end
+
+                    -- Klik tombol stage
+                    if stageNum and (bText == tostring(stageNum) or bName == "stage" .. tostring(stageNum) or bName == tostring(stageNum)) then
+                        pcall(function()
+                            for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do conn:Fire() end
+                            for _, conn in ipairs(getconnections(desc.Activated)) do conn:Fire() end
+                        end)
                     end
                 end
             end
@@ -682,7 +686,10 @@ local function StartTowerStage(stageNum)
     end
 
     if standPrompt then
-        SafeFirePrompt(standPrompt)
+        standPrompt.MaxActivationDistance = math.huge
+        standPrompt.RequiresLineOfSight = false
+        standPrompt.HoldDuration = 0
+        pcall(function() fireproximityprompt(standPrompt) end)
         task.wait(0.1)
     end
 
@@ -692,7 +699,7 @@ local function StartTowerStage(stageNum)
 end
 
 -- ============================================================================
--- 9. BACKGROUND LOOPS OTOMATISASI LENGKAP
+-- 8. BACKGROUND LOOPS OTOMATISASI LENGKAP
 -- ============================================================================
 
 -- Loop 1: Auto Roll Pet, Equip Best, Fuse & Auto Sell
@@ -727,7 +734,7 @@ task.spawn(function()
     end
 end)
 
--- Loop 2: Auto Collect Cash (CollectPad) & Treadmill
+-- Loop 2: Auto Collect Cash (CollectPad)
 task.spawn(function()
     while true do
         if Config.AutoCollectCash then
@@ -750,21 +757,51 @@ task.spawn(function()
             end
             SafeCall("CashCollected", true)
         end
-
-        if Config.AutoTreadmill then
-            local plot = GetMyPlot()
-            local tm = plot and plot:FindFirstChild("Treadmill")
-            local deck = tm and tm:FindFirstChild("Deck")
-            local promptAtt = deck and deck:FindFirstChild("PromptAnchor")
-            local prompt = promptAtt and promptAtt:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then SafeFirePrompt(prompt) end
-        end
-
-        task.wait(0.25)
+        task.wait(0.3)
     end
 end)
 
--- Loop 3: Auto Beli Dadu Toko (Lengkap & Handal)
+-- Loop 2B: Auto Treadmill (Teleport ke Belt + Touch + Auto Move)
+task.spawn(function()
+    while true do
+        if Config.AutoTreadmill then
+            local plot = GetMyPlot()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+            if plot and hrp then
+                local tm = plot:FindFirstChild("Treadmill") or plot:FindFirstChild("TreadmillSpot")
+                if tm then
+                    local belt = tm:FindFirstChild("Belt") or tm:FindFirstChild("Deck") or tm:FindFirstChildOfClass("BasePart")
+                    if belt then
+                        -- Berdiri di atas permukaan belt
+                        if (hrp.Position - belt.Position).Magnitude > 8 then
+                            hrp.CFrame = belt.CFrame + Vector3.new(0, 2.8, 0)
+                            task.wait(0.1)
+                        end
+
+                        if typeof(firetouchinterest) == "function" then
+                            pcall(function()
+                                firetouchinterest(hrp, belt, 0)
+                                firetouchinterest(hrp, belt, 1)
+                            end)
+                        end
+
+                        if humanoid and humanoid.MoveDirection.Magnitude == 0 then
+                            humanoid:Move(Vector3.new(0, 0, -1), true)
+                        end
+                    end
+                end
+            end
+            task.wait(0.25)
+        else
+            task.wait(1.0)
+        end
+    end
+end)
+
+-- Loop 3: Auto Beli Dadu Toko
 task.spawn(function()
     while true do
         if Config.AutoBuyDiceOnly then
@@ -779,10 +816,12 @@ task.spawn(function()
                     hrp.CFrame = zone.CFrame + Vector3.new(0, 3.5, 0)
                     task.wait(0.15)
                 end
-                if prompt then SafeFirePrompt(prompt) end
+                if prompt then
+                    prompt.MaxActivationDistance = math.huge
+                    pcall(function() fireproximityprompt(prompt) end)
+                end
             end
 
-            -- 1. Klik tombol beli di GUI kartu yang belum dimiliki
             local cards = GetDiceCardsFromGui()
             for _, card in ipairs(cards) do
                 if card.Status == "unowned" and card.BuyButton then
@@ -794,13 +833,11 @@ task.spawn(function()
                 end
             end
 
-            -- 2. Panggil remote BuyDice langsung untuk setiap dadu di katalog
             for _, d in ipairs(KnownDiceCatalog) do
                 SafeCall("BuyDice", false, d.Name)
                 task.wait(0.04)
             end
 
-            -- Jika AutoEquipDice aktif, pasang kembali dadu terbaik agar tidak tergeser
             if Config.AutoEquipDice then
                 EquipTargetDiceNow(false)
             end
@@ -819,7 +856,7 @@ task.spawn(function()
     end
 end)
 
--- Loop 5: Auto Peningkatan (Podium, Upgrade Toko & Rebirth)
+-- Loop 5: Auto Peningkatan (Podium Jarak Jauh, Upgrade Toko & Rebirth)
 local PreseededUpgrades = {
     "Luck1", "Luck2", "Luck3", "Luck4", "Luck5",
     "RollSpeed1", "RollSpeed2", "RollSpeed3", "RollSpeed4", "RollSpeed5",
@@ -848,25 +885,7 @@ local PreseededQuestShopItems = {
 task.spawn(function()
     while true do
         if Config.AutoUpgradePodium then
-            for _, podium in ipairs(GetMyPodiums()) do
-                if not Config.AutoUpgradePodium then break end
-                local slotNum = tonumber(podium:GetAttribute("Slot")) or tonumber(podium.Name:match("%d+"))
-                if slotNum then
-                    SafeCall("PodiumAction", false, slotNum, "UpgradeMax")
-                    SafeCall("PodiumAction", false, slotNum, "Upgrade")
-                end
-
-                local screen = podium:FindFirstChild("Screen")
-                local prompt = screen and screen:FindFirstChildOfClass("ProximityPrompt")
-                if prompt then
-                    if Config.AutoTeleportUpgrade and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        LocalPlayer.Character.HumanoidRootPart.CFrame = podium:GetPivot() + Vector3.new(0, 3, 0)
-                        task.wait(0.04)
-                    end
-                    SafeFirePrompt(prompt)
-                end
-                task.wait(0.06)
-            end
+            UpgradeAllPodiumsRemote()
         end
 
         if Config.AutoBuyAllUpgrades then
@@ -904,7 +923,7 @@ task.spawn(function()
     end
 end)
 
--- Loop 6: Auto Menara Pertarungan (Combat & Retry)
+-- Loop 6: Auto Menara Pertarungan (Stage Enter & 20 CPS Combat Tap)
 task.spawn(function()
     while true do
         if Config.AutoTower then
@@ -921,19 +940,63 @@ task.spawn(function()
 
             if not State.InTower then
                 StartTowerStage(targetStage)
+                task.wait(0.8)
             else
-                if Config.AutoTapTowerCombat and typeof(VirtualUser) == "Instance" then
-                    pcall(function()
-                        VirtualUser:CaptureController()
-                        VirtualUser:Button1Down(Vector2.new(500, 500))
-                        task.wait(0.04)
-                        VirtualUser:Button1Up(Vector2.new(500, 500))
-                    end)
-                end
+                task.wait(0.2)
             end
-            task.wait(0.6)
         else
             task.wait(1.5)
+        end
+    end
+end)
+
+-- Loop 6B: Fast Combat Tap di Menara (20 Clicks Per Second)
+task.spawn(function()
+    while true do
+        if Config.AutoTower and Config.AutoTapTowerCombat then
+            local cam = Workspace.CurrentCamera
+            local vp = cam and cam.ViewportSize or Vector2.new(800, 600)
+            local center = Vector2.new(vp.X / 2, vp.Y / 2)
+
+            -- 1. VirtualInputManager Click
+            if VIM then
+                pcall(function()
+                    VIM:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+                    VIM:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+                end)
+            end
+
+            -- 2. VirtualUser Click
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:Button1Down(center)
+                VirtualUser:Button1Up(center)
+            end)
+
+            -- 3. Klik tombol tap overlay di GUI jika ada
+            pcall(function()
+                local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+                if pGui then
+                    for _, desc in ipairs(pGui:GetDescendants()) do
+                        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                            local txt = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                            local n = desc.Name:lower()
+                            if n:find("tap") or n:find("attack") or n:find("hit") or txt:find("tap") or txt:find("serang") then
+                                pcall(function()
+                                    for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do conn:Fire() end
+                                    for _, conn in ipairs(getconnections(desc.Activated)) do conn:Fire() end
+                                end)
+                            end
+                        end
+                    end
+                end
+            end)
+
+            SafeCall("TowerAttack", false)
+            SafeCall("TowerTap", false)
+            task.wait(0.05)
+        else
+            task.wait(0.5)
         end
     end
 end)
@@ -998,7 +1061,7 @@ if Config.AntiAFK then
 end
 
 -- ============================================================================
--- 10. USER INTERFACE (CYBER-BLUE EDITION)
+-- 9. USER INTERFACE (CYBER-BLUE EDITION)
 -- ============================================================================
 local Theme = {
     Background = Color3.fromRGB(11, 16, 26),
@@ -1015,7 +1078,7 @@ local Theme = {
 }
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarHub_PutarHewan_v7_7"
+ScreenGui.Name = "RockstarHub_PutarHewan_v7_8"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -1151,7 +1214,7 @@ local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 80, 0, 20)
 VersionBadge.Position = UDim2.new(0, 340, 0.5, -10)
 VersionBadge.BackgroundColor3 = Theme.Card
-VersionBadge.Text = "v7.7 CYBER"
+VersionBadge.Text = "v7.8 CYBER"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 10
@@ -1397,10 +1460,10 @@ local function CreateToggle(parent, labelText, descText, configKey, callback)
 end
 
 -- ============================================================================
--- 11. ISI TAB UI LENGKAP
+-- 10. ISI TAB UI LENGKAP
 -- ============================================================================
 
--- TAB 1: PUTAR & PET (LENGKAP DENGAN AUTO SELL)
+-- TAB 1: PUTAR & PET
 local p1Card = CreateCard(TabFrames["Roll"], "Otomatisasi Putar Hewan")
 CreateToggle(p1Card, "Auto Putar (Auto Roll)", "Putar gacha hewan peliharaan otomatis", "AutoRoll")
 CreateToggle(p1Card, "Auto Pasang Hewan Terbaik", "Pasang otomatis pet dengan bonus tertinggi", "AutoEquipBest")
@@ -1410,9 +1473,9 @@ CreateToggle(p1Card, "Auto Jual Semua Pet Cadangan", "Jual semua pet yang tidak 
 
 local p1PlotCard = CreateCard(TabFrames["Roll"], "Otomatisasi Plot & Pendapatan")
 CreateToggle(p1PlotCard, "Auto Ambil Uang Plot", "Ambil kas plot via CollectPad tanpa jalan kaki", "AutoCollectCash")
-CreateToggle(p1PlotCard, "Auto Treadmill", "Berlari di treadmill plot untuk menaikkan speed", "AutoTreadmill")
+CreateToggle(p1PlotCard, "Auto Treadmill (Berlari di Treadmill)", "Berdiri dan berlari otomatis di treadmill plot", "AutoTreadmill")
 
--- TAB 2: TOKO DADU (BERSIH DARI SKIP VOID // TRUE LUCK EDITION)
+-- TAB 2: TOKO DADU
 local p2Card = CreateCard(TabFrames["Dice"], "Mode Pemasangan Dadu (Anti Bentrok)")
 local DiceStatusLabel = Instance.new("TextLabel")
 DiceStatusLabel.Size = UDim2.new(1, 0, 0, 20)
@@ -1487,16 +1550,35 @@ ForceEquipBtn.MouseButton1Click:Connect(function()
     UpdateDiceDisplay()
 end)
 
--- TAB 3: PENINGKATAN, PODIUM & REBIRTH
-local p3Card = CreateCard(TabFrames["Upgrade"], "Peningkatan Podium Plot")
-CreateToggle(p3Card, "Auto Tingkatkan 16 Podium", "Tingkatkan podium plot secara berurutan", "AutoUpgradePodium")
-CreateToggle(p3Card, "Teleport ke Podium saat Upgrade", "Mendekat otomatis ke podium saat ditingkatkan", "AutoTeleportUpgrade")
+-- TAB 3: PENINGKATAN, PODIUM & REBIRTH (JARAK JAUH)
+local p3Card = CreateCard(TabFrames["Upgrade"], "Peningkatan Level Pet & Podium (Jarak Jauh)")
+CreateToggle(p3Card, "Auto Tingkatkan 16 Podium", "Tingkatkan 16 podium & level pet 100% jarak jauh", "AutoUpgradePodium")
+
+local RemoteUpgradeNowBtn = Instance.new("TextButton")
+RemoteUpgradeNowBtn.Size = UDim2.new(1, 0, 0, 30)
+RemoteUpgradeNowBtn.BackgroundColor3 = Color3.fromRGB(24, 48, 80)
+RemoteUpgradeNowBtn.Text = "⚡ Tingkatkan Semua Podium Sekarang (Jarak Jauh)"
+RemoteUpgradeNowBtn.TextColor3 = Theme.Accent
+RemoteUpgradeNowBtn.Font = Enum.Font.GothamBold
+RemoteUpgradeNowBtn.TextSize = 11
+RemoteUpgradeNowBtn.BorderSizePixel = 0
+RemoteUpgradeNowBtn.Parent = p3Card
+
+local rubCorner = Instance.new("UICorner")
+rubCorner.CornerRadius = UDim.new(0, 6)
+rubCorner.Parent = RemoteUpgradeNowBtn
+
+RemoteUpgradeNowBtn.MouseButton1Click:Connect(function()
+    UpgradeAllPodiumsRemote()
+    Log("Berhasil menaikkan level semua podium dari jarak jauh!")
+end)
+
 CreateToggle(p3Card, "Auto Beli Semua Peningkatan", "Beli upgrade general yang telah dipelajari", "AutoBuyAllUpgrades")
 CreateToggle(p3Card, "Auto Beli Peningkatan Rebirth", "Beli peningkatan toko rebirth otomatis", "AutoBuyRebirthUpgrades")
 CreateToggle(p3Card, "Auto Rebirth", "Lakukan Rebirth otomatis saat persyaratan terpenuhi", "AutoRebirth")
 
--- TAB 4: MENARA PERTARUNGAN & STAGE (FULL FIX)
-local p4Card = CreateCard(TabFrames["Tower"], "Pengaturan Menara Pertarungan")
+-- TAB 4: MENARA PERTARUNGAN (FULL AUTOMATIC)
+local p4Card = CreateCard(TabFrames["Tower"], "Pengaturan Menara Pertarungan (Otomatis)")
 local StageLabel = Instance.new("TextLabel")
 StageLabel.Size = UDim2.new(1, 0, 0, 18)
 StageLabel.BackgroundTransparency = 1
@@ -1582,12 +1664,12 @@ NextStageBtn.MouseButton1Click:Connect(function()
     UpdateStageLabel()
 end)
 
-CreateToggle(p4Card, "Auto Masuk & Selesaikan Menara", "Masuk ke menara dan jalankan auto combat", "AutoTower")
+CreateToggle(p4Card, "Auto Masuk & Selesaikan Menara", "Masuk otomatis ke menara dan auto selesaikan", "AutoTower")
+CreateToggle(p4Card, "Auto Ketuk Serang Cepat (20 CPS Combat)", "Serangan otomatis cepat tanpa perlu klik manual", "AutoTapTowerCombat")
 CreateToggle(p4Card, "Auto Pasang Tim Menara Terbaik", "Pasang otomatis pet combat terbaik untuk menara", "AutoEquipTowerTeam")
-CreateToggle(p4Card, "Auto Ketuk Serang Cepat (Tap Combat)", "Kirim serangan cepat terus-menerus ke musuh", "AutoTapTowerCombat")
 CreateToggle(p4Card, "Auto Ulangi Saat Menang (Auto Retry)", "Ulangi otomatis menara untuk farming instan", "AutoRetryTower")
 CreateToggle(p4Card, "Teleport ke Pad Pintu Menara", "Pindah otomatis ke TowersPad saat mulai", "AutoTeleportToTowerPad")
-CreateToggle(p4Card, "Tolak Tawaran Revive Robux", "Tolak jendela popup revive otomatis agar tidak macet", "AutoDeclineRevive")
+CreateToggle(p4Card, "Tolak Tawaran Revive Robux", "Tolak popup revive otomatis agar tidak macet", "AutoDeclineRevive")
 
 -- TAB 5: HALLOWEEN EVENT & HADIAH
 local p5Card = CreateCard(TabFrames["Event"], "Event Halloween 2026")
@@ -1626,5 +1708,5 @@ task.spawn(function()
     end
 end)
 
-Log("★ ROCKSTAR HUB v7.7 DIMUAT LENGKAP ★")
-print("★ ROCKSTAR HUB v7.7 - [🎃] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! ★")
+Log("★ ROCKSTAR HUB v7.8 DIMUAT LENGKAP ★")
+print("★ ROCKSTAR HUB v7.8 - [🎃] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! ★")
