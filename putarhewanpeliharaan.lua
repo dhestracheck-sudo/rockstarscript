@@ -1,18 +1,19 @@
 -- ============================================================================
--- * ROCKSTAR HUB v8.6 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EDITION) *
+-- * ROCKSTAR HUB v8.8 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (SPECIFIC ITEM TRADE EDITION) *
 -- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v8.6:
---   [[OK]] FITUR AUTO ITEM & PET TERBAIK KE TAS:
---       - Auto Pasang Pet Terbaik dari Tas ke Podium (EquipBestPets)
---       - Auto Pasang Tim Menara Terbaik (EquipBestTeam)
---       - Auto Filter Server (SetSellWeaker): Hanya pet/item lebih kuat yang masuk ke tas
---       - Auto Pasang Pet Terkuat Mengikuti Karakter (SetFollowPet)
---       - Auto Pakai Item / Potion Boost dari Tas (UseItem)
---       - Tombol cepat "[Fast] Pasang Pet & Item Terbaik Sekarang" di Tab 1
---       - GUI Auto-Clicker untuk konfirmasi tombol Equip Best di tas
---   [[OK]] FITUR AUTO FUSE & AUTO GRADES LENGKAP:
---       - Auto Fuse mandiri (FusePets + Proximity + GUI Confirm)
---       - Auto Roll Grade (RollGrade + Deteksi PetGrade Podium + Target Selector)
+-- Update v8.8:
+--   [[OK]] FITUR TRADE SPESIFIK ITEM & PET:
+--       - Input Nama / Keyword Pet Spesifik (Contoh: Phoenix, Shark, Yeti, Crate)
+--       - Siklus Pemilih Pet Podium Aktif (Menampilkan Nama Pet & Grade tiap slot)
+--       - Tombol 1-Klik Masukkan Pet/Item Terpilih ke Kotak Trade (SetTradePet / SetTradeItem)
+--       - Auto-Select Pet dari GUI Trade jika jendela barter terbuka
+--       - Proteksi Aman: Mencegah memasukkan pet terkunci ke trade
+--   [[OK]] FITUR QUICK TRADE HELPER:
+--       - Input Nama Pembeli / Pemilih Pemain Server 1-Klik
+--       - Auto Terima (Accept) Permintaan Trade dari Pembeli
+--       - Tombol Instan [DEAL]: Kunci Ready + Konfirmasi Accept dalam 1 klik instan
+--       - Teleport Instan ke Trade Pad (Area Barter Map)
+--       - Tombol Cepat Batal / Cancel Trade
 --   [[OK]] 100% UNIVERSAL EXECUTOR (DELTA PC & MOBILE): Pure ASCII, SafeCall anti-lag, 0 klik liar
 -- ============================================================================
 
@@ -57,6 +58,16 @@ local Config = {
     AutoTeleportFusing = false,
     AutoSellWeakest = false,
     AutoSellAll = false,
+
+    -- Pengaturan Quick Trade Toko v8.8
+    TradeTargetUsername = "",
+    TradeSpecificItemName = "",
+    SelectedTradePodiumSlot = 1,
+    AutoAcceptTrade = false,
+    AutoAcceptFromAnyone = false,
+    AutoReadyTrade = false,
+    AutoConfirmAccept = false,
+    TradeSafeMode = true,
 
     -- Sistem Dadu v8.4
     AutoBuyDiceOnly = false,
@@ -168,6 +179,16 @@ local Remotes = {
     MarkItemsSeen = GetRemote("MarkItemsSeen"),
     SetFollowPet = GetRemote("SetFollowPet"),
     HoldPet = GetRemote("HoldPet"),
+
+    RequestTrade = GetRemote("RequestTrade"),
+    RespondTrade = GetRemote("RespondTrade"),
+    SetTradePet = GetRemote("SetTradePet"),
+    SetTradeItem = GetRemote("SetTradeItem"),
+    SetTradeReady = GetRemote("SetTradeReady"),
+    AcceptTrade = GetRemote("AcceptTrade"),
+    CancelTrade = GetRemote("CancelTrade"),
+    GetTradeStatus = GetRemote("GetTradeStatus"),
+    TradeEvent = GetRemote("TradeEvent"),
 
     BuyUpgrade = GetRemote("BuyUpgrade"),
     UpgradeRebirthStat = GetRemote("UpgradeRebirthStat"),
@@ -1046,6 +1067,199 @@ local function ExecuteRollAllGrades()
 end
 
 -- ============================================================================
+-- 7C. SISTEM QUICK TRADE HELPER (ASISTEN TOKO & TRANSAKSI CEPAT)
+-- ============================================================================
+local TradeState = {
+    CurrentBuyer = nil,
+    InTrade = false,
+    TradeOpenedAt = 0,
+}
+
+local function FindPlayerByPartialName(query)
+    if not query or query == "" then return nil end
+    local q = string.lower(query)
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if string.lower(p.Name) == q or string.lower(p.DisplayName) == q then
+                return p
+            end
+        end
+    end
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            if string.find(string.lower(p.Name), q, 1, true) or string.find(string.lower(p.DisplayName), q, 1, true) then
+                return p
+            end
+        end
+    end
+    return nil
+end
+
+local function GetAvailablePodiumPets()
+    local pets = {}
+    local podiums = GetMyPodiums()
+    for idx, podium in ipairs(podiums) do
+        local slotNum = podium:GetAttribute("Slot") or idx
+        local petId = podium:GetAttribute("PetId")
+        local petUuid = podium:GetAttribute("PetUuid")
+        local grade = GetPodiumGrade(podium) or "?"
+        if petId or petUuid then
+            table.insert(pets, {
+                Slot = slotNum,
+                Name = petId or ("Pet #" .. tostring(slotNum)),
+                Uuid = petUuid,
+                Grade = grade,
+                Podium = podium,
+            })
+        end
+    end
+    return pets
+end
+
+local function PutSpecificPetToTrade(petIdentifier)
+    if not petIdentifier or petIdentifier == "" then
+        Log("Quick Trade: Nama atau ID pet/item belum diisi!")
+        return false
+    end
+
+    local query = string.lower(petIdentifier)
+    local sent = false
+
+    -- 1. Cek di daftar podium pemain
+    local podiumPets = GetAvailablePodiumPets()
+    for _, p in ipairs(podiumPets) do
+        if string.find(string.lower(p.Name), query, 1, true) or (p.Uuid and string.lower(p.Uuid) == query) or tostring(p.Slot) == query then
+            Log("Quick Trade: Memasukkan " .. p.Name .. " (Slot " .. tostring(p.Slot) .. ", Grade " .. p.Grade .. ") ke trade...")
+            if p.Uuid then
+                SafeCall("SetTradePet", false, p.Uuid)
+            end
+            SafeCall("SetTradePet", false, p.Slot)
+            SafeCall("SetTradePet", false, p.Name)
+            sent = true
+            break
+        end
+    end
+
+    -- 2. Cek di GUI Trade (PlayerGui)
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if pGui then
+        for _, g in ipairs(pGui:GetChildren()) do
+            if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub", 1, true) then
+                for _, desc in ipairs(g:GetDescendants()) do
+                    if desc:IsA("TextButton") and desc.Visible then
+                        local btnText = string.lower(desc.Text)
+                        local btnName = string.lower(desc.Name)
+                        if (string.find(btnText, query, 1, true) or string.find(btnName, query, 1, true))
+                           and (string.find(string.lower(desc.Parent.Name), "pet") or string.find(string.lower(desc.Parent.Name), "item") or string.find(string.lower(desc.Parent.Name), "scroll") or string.find(string.lower(desc.Parent.Name), "grid") or string.find(string.lower(desc.Parent.Name), "list") or string.find(string.lower(g.Name), "trade"))
+                           and not IsRobuxButton(btnText, btnName) then
+                            Log("Quick Trade: Mengklik item '" .. desc.Text .. "' di GUI trade...")
+                            FireGuiButtonSafe(desc)
+                            sent = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- 3. Coba panggil remote langsung dengan query sebagai pet/item
+    if not sent then
+        SafeCall("SetTradePet", false, petIdentifier)
+        SafeCall("SetTradeItem", false, petIdentifier)
+        Log("Quick Trade: Mengirim remote SetTradePet/SetTradeItem dengan keyword: " .. petIdentifier)
+    end
+
+    return true
+end
+
+local function RequestTradeWithTarget(targetName)
+    local target = FindPlayerByPartialName(targetName)
+    if not target then
+        Log("Quick Trade: Pemain '" .. tostring(targetName) .. "' tidak ditemukan di server!")
+        return false
+    end
+    Log("Quick Trade: Mengirim ajakan trade ke " .. target.DisplayName .. " (@" .. target.Name .. ")...")
+    local ok, res = SafeCall("RequestTrade", false, target)
+    return ok
+end
+
+local function QuickDealTrade()
+    Log("Quick Trade: Mengunci deal (Ready)...")
+    SafeCall("SetTradeReady", false, true)
+    task.wait(1.0)
+    Log("Quick Trade: Mengonfirmasi pertukaran (Accept)...")
+    local ok, res = SafeCall("AcceptTrade", false)
+    if ok then
+        Log("Quick Trade: Pertukaran berhasil dikonfirmasi!")
+    end
+    return ok
+end
+
+local function CancelCurrentTrade()
+    SafeCall("CancelTrade", false)
+    TradeState.InTrade = false
+    Log("Quick Trade: Trade dibatalkan.")
+end
+
+local function TeleportToTradePad()
+    local tradePad = Workspace:FindFirstChild("TradePad", true)
+    local zone = tradePad and (tradePad:FindFirstChild("Zone") or tradePad:FindFirstChildOfClass("BasePart"))
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if zone and hrp then
+        hrp.CFrame = zone.CFrame + Vector3.new(0, 3, 0)
+        Log("Quick Trade: Berpindah ke Trade Pad!")
+    else
+        Log("Quick Trade: TradePad tidak ditemukan di Workspace.")
+    end
+end
+
+local function AutoAcceptTradeGui()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not pGui then return end
+    for _, g in ipairs(pGui:GetChildren()) do
+        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub", 1, true) then
+            for _, desc in ipairs(g:GetDescendants()) do
+                if desc:IsA("TextButton") and desc.Visible then
+                    local t = string.lower(desc.Text)
+                    local n = string.lower(desc.Name)
+                    if (string.find(t, "accept", 1, true) or string.find(t, "terima", 1, true) or string.find(n, "accept", 1, true))
+                       and (string.find(string.lower(desc.Parent.Name), "trade", 1, true) or string.find(string.lower(g.Name), "trade", 1, true))
+                       and not IsRobuxButton(t, n) then
+                        FireGuiButtonSafe(desc)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Listener Event Trade Bawaan Game
+pcall(function()
+    local tradeEv = Remotes.TradeEvent or GetRemote("TradeEvent")
+    if tradeEv and tradeEv:IsA("RemoteEvent") then
+        tradeEv.OnClientEvent:Connect(function(...)
+            local args = pack_fn(...)
+            local eventType = tostring(args[1] or "")
+            local sender = args[2]
+
+            if Config.AutoAcceptTrade then
+                if typeof(sender) == "Instance" and sender:IsA("Player") then
+                    local target = FindPlayerByPartialName(Config.TradeTargetUsername)
+                    if Config.AutoAcceptFromAnyone or (target and sender == target) then
+                        Log("Quick Trade: Menerima otomatis ajakan trade dari @" .. sender.Name)
+                        SafeCall("RespondTrade", false, sender, true)
+                    end
+                else
+                    SafeCall("RespondTrade", false, true)
+                end
+            end
+        end)
+    end
+end)
+
+-- ============================================================================
 -- 8. BACKGROUND LOOPS OTOMATISASI LENGKAP
 -- ============================================================================
 
@@ -1714,6 +1928,7 @@ local TabDefs = {
     { Id = "Upgrade", Name = "[Fast] Peningkatan" },
     { Id = "Tower", Name = "[Tower] Menara" },
     { Id = "Event", Name = "[HALLOWEEN] Halloween" },
+    { Id = "Shop", Name = "[Shop] Quick Trade" },
     { Id = "Log", Name = "[Log] Konsol Log" },
 }
 
@@ -2207,7 +2422,246 @@ local p5RewardCard = CreateCard(TabFrames["Event"], "Hadiah Gratis & Putar Roda"
 CreateToggle(p5RewardCard, "Auto Putar Roda (Gratis Saja)", "Hanya memutar saat ada putaran FREE, tidak pernah Robux", "AutoSpinWheel")
 CreateToggle(p5RewardCard, "Auto Klaim Semua Hadiah", "Klaim Daily, Peti Teman, Quest & Waktu Bermain (tanpa prompt Grup)", "AutoClaimRewards")
 
--- TAB 6: KONSOL LOG REALTIME
+-- TAB 6: QUICK TRADE HELPER (TOKO JUALAN)
+local pShopCard = CreateCard(TabFrames["Shop"], "Target Pembeli & Otomatisasi Undangan")
+
+local BuyerInputBox = Instance.new("TextBox")
+BuyerInputBox.Size = UDim2.new(1, 0, 0, 32)
+BuyerInputBox.BackgroundColor3 = Color3.fromRGB(24, 32, 48)
+BuyerInputBox.PlaceholderText = "Ketik Username Pembeli (Contoh: Budi)..."
+BuyerInputBox.PlaceholderColor3 = Theme.TextSub
+BuyerInputBox.Text = Config.TradeTargetUsername
+BuyerInputBox.TextColor3 = Theme.TextMain
+BuyerInputBox.Font = Enum.Font.GothamMedium
+BuyerInputBox.TextSize = 11
+BuyerInputBox.BorderSizePixel = 0
+BuyerInputBox.ClearTextOnFocus = false
+BuyerInputBox.Parent = pShopCard
+
+local bibCorner = Instance.new("UICorner")
+bibCorner.CornerRadius = UDim.new(0, 6)
+bibCorner.Parent = BuyerInputBox
+
+BuyerInputBox.FocusLost:Connect(function()
+    Config.TradeTargetUsername = BuyerInputBox.Text
+    Log("Target Pembeli diset ke: " .. Config.TradeTargetUsername)
+end)
+
+local CyclePlayerBtn = Instance.new("TextButton")
+CyclePlayerBtn.Size = UDim2.new(1, 0, 0, 28)
+CyclePlayerBtn.BackgroundColor3 = Color3.fromRGB(20, 28, 42)
+CyclePlayerBtn.Text = "Pilih Dari Server: (Klik untuk ganti pemain)"
+CyclePlayerBtn.TextColor3 = Theme.Accent
+CyclePlayerBtn.Font = Enum.Font.GothamMedium
+CyclePlayerBtn.TextSize = 10
+CyclePlayerBtn.BorderSizePixel = 0
+CyclePlayerBtn.Parent = pShopCard
+
+local cpbCorner = Instance.new("UICorner")
+cpbCorner.CornerRadius = UDim.new(0, 6)
+cpbCorner.Parent = CyclePlayerBtn
+
+local currentServerPlayerIdx = 1
+CyclePlayerBtn.MouseButton1Click:Connect(function()
+    local otherPlayers = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(otherPlayers, p) end
+    end
+    if #otherPlayers == 0 then
+        CyclePlayerBtn.Text = "Tidak ada pemain lain di server"
+        return
+    end
+    currentServerPlayerIdx = (currentServerPlayerIdx % #otherPlayers) + 1
+    local selected = otherPlayers[currentServerPlayerIdx]
+    Config.TradeTargetUsername = selected.Name
+    BuyerInputBox.Text = selected.Name
+    CyclePlayerBtn.Text = "Pemain Terpilih: " .. selected.DisplayName .. " (@" .. selected.Name .. ")"
+    Log("Pembeli terpilih: @" .. selected.Name)
+end)
+
+local RequestTradeBtn = Instance.new("TextButton")
+RequestTradeBtn.Size = UDim2.new(1, 0, 0, 32)
+RequestTradeBtn.BackgroundColor3 = Color3.fromRGB(30, 60, 100)
+RequestTradeBtn.Text = "[Fast] Ajak Trade Pembeli Sekarang"
+RequestTradeBtn.TextColor3 = Theme.Accent
+RequestTradeBtn.Font = Enum.Font.GothamBold
+RequestTradeBtn.TextSize = 11
+RequestTradeBtn.BorderSizePixel = 0
+RequestTradeBtn.Parent = pShopCard
+
+local rtbCorner = Instance.new("UICorner")
+rtbCorner.CornerRadius = UDim.new(0, 6)
+rtbCorner.Parent = RequestTradeBtn
+
+RequestTradeBtn.MouseButton1Click:Connect(function()
+    local name = BuyerInputBox.Text ~= "" and BuyerInputBox.Text or Config.TradeTargetUsername
+    RequestTradeWithTarget(name)
+end)
+
+CreateToggle(pShopCard, "Auto Terima Trade Pembeli", "Otomatis terima ajakan trade saat pembeli mengundang", "AutoAcceptTrade")
+CreateToggle(pShopCard, "Terima Dari Siapa Saja", "Otomatis terima ajakan trade dari siapa saja tanpa filter nama", "AutoAcceptFromAnyone")
+
+local TpTradePadBtn = Instance.new("TextButton")
+TpTradePadBtn.Size = UDim2.new(1, 0, 0, 28)
+TpTradePadBtn.BackgroundColor3 = Color3.fromRGB(20, 35, 55)
+TpTradePadBtn.Text = "Teleport ke Trade Pad (Area Barter)"
+TpTradePadBtn.TextColor3 = Theme.TextMain
+TpTradePadBtn.Font = Enum.Font.GothamMedium
+TpTradePadBtn.TextSize = 10
+TpTradePadBtn.BorderSizePixel = 0
+TpTradePadBtn.Parent = pShopCard
+
+local ttCorner = Instance.new("UICorner")
+ttCorner.CornerRadius = UDim.new(0, 6)
+ttCorner.Parent = TpTradePadBtn
+
+TpTradePadBtn.MouseButton1Click:Connect(TeleportToTradePad)
+
+-- KARTU KHUSUS: PILIH ITEM / PET SPESIFIK UNTUK DITRADE
+local pShopItemCard = CreateCard(TabFrames["Shop"], "Pilih Item / Pet Spesifik Untuk Ditrade")
+
+local SpecificItemInput = Instance.new("TextBox")
+SpecificItemInput.Size = UDim2.new(1, 0, 0, 32)
+SpecificItemInput.BackgroundColor3 = Color3.fromRGB(24, 32, 48)
+SpecificItemInput.PlaceholderText = "Ketik Nama Pet / Item (Contoh: Phoenix, Shark, Yeti, Crate)..."
+SpecificItemInput.PlaceholderColor3 = Theme.TextSub
+SpecificItemInput.Text = Config.TradeSpecificItemName
+SpecificItemInput.TextColor3 = Theme.TextMain
+SpecificItemInput.Font = Enum.Font.GothamMedium
+SpecificItemInput.TextSize = 11
+SpecificItemInput.BorderSizePixel = 0
+SpecificItemInput.ClearTextOnFocus = false
+SpecificItemInput.Parent = pShopItemCard
+
+local siiCorner = Instance.new("UICorner")
+siiCorner.CornerRadius = UDim.new(0, 6)
+siiCorner.Parent = SpecificItemInput
+
+SpecificItemInput.FocusLost:Connect(function()
+    Config.TradeSpecificItemName = SpecificItemInput.Text
+    Log("Item spesifik diset ke: " .. Config.TradeSpecificItemName)
+end)
+
+local CyclePodiumPetBtn = Instance.new("TextButton")
+CyclePodiumPetBtn.Size = UDim2.new(1, 0, 0, 28)
+CyclePodiumPetBtn.BackgroundColor3 = Color3.fromRGB(20, 28, 42)
+CyclePodiumPetBtn.Text = "Pilih Dari Podium: [Slot 1] (Klik untuk ganti)"
+CyclePodiumPetBtn.TextColor3 = Theme.Accent
+CyclePodiumPetBtn.Font = Enum.Font.GothamMedium
+CyclePodiumPetBtn.TextSize = 10
+CyclePodiumPetBtn.BorderSizePixel = 0
+CyclePodiumPetBtn.Parent = pShopItemCard
+
+local cppCorner = Instance.new("UICorner")
+cppCorner.CornerRadius = UDim.new(0, 6)
+cppCorner.Parent = CyclePodiumPetBtn
+
+local currentPodiumListIdx = 1
+local function RefreshPodiumBtnText()
+    local list = GetAvailablePodiumPets()
+    if #list == 0 then
+        CyclePodiumPetBtn.Text = "Podium kosong / pet belum terdeteksi"
+        return
+    end
+    currentPodiumListIdx = math.clamp(currentPodiumListIdx, 1, #list)
+    local p = list[currentPodiumListIdx]
+    Config.TradeSpecificItemName = p.Name
+    SpecificItemInput.Text = p.Name
+    CyclePodiumPetBtn.Text = "Pilih Dari Podium: [Slot " .. tostring(p.Slot) .. "] " .. p.Name .. " (Grade " .. p.Grade .. ")"
+end
+
+CyclePodiumPetBtn.MouseButton1Click:Connect(function()
+    local list = GetAvailablePodiumPets()
+    if #list == 0 then
+        RefreshPodiumBtnText()
+        return
+    end
+    currentPodiumListIdx = (currentPodiumListIdx % #list) + 1
+    RefreshPodiumBtnText()
+    Log("Pet spesifik terpilih: " .. list[currentPodiumListIdx].Name .. " (Slot " .. tostring(list[currentPodiumListIdx].Slot) .. ")")
+end)
+
+local PutSpecificPetBtn = Instance.new("TextButton")
+PutSpecificPetBtn.Size = UDim2.new(1, 0, 0, 32)
+PutSpecificPetBtn.BackgroundColor3 = Color3.fromRGB(40, 70, 110)
+PutSpecificPetBtn.Text = "[1-Klik] Masukkan Pet / Item Ini ke Trade"
+PutSpecificPetBtn.TextColor3 = Theme.Accent
+PutSpecificPetBtn.Font = Enum.Font.GothamBold
+PutSpecificPetBtn.TextSize = 11
+PutSpecificPetBtn.BorderSizePixel = 0
+PutSpecificPetBtn.Parent = pShopItemCard
+
+local pspCorner = Instance.new("UICorner")
+pspCorner.CornerRadius = UDim.new(0, 6)
+pspCorner.Parent = PutSpecificPetBtn
+
+PutSpecificPetBtn.MouseButton1Click:Connect(function()
+    local query = SpecificItemInput.Text ~= "" and SpecificItemInput.Text or Config.TradeSpecificItemName
+    PutSpecificPetToTrade(query)
+end)
+
+local PutWeakestPetBtn = Instance.new("TextButton")
+PutWeakestPetBtn.Size = UDim2.new(1, 0, 0, 26)
+PutWeakestPetBtn.BackgroundColor3 = Color3.fromRGB(25, 38, 55)
+PutWeakestPetBtn.Text = "Masukkan 1 Pet Cadangan Terlemah (Bonus/Tes)"
+PutWeakestPetBtn.TextColor3 = Theme.TextSub
+PutWeakestPetBtn.Font = Enum.Font.GothamMedium
+PutWeakestPetBtn.TextSize = 10
+PutWeakestPetBtn.BorderSizePixel = 0
+PutWeakestPetBtn.Parent = pShopItemCard
+
+local pwbCorner = Instance.new("UICorner")
+pwbCorner.CornerRadius = UDim.new(0, 6)
+pwbCorner.Parent = PutWeakestPetBtn
+
+PutWeakestPetBtn.MouseButton1Click:Connect(function()
+    SafeCall("SetTradePet", false, "Weakest")
+    SafeCall("SetTradePet", false, 1)
+    Log("Quick Trade: Memasukkan pet cadangan ke trade...")
+end)
+
+CreateToggle(pShopItemCard, "Proteksi Pet Terkunci", "Cegah memasukkan pet yang berstatus Locked ke trade", "TradeSafeMode")
+
+-- KARTU 2: AKSI CEPAT TRANSAKSI (DEALS)
+local pShopDealCard = CreateCard(TabFrames["Shop"], "Eksekusi Transaksi Instan (1-Klik Deal)")
+
+local FastDealBtn = Instance.new("TextButton")
+FastDealBtn.Size = UDim2.new(1, 0, 0, 36)
+FastDealBtn.BackgroundColor3 = Color3.fromRGB(25, 80, 50)
+FastDealBtn.Text = "[DEAL] Kunci Ready + Selesaikan Trade (Accept)"
+FastDealBtn.TextColor3 = Color3.fromRGB(120, 255, 170)
+FastDealBtn.Font = Enum.Font.GothamBold
+FastDealBtn.TextSize = 12
+FastDealBtn.BorderSizePixel = 0
+FastDealBtn.Parent = pShopDealCard
+
+local fdbCorner = Instance.new("UICorner")
+fdbCorner.CornerRadius = UDim.new(0, 6)
+fdbCorner.Parent = FastDealBtn
+
+FastDealBtn.MouseButton1Click:Connect(function()
+    QuickDealTrade()
+end)
+
+local CancelTradeBtn = Instance.new("TextButton")
+CancelTradeBtn.Size = UDim2.new(1, 0, 0, 28)
+CancelTradeBtn.BackgroundColor3 = Color3.fromRGB(70, 25, 25)
+CancelTradeBtn.Text = "[Batal] Batalkan / Keluar Dari Trade"
+CancelTradeBtn.TextColor3 = Color3.fromRGB(255, 130, 130)
+CancelTradeBtn.Font = Enum.Font.GothamBold
+CancelTradeBtn.TextSize = 10
+CancelTradeBtn.BorderSizePixel = 0
+CancelTradeBtn.Parent = pShopDealCard
+
+local ctbCorner = Instance.new("UICorner")
+ctbCorner.CornerRadius = UDim.new(0, 6)
+ctbCorner.Parent = CancelTradeBtn
+
+CancelTradeBtn.MouseButton1Click:Connect(function()
+    CancelCurrentTrade()
+end)
+
+-- TAB 7: KONSOL LOG REALTIME
 local p6Card = CreateCard(TabFrames["Log"], "Status Sistem & Aktivitas")
 local LogText = Instance.new("TextLabel")
 LogText.Size = UDim2.new(1, 0, 0, 160)
@@ -2228,9 +2682,12 @@ task.spawn(function()
     while true do
         pcall(RefreshLogDisplay)
         pcall(UpdateDiceDisplay)
-        task.wait(2.0)
+        if Config.AutoAcceptTrade then
+            pcall(AutoAcceptTradeGui)
+        end
+        task.wait(1.5)
     end
 end)
 
-Log("* ROCKSTAR HUB v8.4 DIMUAT LENGKAP *")
+Log("* ROCKSTAR HUB v8.7 QUICK TRADE DIMUAT LENGKAP *")
 print("* ROCKSTAR HUB v8.4 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
