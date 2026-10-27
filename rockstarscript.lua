@@ -1,6 +1,6 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB (CYBER BLUE EDITION) // CUSTOM UI REDESIGN & NO DISCORD LINK
--- Menghapus Total Logo "SR", Menghapus Link Discord, & Merombak Tampilan UI
+-- ★ ROCKSTAR HUB (BLUE EDITION) // SAFE HUB-ONLY RESKINNER
+-- Hanya Mengubah Warna & Judul pada UI Script Hub (Tidak Menyentuh UI Game!)
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -11,26 +11,39 @@ local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- Abaikan GUI bawaan sistem Roblox
-local IgnoredSystemGuis = {
-    ["RobloxGui"] = true,
-    ["TopBarApp"] = true,
-    ["Chat"] = true,
-    ["PlayerList"] = true,
-    ["TouchGui"] = true,
-    ["Backpack"] = true,
-    ["DevConsoleMaster"] = true,
-    ["PurchasePrompt"] = true,
-    ["PurchasePromptApp"] = true,
-    ["RobloxNetworkPauseNotification"] = true,
-    ["TeleportEffectGui"] = true
-}
+-- ============================================================================
+-- 1. CATAT SEMUA GUI GAME YANG SUDAH ADA AGAR TIDAK PERNAH DISENTUH
+-- ============================================================================
+local ExistingGuis = setmetatable({}, {__mode = "k"})
 
-local function IsInsideSystemGui(inst)
+local function SnapshotExistingGuis(container)
+    if not container then return end
+    pcall(function()
+        for _, child in ipairs(container:GetChildren()) do
+            ExistingGuis[child] = true
+        end
+    end)
+end
+
+pcall(function()
+    if typeof(gethui) == "function" then SnapshotExistingGuis(gethui()) end
+end)
+pcall(function() SnapshotExistingGuis(CoreGui) end)
+pcall(function()
+    if LocalPlayer then
+        SnapshotExistingGuis(LocalPlayer:WaitForChild("PlayerGui", 5))
+    end
+end)
+
+-- Cek apakah sebuah elemen berada di dalam GUI lama milik game/Roblox
+local function IsGameOrSystemGui(inst)
     local curr = inst
-    while curr do
-        if IgnoredSystemGuis[curr.Name] then
+    while curr and curr.Parent do
+        if ExistingGuis[curr] then
             return true
+        end
+        if curr:IsA("ScreenGui") then
+            return ExistingGuis[curr] == true
         end
         curr = curr.Parent
     end
@@ -38,294 +51,233 @@ local function IsInsideSystemGui(inst)
 end
 
 -- ============================================================================
--- 1. PALET WARNA ROCKSTAR CYBER BLUE (MEROMBAK SEMUA WARNA LAMA)
+-- 2. KONVERSI WARNA ORANYE/COKLAT HUB -> BIRU ROCKSTAR (TANPA UBAH UKURAN)
 -- ============================================================================
-local function ToRockstarBlue(c, isBackground)
+local function ToRockstarBlue(c)
     if typeof(c) ~= "Color3" then return c end
-
-    -- Jangan ubah warna teks Putih bersih
-    if c.R > 0.85 and c.G > 0.85 and c.B > 0.85 then
-        return Color3.fromRGB(240, 248, 255)
+    -- Hanya tukar warna yang bernuansa Oranye/Coklat (R > B) menjadi Biru Rockstar
+    if c.R > c.B + 0.04 then
+        return Color3.new(
+            c.B,
+            math.clamp(c.G * 1.05, 0, 1),
+            c.R
+        )
     end
-
-    -- Jika ini warna latar gelap (Hitam/Coklat Tua/Abu Gelap), ubah jadi Midnight Navy Blue
-    local maxVal = math.max(c.R, c.G, c.B)
-    if maxVal < 0.28 then
-        if maxVal < 0.10 then
-            return Color3.fromRGB(9, 15, 28)   -- Deep Midnight Blue
-        elseif maxVal < 0.18 then
-            return Color3.fromRGB(14, 23, 42)  -- Dark Royal Navy
-        else
-            return Color3.fromRGB(20, 34, 62)  -- Slate Blue Card
-        end
-    end
-
-    -- Jika warna Oranye / Merah / Coklat / Ungu (Aksen lama), ubah jadi Electric Cyan-Blue
-    if c.R > c.B + 0.03 then
-        return Color3.fromRGB(0, 165, 255)
-    end
-
     return c
 end
 
 local function ToRockstarSequence(seq)
     if typeof(seq) ~= "ColorSequence" then return seq end
     local keypoints = {}
+    local changed = false
     for _, kp in ipairs(seq.Keypoints) do
-        table.insert(keypoints, ColorSequenceKeypoint.new(kp.Time, ToRockstarBlue(kp.Value, false)))
+        local newCol = ToRockstarBlue(kp.Value)
+        if newCol ~= kp.Value then changed = true end
+        table.insert(keypoints, ColorSequenceKeypoint.new(kp.Time, newCol))
     end
-    return ColorSequence.new(keypoints)
+    if changed then
+        return ColorSequence.new(keypoints)
+    end
+    return seq
 end
 
--- ============================================================================
--- 2. HAPUS TOTAL LINK DISCORD & UBAH JUDUL JADI "★ ROCKSTAR"
--- ============================================================================
-local function ProcessAndCleanText(inst)
-    local txt = inst.Text
-    if type(txt) ~= "string" or txt == "" then return end
-
+-- Ubah teks Lynx/Serenity menjadi Rockstar & Hapus teks link Discord
+local function CleanHubText(txt)
+    if type(txt) ~= "string" or txt == "" then return txt end
     local lower = string.lower(txt)
 
-    -- A. HAPUS LINK DISCORD & SEMBUNYIKAN IKON DISCORD DI SEBELAHNYA
-    if string.find(lower, "discord", 1, true) or string.find(lower, "lynxx", 1, true) then
-        inst.Text = ""
-        inst.Visible = false
-        -- Sembunyikan juga ikon Discord & garis pemisah di dalam container yang sama
-        if inst.Parent then
-            for _, sib in ipairs(inst.Parent:GetChildren()) do
-                if sib ~= inst and (sib:IsA("ImageLabel") or sib:IsA("Frame")) then
-                    -- Jika posisinya dekat di sebelah kanan atas (area Discord)
-                    if sib.Position.X.Scale > 0.45 or sib.Position.X.Offset > 250 or sib.Size.X.Offset <= 28 then
-                        sib.Visible = false
-                    end
-                end
-            end
-        end
-        return
-    end
-
-    -- B. UBAH JUDUL LYNX / SERENITY MENJADI "★ ROCKSTAR"
-    if lower == "lynx" or lower == "serenity" or lower == "serenity hub" then
-        inst.Text = "★ ROCKSTAR"
-        inst.TextColor3 = Color3.fromRGB(35, 195, 255)
-        return
+    -- Kosongkan teks link discord tanpa menyembunyikan frame lain
+    if string.find(lower, "discord.gg", 1, true) or string.find(lower, "discord", 1, true) then
+        return ""
     end
 
     local res = txt
     res = string.gsub(res, "[Ll][Yy][Nn][Xx][Xx]?", "Rockstar")
     res = string.gsub(res, "[Ss][Ee][Rr][Ee][Nn][Ii][Tt][Yy]%s*[Hh][Uu][Bb]", "Rockstar Hub")
     res = string.gsub(res, "[Ss][Ee][Rr][Ee][Nn][Ii][Tt][Yy]", "Rockstar")
-    if res ~= txt then
-        inst.Text = res
-    end
+    return res
 end
 
--- ============================================================================
--- 3. ROMBAK TOMBOL FLOATING "SR" JADI KAPSUL "★ ROCKSTAR" & HAPUS GAMBAR "SR"
--- ============================================================================
-local ProtectedTabWords = {
-    "main", "automation", "shop", "event", "webhook", "settings", "config", "search"
-}
-
-local function HasProtectedTabSibling(inst)
-    local p1 = inst.Parent
-    local p2 = p1 and p1.Parent
-    for _, container in ipairs({p1, p2}) do
-        if container then
-            for _, child in ipairs(container:GetChildren()) do
-                if child:IsA("TextLabel") or child:IsA("TextBox") then
-                    local t = string.lower((child:IsA("TextBox") and child.PlaceholderText or "") .. " " .. (child.Text or ""))
-                    for _, word in ipairs(ProtectedTabWords) do
-                        if string.find(t, word, 1, true) then
-                            return true
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
-local function IsInsideScrollingContent(inst)
-    local curr = inst.Parent
-    while curr do
-        if curr:IsA("ScrollingFrame") then
-            return true
-        end
-        curr = curr.Parent
-    end
-    return false
-end
-
-local function WipeLogoAndMakeRockstar(imgInst)
-    if not imgInst then return end
-    if IsInsideSystemGui(imgInst) then return end
-    if IsInsideScrollingContent(imgInst) then return end
-    if HasProtectedTabSibling(imgInst) then return end
+-- Ganti gambar logo "SR" pada tombol kecil (Floating Button) tanpa mengubah ukuran frame apa pun!
+local function CheckAndReplaceSmallLogo(imgInst)
+    if not (imgInst:IsA("ImageLabel") or imgInst:IsA("ImageButton")) then return end
+    if imgInst:FindFirstChild("RockstarLogoText") then return end
 
     pcall(function()
-        -- 1. Hapus paksa gambar "SR" / Planet
-        imgInst.Image = ""
-        imgInst.ImageTransparency = 1
+        local parent = imgInst.Parent
+        if not parent or not parent:IsA("GuiObject") then return end
 
-        -- 2. Cek apakah ini berada di dalam Tombol Floating (Kotak "SR")
-        local parentBtn = imgInst.Parent
-        if parentBtn and parentBtn:IsA("GuiObject") then
-            -- Jika ukuran kotak parent kecil/sedang (Tombol Floating "SR"), ubah bentuknya jadi Kapsul Panjang "★ ROCKSTAR"!
-            local w = parentBtn.Size.X.Offset
-            local h = parentBtn.Size.Y.Offset
-            if (w >= 28 and w <= 115 and h >= 28 and h <= 115) or parentBtn.Parent:IsA("ScreenGui") then
-                parentBtn.Size = UDim2.new(0, 130, 0, 38)
-                parentBtn.BackgroundColor3 = Color3.fromRGB(10, 20, 38)
-                parentBtn.BackgroundTransparency = 0.05
-
-                local corner = parentBtn:FindFirstChildOfClass("UICorner") or Instance.new("UICorner", parentBtn)
-                corner.CornerRadius = UDim.new(1, 0) -- Bentuk Kapsul Pill
-
-                local stroke = parentBtn:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", parentBtn)
-                stroke.Color = Color3.fromRGB(0, 175, 255)
-                stroke.Thickness = 2
-
-                if not parentBtn:FindFirstChild("RockstarCapsuleTitle") then
-                    local title = Instance.new("TextLabel")
-                    title.Name = "RockstarCapsuleTitle"
-                    title.Size = UDim2.new(1, 0, 1, 0)
-                    title.BackgroundTransparency = 1
-                    title.Text = "★ ROCKSTAR"
-                    title.TextColor3 = Color3.fromRGB(55, 205, 255)
-                    title.Font = Enum.Font.GothamBlack
-                    title.TextSize = 13
-                    title.Active = false
-                    title.Parent = parentBtn
+        -- Hanya jika parent-nya adalah tombol kotak kecil mengambang (ukuran 30px s/d 75px)
+        -- dan TIDAK memiliki TextLabel saudara (agar tidak mengenai menu tab atau jendela utama!)
+        local w = parent.AbsoluteSize.X
+        local h = parent.AbsoluteSize.Y
+        if w >= 28 and w <= 75 and h >= 28 and h <= 75 then
+            for _, sib in ipairs(parent:GetChildren()) do
+                if sib:IsA("TextLabel") or sib:IsA("TextBox") or sib:IsA("ScrollingFrame") then
+                    return
                 end
-                return
+            end
+
+            -- Pastikan bukan di dalam jendela besar (cek parent di atasnya adalah ScreenGui atau Folder)
+            if parent.Parent and (parent.Parent:IsA("ScreenGui") or parent.Parent:IsA("Folder")) then
+                imgInst.ImageTransparency = 1
+                local lbl = Instance.new("TextLabel")
+                lbl.Name = "RockstarLogoText"
+                lbl.Size = UDim2.new(1, 0, 1, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.Text = "R★"
+                lbl.TextColor3 = Color3.fromRGB(0, 175, 255)
+                lbl.Font = Enum.Font.GothamBlack
+                lbl.TextSize = 18
+                lbl.Active = false
+                lbl.Parent = imgInst
             end
         end
-
-        -- 3. Jika ini adalah logo di dalam TopBar (sebelah tulisan Rockstar), sembunyikan total karena judul sudah memakai "★ ROCKSTAR"
-        imgInst.Visible = false
     end)
 end
 
--- ============================================================================
--- 4. TERAPKAN DESAIN BARU KE SELURUH KOMPONEN UI
--- ============================================================================
-local ConnectedSignals = setmetatable({}, {__mode = "k"})
+local StyledInstances = setmetatable({}, {__mode = "k"})
 
-local function ApplyRockstarStyle(inst)
-    if not inst or IsInsideSystemGui(inst) then return end
+local function StyleHubElement(inst)
+    if not inst or IsGameOrSystemGui(inst) then return end
+
+    if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+        CheckAndReplaceSmallLogo(inst)
+    end
+
+    if StyledInstances[inst] then return end
+    StyledInstances[inst] = true
 
     pcall(function()
-        -- A. Cek & Hapus Gambar Logo "SR" / Planet Setiap Kali Ditemukan (Tanpa Dikunci!)
-        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-            if not IsInsideScrollingContent(inst) and not HasProtectedTabSibling(inst) then
-                WipeLogoAndMakeRockstar(inst)
-            else
-                local c = ToRockstarBlue(inst.ImageColor3, false)
-                if c ~= inst.ImageColor3 then
-                    inst.ImageColor3 = c
-                end
-            end
-        end
-
-        -- B. Ubah Warna Background & Bentuk Sudut
+        -- 1. Ubah Warna Background (Hanya pada UI Hub)
         if inst:IsA("GuiObject") then
-            local newBg = ToRockstarBlue(inst.BackgroundColor3, true)
+            local newBg = ToRockstarBlue(inst.BackgroundColor3)
             if newBg ~= inst.BackgroundColor3 then
                 inst.BackgroundColor3 = newBg
             end
+            inst:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+                local c = ToRockstarBlue(inst.BackgroundColor3)
+                if c ~= inst.BackgroundColor3 then
+                    inst.BackgroundColor3 = c
+                end
+            end)
+
+            local newBd = ToRockstarBlue(inst.BorderColor3)
+            if newBd ~= inst.BorderColor3 then
+                inst.BorderColor3 = newBd
+            end
         end
 
-        -- C. Bersihkan Link Discord & Ubah Judul Teks
+        -- 2. Ubah Teks & Warna Teks
         if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-            ProcessAndCleanText(inst)
-            local newTc = ToRockstarBlue(inst.TextColor3, false)
+            local newTxt = CleanHubText(inst.Text)
+            if newTxt ~= inst.Text then
+                inst.Text = newTxt
+            end
+            inst:GetPropertyChangedSignal("Text"):Connect(function()
+                local t = CleanHubText(inst.Text)
+                if t ~= inst.Text then
+                    inst.Text = t
+                end
+            end)
+
+            local newTc = ToRockstarBlue(inst.TextColor3)
             if newTc ~= inst.TextColor3 then
                 inst.TextColor3 = newTc
             end
+            inst:GetPropertyChangedSignal("TextColor3"):Connect(function()
+                local c = ToRockstarBlue(inst.TextColor3)
+                if c ~= inst.TextColor3 then
+                    inst.TextColor3 = c
+                end
+            end)
         end
 
-        -- D. ScrollBar Biru
+        -- 3. Ubah Warna Gambar / Ikon
+        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+            local newIc = ToRockstarBlue(inst.ImageColor3)
+            if newIc ~= inst.ImageColor3 then
+                inst.ImageColor3 = newIc
+            end
+            inst:GetPropertyChangedSignal("ImageColor3"):Connect(function()
+                local c = ToRockstarBlue(inst.ImageColor3)
+                if c ~= inst.ImageColor3 then
+                    inst.ImageColor3 = c
+                end
+            end)
+        end
+
+        -- 4. Ubah Warna ScrollBar
         if inst:IsA("ScrollingFrame") then
-            inst.ScrollBarImageColor3 = Color3.fromRGB(0, 165, 255)
+            local newSc = ToRockstarBlue(inst.ScrollBarImageColor3)
+            if newSc ~= inst.ScrollBarImageColor3 then
+                inst.ScrollBarImageColor3 = newSc
+            end
+            inst:GetPropertyChangedSignal("ScrollBarImageColor3"):Connect(function()
+                local c = ToRockstarBlue(inst.ScrollBarImageColor3)
+                if c ~= inst.ScrollBarImageColor3 then
+                    inst.ScrollBarImageColor3 = c
+                end
+            end)
         end
 
-        -- E. Garis Pinggir (UIStroke) Biru Elektrik
+        -- 5. Ubah Warna Garis Tepi (UIStroke)
         if inst:IsA("UIStroke") then
-            inst.Color = Color3.fromRGB(28, 85, 160)
+            local newSt = ToRockstarBlue(inst.Color)
+            if newSt ~= inst.Color then
+                inst.Color = newSt
+            end
+            inst:GetPropertyChangedSignal("Color"):Connect(function()
+                local c = ToRockstarBlue(inst.Color)
+                if c ~= inst.Color then
+                    inst.Color = c
+                end
+            end)
         end
 
-        -- F. Gradasi Biru
+        -- 6. Ubah Warna Gradasi (UIGradient)
         if inst:IsA("UIGradient") then
-            inst.Color = ToRockstarSequence(inst.Color)
-        end
-
-        -- Pasang listener perubahan properti sekali saja per objek
-        if not ConnectedSignals[inst] then
-            ConnectedSignals[inst] = true
-
-            if inst:IsA("GuiObject") then
-                inst:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
-                    local c = ToRockstarBlue(inst.BackgroundColor3, true)
-                    if c ~= inst.BackgroundColor3 then inst.BackgroundColor3 = c end
-                end)
+            local newSeq = ToRockstarSequence(inst.Color)
+            if newSeq ~= inst.Color then
+                inst.Color = newSeq
             end
-
-            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-                inst:GetPropertyChangedSignal("Text"):Connect(function()
-                    ProcessAndCleanText(inst)
-                end)
-                inst:GetPropertyChangedSignal("TextColor3"):Connect(function()
-                    local c = ToRockstarBlue(inst.TextColor3, false)
-                    if c ~= inst.TextColor3 then inst.TextColor3 = c end
-                end)
-            end
-
-            if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-                inst:GetPropertyChangedSignal("Image"):Connect(function()
-                    if not IsInsideScrollingContent(inst) and not HasProtectedTabSibling(inst) then
-                        WipeLogoAndMakeRockstar(inst)
-                    end
-                end)
-                inst:GetPropertyChangedSignal("Size"):Connect(function()
-                    if not IsInsideScrollingContent(inst) and not HasProtectedTabSibling(inst) then
-                        WipeLogoAndMakeRockstar(inst)
-                    end
-                end)
-            end
+            inst:GetPropertyChangedSignal("Color"):Connect(function()
+                local s = ToRockstarSequence(inst.Color)
+                if s ~= inst.Color then
+                    inst.Color = s
+                end
+            end)
         end
     end)
 end
 
-local function WatchGuiContainer(container)
+-- Hanya pantau ScreenGui BARU yang dibuat oleh Script Hub (Bukan UI Game!)
+local function WatchNewHubGuisOnly(container)
     if not container then return end
     pcall(function()
-        for _, desc in ipairs(container:GetDescendants()) do
-            ApplyRockstarStyle(desc)
-        end
         container.DescendantAdded:Connect(function(desc)
-            ApplyRockstarStyle(desc)
-            task.delay(0.1, function() ApplyRockstarStyle(desc) end)
-            task.delay(0.5, function() ApplyRockstarStyle(desc) end)
+            if not IsGameOrSystemGui(desc) then
+                StyleHubElement(desc)
+                task.delay(0.2, function()
+                    StyleHubElement(desc)
+                end)
+            end
         end)
     end)
 end
 
 pcall(function()
-    if typeof(gethui) == "function" then
-        WatchGuiContainer(gethui())
-    end
+    if typeof(gethui) == "function" then WatchNewHubGuisOnly(gethui()) end
 end)
-pcall(function() WatchGuiContainer(CoreGui) end)
+pcall(function() WatchNewHubGuisOnly(CoreGui) end)
 pcall(function()
     if LocalPlayer then
-        WatchGuiContainer(LocalPlayer:WaitForChild("PlayerGui", 5))
+        WatchNewHubGuisOnly(LocalPlayer:WaitForChild("PlayerGui", 5))
     end
 end)
 
 -- ============================================================================
--- 5. LOADER UTAMA (100% FITUR BEKERJA)
+-- 3. LOADER UTAMA
 -- ============================================================================
 local BASE = "https://raw.githubusercontent.com/MUshihara/Serenity-hub/main/"
 local isMM2 = game.PlaceId == 142823291 or game.GameId == 66654135
@@ -400,7 +352,6 @@ if not fn then
     error("[ROCKSTAR HUB] Loader compile failed: " .. tostring(err), 0)
 end
 
--- Matikan permanen copy link Discord
 pcall(function()
     local env = (type(getgenv) == "function" and getgenv()) or _G
     env.__SERENITY_DISCORD_COPIED = true
@@ -409,17 +360,15 @@ end)
 
 local results = table.pack(fn())
 
--- Loop pembersih berkelanjutan agar tidak ada logo "SR" atau link Discord yang muncul belakangan
+-- Sweep khusus pada GUI baru milik Hub (tidak menyentuh GUI game)
 task.spawn(function()
-    while task.wait(0.5) do
+    for _ = 1, 12 do
+        task.wait(0.4)
         pcall(function()
             if typeof(gethui) == "function" then
-                for _, d in ipairs(gethui():GetDescendants()) do ApplyRockstarStyle(d) end
+                for _, d in ipairs(gethui():GetDescendants()) do StyleHubElement(d) end
             end
-            for _, d in ipairs(CoreGui:GetDescendants()) do ApplyRockstarStyle(d) end
-            if LocalPlayer and LocalPlayer:FindFirstChild("PlayerGui") then
-                for _, d in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do ApplyRockstarStyle(d) end
-            end
+            for _, d in ipairs(CoreGui:GetDescendants()) do StyleHubElement(d) end
         end)
     end
 end)
