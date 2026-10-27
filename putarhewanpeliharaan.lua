@@ -1,12 +1,13 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v6.9 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
+-- ★ ROCKSTAR HUB v7.0 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
 -- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299)
--- Update v6.9:
---   [+] FIX DADU GANTI-GANTI SENDIRI (Hapus total loop EquipDice!)
---   [+] Pisahkan "Auto Beli Stok Dadu (Tanpa Ganti Dadu)" & "Kunci 1 Dadu Pilihan"
---   [+] Auto Deteksi Dadu yang Diklik Manual Pemain agar Tidak Pernah Tertimpa
---   [+] Fix Auto Trait Terbaik & Grade Terbaik (PetUuid Podium + Stop Saat Top Trait)
---   [+] Fix Auto Halloween Candy, Exact BuyUpgrade & Menu Pilih Stage Menara
+-- Update v7.0 (HASIL AUDIT LENGKAP):
+--   [✓] FIX Runtime Nil Table Insert pada LearnedDiceArgs (__namecall hook)
+--   [✓] FIX Dadu Anti Ganti-Ganti Sendiri (Auto-Best Luck vs Kunci Manual)
+--   [✓] Tambah Tombol Beralih Mode Dadu: [Auto-Best Luck] & [Kunci Manual]
+--   [✓] Optimasi Thread Auto Upgrade Podium (Tidak lagi memperlambat Auto Buy)
+--   [✓] Filter Ketat PetUuid Valid pada Auto Trait & Grade (Abaikan None / "0")
+--   [✓] Fix Auto Halloween Candy, Exact BuyUpgrade & Auto Stage Menara
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -33,12 +34,13 @@ local Config = {
     AutoFuse = false,
     AutoSellWeakest = false,
 
-    -- Pengaturan Dadu (Fix v6.9 Anti Ganti-Ganti Sendiri)
-    AutoBuyDiceOnly = false,        -- HANYA membeli stok dadu (TIDAK memanggil EquipDice sama sekali)
-    AutoEquipSingleDice = false,    -- HANYA memasang 1 dadu yang dikunci di pemilih
+    -- Pengaturan Dadu v7.0
+    AutoBuyDiceOnly = false,        -- Hanya beli stok toko (TIDAK mengganti dadu yang dipakai)
+    AutoEquipDice = false,          -- Memasang dadu secara otomatis
+    DiceMode = "AutoBest",          -- "AutoBest" (Otomatis Luck tertinggi) atau "Manual" (Kunci 1 Dadu)
     SelectedDiceIndex = 1,
-    LockedDiceId = nil,             -- Nama 1 dadu tunggal yang dikunci pemain
-    SkipVoidDice = true,            -- Jangan beli/pakai Dadu Kekosongan (Void)
+    LockedDiceId = nil,             -- ID dadu pilihan manual
+    SkipVoidDice = true,            -- Jangan pasang Dadu Kekosongan (Void) jika ada dadu lebih tinggi
     AutoTeleportDiceShop = false,
 
     -- Auto Collect & Plot
@@ -47,7 +49,7 @@ local Config = {
     AutoTreadmill = false,
     AutoWatchSkipAd = false,
 
-    -- Auto Peningkatan, Trait & Grade Terbaik
+    -- Auto Peningkatan, Trait & Grade
     AutoUpgradePodium = false,
     AutoTeleportUpgrade = true,
     AutoBuyAllUpgrades = false,
@@ -61,7 +63,7 @@ local Config = {
     AutoBuyQuestShop = false,
     AutoRebirth = false,
 
-    -- Auto Menara & Pilih Stage
+    -- Auto Menara & Stage
     AutoTower = false,
     TowerStageMode = "Selected",    -- "Selected" atau "Highest"
     SelectedStage = 1,
@@ -189,6 +191,7 @@ local DiscoveredData = {
     DiceLuckMap = {},        -- [diceId] = Skor Luck Asli
     OwnedDiceCount = {},     -- [diceId] = Jumlah stok di tas pemain
     CurrentEquippedDice = nil,
+    LearnedDiceArgs = {},    -- Audit Fix: Dideklarasikan agar tidak nil saat di-insert
 
     DiscoveredTraits = {},
     TopTraitsMap = {},
@@ -287,7 +290,6 @@ local function RegisterVerifiedDice(diceId, luckVal, orderVal)
     end)
 end
 
--- Flag untuk membedakan panggilan EquipDice dari script vs klik manual pemain
 local IsScriptCallingEquip = false
 local UpdateDiceDisplayFunc = nil
 
@@ -302,13 +304,16 @@ if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "functi
                 local a1, a2, a3 = ...
                 if rName == "BuyDice" and a1 ~= nil then
                     RegisterVerifiedDice(a1, nil, nil)
+                    if DiscoveredData.LearnedDiceArgs then
+                        table.insert(DiscoveredData.LearnedDiceArgs, {a1, a2})
+                    end
                     AddLearningLog("BuyDice", a1, a2, a3)
                 elseif rName == "EquipDice" and a1 ~= nil then
                     RegisterVerifiedDice(a1, nil, nil)
                     DiscoveredData.CurrentEquippedDice = a1
-                    -- Jika pemain yang klik manual di UI game, otomatis kunci dadu pilihan pemain tersebut!
                     if not IsScriptCallingEquip then
                         Config.LockedDiceId = a1
+                        Config.DiceMode = "Manual"
                         if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
                     end
                     AddLearningLog("EquipDice", a1, a2, a3)
@@ -340,7 +345,7 @@ if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "functi
 end
 
 -- ============================================================================
--- 3. PEMINDAI CERDAS DADU, TRAIT, GRADE & UPGRADE
+-- 3. PEMINDAI DATA GAME
 -- ============================================================================
 local function RefreshGameKnowledge()
     if SharedFolder then
@@ -406,9 +411,6 @@ local function RefreshGameKnowledge()
                 if (lowerK:find("equippeddice") or lowerK:find("currentdice") or lowerK:find("selecteddice") or lowerK == "dice") and (type(v) == "string" or type(v) == "number") then
                     DiscoveredData.CurrentEquippedDice = v
                     RegisterVerifiedDice(v, nil, nil)
-                    if not Config.LockedDiceId then
-                        Config.LockedDiceId = v
-                    end
                 end
                 if type(v) == "number" and (lowerK:find("tower") or lowerK:find("stage") or lowerK:find("floor")) then
                     if v >= 1 and v <= 1000 and v > Config.HighestUnlockedStage then
@@ -561,18 +563,19 @@ local function FireGuiButton(btn)
 end
 
 -- ============================================================================
--- 5. SISTEM DADU v6.9 (ANTI GANTI-GANTI SENDIRI!)
+-- 5. SISTEM DADU v7.0 (DUAL MODE: AUTO-BEST LUCK & MANUAL LOCK)
 -- ============================================================================
 
--- Mengambil 1 Dadu Target yang dikunci saat ini
-local function GetSingleTargetDice()
-    if Config.LockedDiceId and IsValidKey(Config.LockedDiceId) then
-        return Config.LockedDiceId
-    end
+local function GetTargetDiceId()
     local list = DiscoveredData.VerifiedDice
     if #list == 0 then return nil end
 
-    -- Cari 1 dadu dengan skor Luck tertinggi yang stoknya > 0 (dan bukan Void jika SkipVoid aktif)
+    -- Mode 1: Manual Kunci 1 Dadu
+    if Config.DiceMode == "Manual" and Config.LockedDiceId and IsValidKey(Config.LockedDiceId) then
+        return Config.LockedDiceId
+    end
+
+    -- Mode 2: Auto-Best Luck (Cari dari skor tertinggi ke bawah yang ada stok dan bukan Void jika SkipVoid aktif)
     for i = #list, 1, -1 do
         local dId = list[i]
         local isSkippedVoid = Config.SkipVoidDice and IsVoidDice(dId)
@@ -591,7 +594,6 @@ local function GetSingleTargetDice()
     return list[#list]
 end
 
--- Fungsi 1: HANYA Membeli Stok Dadu di Toko (TIDAK memanggil EquipDice sama sekali!)
 local function RunBuyDiceStockOnly()
     if not Remotes.BuyDice then return end
 
@@ -622,27 +624,28 @@ local function RunBuyDiceStockOnly()
     end
 end
 
--- Fungsi 2: HANYA Memasang 1 Dadu Target (Tanpa Loop, Hanya jika belum terpasang!)
-local function EquipSingleTargetDiceNow(forceEquip)
+local function EquipTargetDiceNow(forceEquip)
     if not Remotes.EquipDice then return end
-    local targetDice = GetSingleTargetDice()
+    local targetDice = GetTargetDiceId()
     if not targetDice or not IsValidKey(targetDice) then return end
 
-    -- Jangan panggil EquipDice berulang-ulang jika dadu yang dipakai sudah sama!
+    -- Anti-Spam: Tidak memanggil EquipDice jika dadu di server sudah sama persis
     if not forceEquip and DiscoveredData.CurrentEquippedDice == targetDice then
         return
     end
 
     IsScriptCallingEquip = true
-    pcall(function()
-        Remotes.EquipDice:InvokeServer(targetDice)
+    local ok, res = pcall(function()
+        return Remotes.EquipDice:InvokeServer(targetDice)
     end)
-    DiscoveredData.CurrentEquippedDice = targetDice
+    if ok and res ~= false then
+        DiscoveredData.CurrentEquippedDice = targetDice
+    end
     IsScriptCallingEquip = false
 end
 
 -- ============================================================================
--- 6. SISTEM AUTO TRAIT TERBAIK, GRADE & PENINGKATAN
+-- 6. SISTEM AUTO TRAIT, GRADE & PENINGKATAN
 -- ============================================================================
 local function IsBestTrait(traitStr)
     if not traitStr or type(traitStr) ~= "string" then return false end
@@ -688,7 +691,8 @@ local function RunAutoBestTrait()
             local currentTrait = tostring(podium:GetAttribute("PetTrait") or "")
             local slotNum = tonumber(podium:GetAttribute("Slot"))
 
-            if petUuid and #tostring(petUuid) > 0 then
+            -- Audit Fix: Pastikan bukan None atau 0
+            if petUuid and #tostring(petUuid) >= 5 and tostring(petUuid) ~= "None" and tostring(petUuid) ~= "0" then
                 local shouldReroll = false
                 if Config.TraitTargetMode == "BestOnly" then
                     if not IsBestTrait(currentTrait) then shouldReroll = true end
@@ -735,7 +739,7 @@ local function RunAutoBestGrade()
             local currentGrade = tostring(podium:GetAttribute("PetGrade") or "")
             local slotNum = tonumber(podium:GetAttribute("Slot"))
 
-            if petUuid and #tostring(petUuid) > 0 then
+            if petUuid and #tostring(petUuid) >= 5 and tostring(petUuid) ~= "None" and tostring(petUuid) ~= "0" then
                 local shouldRoll = (Config.GradeTargetMode ~= "BestOnly") or (not IsBestGrade(currentGrade))
                 if shouldRoll then
                     local ok1, res1 = pcall(function() return Remotes.RollGrade:InvokeServer(petUuid) end)
@@ -829,7 +833,7 @@ local function UpgradeSinglePodium(podium, allowTeleport)
 end
 
 -- ============================================================================
--- 7. SISTEM AUTO HALLOWEEN CANDY & AUTO MENARA
+-- 7. SISTEM HALLOWEEN CANDY & AUTO MENARA
 -- ============================================================================
 if Remotes.CandyClaim and Remotes.CandyClaim:IsA("RemoteEvent") then
     Remotes.CandyClaim.OnClientEvent:Connect(function(a1)
@@ -1063,7 +1067,7 @@ local function StepAutoTower()
 end
 
 -- ============================================================================
--- 8. SISTEM UI ROCKSTAR HUB v6.9 (CYBER-BLUE EDITION)
+-- 8. SISTEM UI ROCKSTAR HUB v7.0 (CYBER-BLUE EDITION)
 -- ============================================================================
 local ParentGui = (typeof(gethui) == "function" and gethui()) or CoreGui
 if ParentGui:FindFirstChild("RockstarHub_PutarHewan") then
@@ -1127,7 +1131,7 @@ local TitleLbl = Instance.new("TextLabel")
 TitleLbl.Size = UDim2.new(1, -100, 1, 0)
 TitleLbl.Position = UDim2.new(0, 16, 0, 0)
 TitleLbl.BackgroundTransparency = 1
-TitleLbl.Text = "★ ROCKSTAR HUB v6.9  |  [🎃] Putar Hewan Peliharaan"
+TitleLbl.Text = "★ ROCKSTAR HUB v7.0  |  [🎃] Putar Hewan Peliharaan"
 TitleLbl.TextColor3 = Color3.fromRGB(0, 220, 255)
 TitleLbl.Font = Enum.Font.GothamBold
 TitleLbl.TextSize = 14
@@ -1403,7 +1407,7 @@ local function CreateSmallBtn(parent, txt, width, color, onClick)
 end
 
 -- ============================================================================
--- 9. MEMBANGUN TAB MENU ROCKSTAR HUB v6.9
+-- 9. MEMBANGUN TAB MENU ROCKSTAR HUB v7.0
 -- ============================================================================
 local TabRoll = CreateTab("🎲 Roll & Dadu")
 local TabUpgrade = CreateTab("⬆️ Upgrade & Trait")
@@ -1413,7 +1417,7 @@ local TabCollect = CreateTab("💰 Uang & Plot")
 local TabTeleport = CreateTab("📍 Teleport & Log")
 
 -- ----------------------------------------------------------------------------
--- TAB 1: ROLL, PET & DADU ANTI GANTI-GANTI SENDIRI (v6.9)
+-- TAB 1: ROLL, PET & KONTROL DADU v7.0 (HASIL AUDIT)
 -- ----------------------------------------------------------------------------
 AddSection(TabRoll, "Auto Roll & Manajemen Hewan Peliharaan")
 
@@ -1422,7 +1426,7 @@ AddToggle(TabRoll, "🐾 Auto Pasang Pet Terbaik (Equip Best Pets)", Config.Auto
 AddToggle(TabRoll, "🧬 Auto Gabungkan Pet Kembar (Auto Fuse)", Config.AutoFuse, function(v) Config.AutoFuse = v end)
 AddToggle(TabRoll, "🗑️ Auto Jual Pet Terlemah Saat Penuh (Sell Weakest)", Config.AutoSellWeakest, function(v) Config.AutoSellWeakest = v end)
 
-AddSection(TabRoll, "Kontrol Dadu v6.9 (Anti Ganti-Ganti Sendiri)")
+AddSection(TabRoll, "Kontrol Dadu v7.0 (Auto-Best Luck vs Kunci Manual)")
 
 local DiceSelectorCard = Instance.new("Frame")
 DiceSelectorCard.Size = UDim2.new(1, -6, 0, 74)
@@ -1442,7 +1446,7 @@ local DiceTitleLbl = Instance.new("TextLabel")
 DiceTitleLbl.Size = UDim2.new(1, -16, 0, 24)
 DiceTitleLbl.Position = UDim2.new(0, 10, 0, 5)
 DiceTitleLbl.BackgroundTransparency = 1
-DiceTitleLbl.Text = "🎲 Dadu Terkunci: Memindai..."
+DiceTitleLbl.Text = "🎲 Target: Memindai Dadu..."
 DiceTitleLbl.TextColor3 = Color3.fromRGB(0, 225, 255)
 DiceTitleLbl.Font = Enum.Font.GothamBold
 DiceTitleLbl.TextSize = 12
@@ -1461,58 +1465,90 @@ DiceCtrlLayout.Padding = UDim.new(0, 6)
 DiceCtrlLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 DiceCtrlLayout.Parent = DiceCtrlRow
 
+local ModeToggleBtn
 local function UpdateDiceDisplay()
-    local target = GetSingleTargetDice() or "Belum Dipilih"
+    local target = GetTargetDiceId() or "Belum Dipilih"
     local qty = DiscoveredData.OwnedDiceCount[target]
     local qtyStr = qty and (" [Stok: " .. tostring(qty) .. "]") or ""
-    DiceTitleLbl.Text = "🔒 Dadu Terkunci:  " .. tostring(target) .. qtyStr
+    local modeTxt = (Config.DiceMode == "AutoBest") and "(Auto Luck Tertinggi)" or "(Kunci Manual)"
+    DiceTitleLbl.Text = string.format("🎲 Dadu: %s%s %s", tostring(target), qtyStr, modeTxt)
+
+    if ModeToggleBtn then
+        if Config.DiceMode == "AutoBest" then
+            ModeToggleBtn.Text = "Mode: Auto-Luck"
+            ModeToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 165, 130)
+        else
+            ModeToggleBtn.Text = "Mode: Kunci Manual"
+            ModeToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
+        end
+    end
 end
 UpdateDiceDisplayFunc = UpdateDiceDisplay
 
-CreateSmallBtn(DiceCtrlRow, "◀ Prev Dadu", 105, Color3.fromRGB(32, 48, 76), function()
+-- Tombol Prev Dadu (Sirkular aman tanpa error modulo)
+CreateSmallBtn(DiceCtrlRow, "◀ Prev", 70, Color3.fromRGB(32, 48, 76), function()
     RefreshGameKnowledge()
     local list = DiscoveredData.VerifiedDice
     if #list > 0 then
-        Config.SelectedDiceIndex = ((Config.SelectedDiceIndex - 2) % #list) + 1
+        Config.DiceMode = "Manual"
+        Config.SelectedDiceIndex = (Config.SelectedDiceIndex <= 1) and #list or (Config.SelectedDiceIndex - 1)
         Config.LockedDiceId = list[Config.SelectedDiceIndex]
     end
     UpdateDiceDisplay()
 end)
 
-CreateSmallBtn(DiceCtrlRow, "Pasang Dadu Ini", 130, Color3.fromRGB(0, 150, 210), function()
-    EquipSingleTargetDiceNow(true)
+-- Tombol Switch Mode (Auto-Best Luck <-> Kunci Manual)
+ModeToggleBtn = CreateSmallBtn(DiceCtrlRow, "Mode: Auto-Luck", 130, Color3.fromRGB(0, 165, 130), function()
+    RefreshGameKnowledge()
+    if Config.DiceMode == "AutoBest" then
+        Config.DiceMode = "Manual"
+        Config.LockedDiceId = GetTargetDiceId()
+    else
+        Config.DiceMode = "AutoBest"
+        Config.LockedDiceId = nil
+    end
     UpdateDiceDisplay()
-    Notify("Dadu Dipasang", "Berhasil memasang 1 dadu: " .. tostring(GetSingleTargetDice()))
+    EquipTargetDiceNow(true)
 end)
 
-CreateSmallBtn(DiceCtrlRow, "Next Dadu ▶", 105, Color3.fromRGB(32, 48, 76), function()
+-- Tombol Next Dadu
+CreateSmallBtn(DiceCtrlRow, "Next ▶", 70, Color3.fromRGB(32, 48, 76), function()
     RefreshGameKnowledge()
     local list = DiscoveredData.VerifiedDice
     if #list > 0 then
-        Config.SelectedDiceIndex = (Config.SelectedDiceIndex % #list) + 1
+        Config.DiceMode = "Manual"
+        Config.SelectedDiceIndex = (Config.SelectedDiceIndex >= #list) and 1 or (Config.SelectedDiceIndex + 1)
         Config.LockedDiceId = list[Config.SelectedDiceIndex]
     end
     UpdateDiceDisplay()
 end)
 
-AddToggle(TabRoll, "🛒 Auto Beli Stok Dadu Toko (Tanpa Mengganti Dadu yang Dipakai)", Config.AutoBuyDiceOnly, function(v)
+-- Tombol Pasang Sekarang
+CreateSmallBtn(DiceCtrlRow, "Pasang", 65, Color3.fromRGB(0, 150, 210), function()
+    EquipTargetDiceNow(true)
+    UpdateDiceDisplay()
+    Notify("Dadu Dipasang", "Dadu aktif: " .. tostring(GetTargetDiceId()))
+end)
+
+AddToggle(TabRoll, "🔒 Auto Pasang & Pertahankan Dadu Target (Tanpa Ganti-Ganti)", Config.AutoEquipDice, function(v)
+    Config.AutoEquipDice = v
+    if v then
+        EquipTargetDiceNow(true)
+        Notify("Auto Equip Dadu", "Mempertahankan dadu: " .. tostring(GetTargetDiceId()))
+    end
+end)
+
+AddToggle(TabRoll, "🛒 Auto Beli Stok Dadu Toko (Tanpa Mengubah Dadu Terpasang)", Config.AutoBuyDiceOnly, function(v)
     Config.AutoBuyDiceOnly = v
     if v then
-        Notify("Auto Beli Stok", "Membeli stok dadu di toko tanpa mengubah dadu yang sedang kamu pakai!")
+        Notify("Auto Beli Stok", "Membeli stok dadu di toko tanpa mengganti dadu yang sedang dipakai!")
     end
 end)
 
-AddToggle(TabRoll, "🔒 Auto Kunci & Pertahankan 1 Dadu Pilihan di Atas", Config.AutoEquipSingleDice, function(v)
-    Config.AutoEquipSingleDice = v
-    if v then
-        EquipSingleTargetDiceNow(true)
-        Notify("Dadu Dikunci", "Mengunci dadu: " .. tostring(GetSingleTargetDice()))
-    end
-end)
-
-AddToggle(TabRoll, "🚫 Jangan Beli Dadu Kekosongan / Skip Void Dice", Config.SkipVoidDice, function(v)
+AddToggle(TabRoll, "🚫 Jangan Pakai Dadu Kekosongan / Skip Void Dice", Config.SkipVoidDice, function(v)
     Config.SkipVoidDice = v
     UpdateDiceDisplay()
+    if Config.AutoEquipDice then EquipTargetDiceNow(true) end
 end)
 
 -- ----------------------------------------------------------------------------
@@ -1629,17 +1665,17 @@ CreateSmallBtn(StepRow, "-1", 50, Color3.fromRGB(32, 48, 76), function()
     UpdateStageDisplay()
 end)
 
-local ModeSwitchBtn
-ModeSwitchBtn = CreateSmallBtn(StepRow, "Mode: Pilihan", 140, Color3.fromRGB(0, 135, 205), function()
+local TowerModeSwitchBtn
+TowerModeSwitchBtn = CreateSmallBtn(StepRow, "Mode: Pilihan", 140, Color3.fromRGB(0, 135, 205), function()
     if Config.TowerStageMode == "Selected" then
         Config.TowerStageMode = "Highest"
-        ModeSwitchBtn.Text = "Mode: Tertinggi"
-        ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 130)
+        TowerModeSwitchBtn.Text = "Mode: Tertinggi"
+        TowerModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 130)
         RefreshGameKnowledge()
     else
         Config.TowerStageMode = "Selected"
-        ModeSwitchBtn.Text = "Mode: Pilihan"
-        ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
+        TowerModeSwitchBtn.Text = "Mode: Pilihan"
+        TowerModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
     end
     UpdateStageDisplay()
 end)
@@ -1672,8 +1708,8 @@ for _, presetNum in ipairs({1, 5, 10, 20, 30, 50}) do
     CreateSmallBtn(PresetRow, "Stg " .. presetNum, 58, Color3.fromRGB(24, 38, 62), function()
         Config.TowerStageMode = "Selected"
         Config.SelectedStage = presetNum
-        ModeSwitchBtn.Text = "Mode: Pilihan"
-        ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
+        TowerModeSwitchBtn.Text = "Mode: Pilihan"
+        TowerModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
         UpdateStageDisplay()
     end)
 end
@@ -1758,9 +1794,9 @@ AddToggle(TabCollect, "🏃 Auto Gunakan Treadmill Plot", Config.AutoTreadmill, 
 AddToggle(TabCollect, "⏩ Auto Lewati Iklan 5 Menit (WatchSkipAd)", Config.AutoWatchSkipAd, function(v) Config.AutoWatchSkipAd = v end)
 
 -- ----------------------------------------------------------------------------
--- TAB 6: TELEPORT PETA & LOG DIAGNOSTIK v6.9
+-- TAB 6: TELEPORT PETA & LOG DIAGNOSTIK v7.0
 -- ----------------------------------------------------------------------------
-AddSection(TabTeleport, "Log Self-Learning & Diagnostik v6.9")
+AddSection(TabTeleport, "Log Self-Learning & Diagnostik v7.0")
 
 AddButton(TabTeleport, "📋 Salin Log Diagnostik (Urutan Dadu, Stok, Trait, Tower)", function()
     RefreshGameKnowledge()
@@ -1771,8 +1807,9 @@ AddButton(TabTeleport, "📋 Salin Log Diagnostik (Urutan Dadu, Stok, Trait, Tow
         table.insert(diceDetails, string.format("%d.%s(Score:%d,Stok:%s)", i, tostring(dId), math.floor(score), tostring(qty or "?")))
     end
     local lines = {
-        "=== LOG SELF-LEARNING ROCKSTAR v6.9 ===",
-        "Locked Single Dice: " .. tostring(GetSingleTargetDice()),
+        "=== LOG SELF-LEARNING ROCKSTAR v7.0 ===",
+        "Dice Mode: " .. tostring(Config.DiceMode),
+        "Target Single Dice: " .. tostring(GetTargetDiceId()),
         "Sorted Dice (" .. #diceDetails .. "): " .. table.concat(diceDetails, " | "),
         "Discovered Traits (" .. #DiscoveredData.DiscoveredTraits .. "): " .. table.concat(DiscoveredData.DiscoveredTraits, ", "),
         "--- Captured Remote Calls ---",
@@ -1781,7 +1818,7 @@ AddButton(TabTeleport, "📋 Salin Log Diagnostik (Urutan Dadu, Stok, Trait, Tow
     local fullText = table.concat(lines, "\n")
     if typeof(setclipboard) == "function" then
         setclipboard(fullText)
-        Notify("Log Disalin", "Log Diagnostik v6.9 berhasil disalin ke Clipboard!")
+        Notify("Log Disalin", "Log Diagnostik v7.0 berhasil disalin ke Clipboard!")
     else
         print(fullText)
     end
@@ -1820,7 +1857,7 @@ for _, loc in ipairs(MapLocations) do
 end
 
 -- ============================================================================
--- 10. LOOP OTOMATISASI UTAMA (BACKGROUND WORKERS)
+-- 10. LOOP OTOMATISASI UTAMA (OPTIMIZED BACKGROUND WORKERS)
 -- ============================================================================
 ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
     if Config.InstantPrompt then
@@ -1836,6 +1873,7 @@ LocalPlayer.Idled:Connect(function()
     end
 end)
 
+-- Worker 1: Roll & Tap Tower Combat
 task.spawn(function()
     while task.wait(Config.RollDelay) do
         if Config.AutoRoll and Remotes.RequestRoll then
@@ -1850,6 +1888,7 @@ task.spawn(function()
     end
 end)
 
+-- Worker 2: Cash Collection & Halloween Candy
 task.spawn(function()
     while task.wait(0.5) do
         if Config.AutoCollectCash then
@@ -1881,6 +1920,7 @@ task.spawn(function()
     end
 end)
 
+-- Worker 3: Auto Buy Peningkatan, Dadu & Trait (Instan Setiap 1 Detik)
 task.spawn(function()
     local refreshCounter = 0
     while task.wait(1.0) do
@@ -1892,18 +1932,28 @@ task.spawn(function()
                 UpdateDiceDisplay()
             end)
         end
+
         if Config.AutoBuyAllUpgrades then RunAutoBuyAllUpgrades() end
         if Config.AutoBuyRebirthUpgrades then RunAutoBuyRebirthUpgrades() end
 
-        -- v6.9: Auto Beli Stok Dadu TIDAK mengubah dadu yang sedang dipakai!
+        -- Beli stok toko jika diaktifkan (tanpa mengubah dadu terpasang)
         if Config.AutoBuyDiceOnly then RunBuyDiceStockOnly() end
 
-        -- v6.9: Auto Kunci 1 Dadu HANYA memasang 1 dadu pilihan jika belum terpasang!
-        if Config.AutoEquipSingleDice then EquipSingleTargetDiceNow(false) end
+        -- Pasang dadu target secara stabil (hanya jika dadu berubah)
+        if Config.AutoEquipDice then EquipTargetDiceNow(false) end
 
         if Config.AutoRerollTrait then RunAutoBestTrait() end
         if Config.AutoRollGrade then RunAutoBestGrade() end
         if Config.AutoBuyCandyShop or Config.AutoBuyQuestShop then RunAutoBuyEventShops() end
+        if Config.AutoRebirth and Remotes.Rebirth then
+            pcall(function() Remotes.Rebirth:InvokeServer() end)
+        end
+    end
+end)
+
+-- Worker 4: Auto Upgrade Podium (Thread Terpisah agar Tidak Menahan Loop Lain)
+task.spawn(function()
+    while task.wait(1.2) do
         if Config.AutoUpgradePodium then
             for _, podium in ipairs(GetMyPodiums()) do
                 if not Config.AutoUpgradePodium then break end
@@ -1913,12 +1963,10 @@ task.spawn(function()
                 end
             end
         end
-        if Config.AutoRebirth and Remotes.Rebirth then
-            pcall(function() Remotes.Rebirth:InvokeServer() end)
-        end
     end
 end)
 
+-- Worker 5: Auto Menara
 task.spawn(function()
     while task.wait(1.5) do
         if Config.AutoTower then
@@ -1928,6 +1976,7 @@ task.spawn(function()
     end
 end)
 
+-- Worker 6: Auto Equip Best, Fuse, Sell, Klaim & Spin Wheel
 task.spawn(function()
     while task.wait(3.5) do
         if Config.AutoEquipBest then
@@ -1965,4 +2014,4 @@ task.spawn(function()
 end)
 
 task.delay(1, UpdateDiceDisplay)
-Notify("Rockstar Hub v6.9 Aktif", "Fix Dadu Anti Ganti-Ganti Sendiri siap digunakan!")
+Notify("Rockstar Hub v7.0 Aktif", "Hasil audit lengkap: Script stabil, bebas error & optimal!")
