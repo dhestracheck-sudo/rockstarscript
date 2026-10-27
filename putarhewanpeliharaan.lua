@@ -9,6 +9,7 @@
 --   [✓] Parsing Presisi Kartu UI: Hanya scan anak langsung container list, cegah tumpang tindih nama/tombol
 --   [✓] Filter Kepemilikan Ketat: DILARANG KERAS mencoba pasang dadu yang belum terkonfirmasi dimiliki
 --   [✓] Pemisahan Thread Auto-Equip ke polling tenang (4 detik) agar tidak bentrok dengan BuyDice
+--   [✓] Fix Total UI Crash: Header.Parent = MainFrame (Hilangkan Blank Hitam)
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -57,9 +58,9 @@ local Config = {
     AutoBuyAllUpgrades = false,
     AutoBuyRebirthUpgrades = false,
     AutoRerollTrait = false,
-    TraitTargetMode = "BestOnly",   -- "BestOnly", "FillEmpty", "Always"
+    TraitTargetMode = "BestOnly",
     AutoRollGrade = false,
-    GradeTargetMode = "BestOnly",   -- "BestOnly" (S, S+, SS, SSS, X, Z)
+    GradeTargetMode = "BestOnly",
     AutoTeleportTraitShop = false,
     AutoBuyCandyShop = false,
     AutoBuyQuestShop = false,
@@ -76,1302 +77,711 @@ local Config = {
     AutoDeclineRevive = true,
     AutoEquipTowerTeam = true,
 
-    -- Event, Rahasia & Utility
-    AutoClaimSecrets = false,
+    -- Event & Utility
     AutoSpinWheel = false,
     AutoClaimRewards = false,
     AutoClaimCandy = false,
     AutoTeleportCandy = false,
+    InstantPrompt = true,
     AntiAFK = true,
 }
 
-local TowerRuntime = {
-    InTower = false,
-    CurrentFloor = 0,
-    CurrentStage = 1,
-    AutoRetryCountdown = 0,
-}
-
--- ============================================================================
--- 2. KONEKSI REMOTES RESMI (REPLICATEDSTORAGE.SHARED.REMOTES)
--- ============================================================================
-local SharedFolder = ReplicatedStorage:WaitForChild("Shared", 15)
-local RemotesFolder = SharedFolder and SharedFolder:WaitForChild("Remotes", 15)
-
-local function GetRemote(name)
-    if RemotesFolder then
-        local r = RemotesFolder:FindFirstChild(name)
-        if r then return r end
-    end
-    return ReplicatedStorage:FindFirstChild(name, true)
-end
-
-local Remotes = {
-    RequestRoll = GetRemote("RequestRoll"),
-    EquipBestPets = GetRemote("EquipBestPets"),
-    EquipBestTeam = GetRemote("EquipBestTeam"),
-    SetTeam = GetRemote("SetTeam"),
-    FusePets = GetRemote("FusePets"),
-    SellWeakest = GetRemote("SellWeakest"),
-    SellAll = GetRemote("SellAll"),
-    SellPets = GetRemote("SellPets"),
-    PodiumAction = GetRemote("PodiumAction"),
-    CashCollected = GetRemote("CashCollected"),
-
-    BuyUpgrade = GetRemote("BuyUpgrade"),
-    UpgradeRebirthStat = GetRemote("UpgradeRebirthStat"),
-    Rebirth = GetRemote("Rebirth"),
-    BuyDice = GetRemote("BuyDice"),
-    EquipDice = GetRemote("EquipDice"),
-    BuyCandyShop = GetRemote("BuyCandyShop"),
-    BuyQuestShop = GetRemote("BuyQuestShop"),
-    BlimpShop = GetRemote("BlimpShop"),
-    RerollTrait = GetRemote("RerollTrait"),
-    RollGrade = GetRemote("RollGrade"),
-
-    StartTower = GetRemote("StartTower"),
-    LeaveTower = GetRemote("LeaveTower"),
-    DeclineRevive = GetRemote("DeclineRevive"),
-    ResumeTower = GetRemote("ResumeTower"),
-    SetTowerAutoRetry = GetRemote("SetTowerAutoRetry"),
-    TowerEvent = GetRemote("TowerEvent"),
-
-    GetData = GetRemote("GetData"),
-    DataChanged = GetRemote("DataChanged"),
-    DataBatch = GetRemote("DataBatch"),
-    ClaimDaily = GetRemote("ClaimDaily"),
-    ClaimPlaytime = GetRemote("ClaimPlaytime"),
-    ClaimQuest = GetRemote("ClaimQuest"),
-    ClaimStarterQuest = GetRemote("ClaimStarterQuest"),
-    ClaimAchievement = GetRemote("ClaimAchievement"),
-    ClaimAllAchievements = GetRemote("ClaimAllAchievements"),
-    ClaimGroupChest = GetRemote("ClaimGroupChest"),
-    ClaimFriendChest = GetRemote("ClaimFriendChest"),
-    ClaimFreePet = GetRemote("ClaimFreePet"),
-    SpinWheel = GetRemote("SpinWheel"),
-    WheelSpun = GetRemote("WheelSpun"),
-    CandyDrops = GetRemote("CandyDrops"),
-    CandyClaim = GetRemote("CandyClaim"),
-    WatchSkipAd = GetRemote("WatchSkipAd"),
-}
-
-local BlacklistedNames = {
-    IsAutoClimbing = true, ShowUnit = true, ScaleTween = true, OnRevive = true,
-    RenderRetry = true, SetHidden = true, GetProfile = true, DeclineRevive = true,
-    SetOpen = true, DodgeStrip = true, ShakeArena = true, SyncRetry = true,
-    PopText = true, Burst = true, Knockback = true, SetFloorAnchor = true,
-    SetBar = true, Init = true, Start = true, Update = true, Destroy = true,
-    Open = true, Close = true, Toggle = true, Bind = true, Render = true,
-    Format = true, OnClick = true, Setup = true, Cleanup = true, New = true,
-    UIListLayout = true, UIGridLayout = true, UIPadding = true, UICorner = true,
-    UIStroke = true, UIAspectRatioConstraint = true, UISizeConstraint = true,
-    Template = true, ItemTemplate = true, RowTemplate = true, Header = true,
-    Title = true, Background = true, CloseButton = true, Main = true, Container = true,
-    ScrollingFrame = true, Frame = true, TextLabel = true, ImageLabel = true,
-}
-
-local BestTraitKeywords = {
-    "transcendent", "monarch", "emperor", "overlord", "glitched", "divine",
-    "celestial", "mythic", "mythical", "godly", "secret", "rainbow", "void",
-    "immortal", "cosmic", "supreme", "omni", "ancient", "corrupted", "demonic",
-    "angelic", "halloween", "spooky", "reaper", "titanic", "hyper", "ultra", "max"
-}
-
-local BestGradeList = {
-    ["S"] = true, ["S+"] = true, ["SPLUS"] = true, ["SS"] = true, ["SSS"] = true,
-    ["Z"] = true, ["X"] = true, ["XX"] = true, ["XXX"] = true, ["GODLY"] = true,
-    ["DIVINE"] = true, ["GLITCHED"] = true, ["MYTHIC"] = true, ["MAX"] = true, ["10"] = true,
-}
-
-local DiscoveredData = {
-    Upgrades = {
-        "Luck1", "Luck2", "Luck3", "Luck4", "Luck5",
-        "RollSpeed1", "RollSpeed2", "RollSpeed3", "RollSpeed4", "RollSpeed5",
-        "MutationLuck1", "MutationLuck2", "MutationLuck3", "MutationLuck4", "MutationLuck5",
-        "TreadmillLuck1", "TreadmillLuck2", "TreadmillLuck3", "TreadmillLuck4", "TreadmillLuck5",
-        "GoldenDice1", "GoldenDice2", "GoldenDice3", "GoldenDice4", "GoldenDice5",
-        "Cash1", "Cash2", "Cash3", "Cash4", "Cash5",
-        "Inventory1", "Inventory2", "Inventory3",
-    },
-    RebirthStats = {
-        "Luck1", "Luck2", "Luck3", "Cash1", "Cash2", "Cash3",
-        "RollSpeed1", "RollSpeed2", "MutationLuck1", "MutationLuck2",
-        "Luck", "Cash", "RollSpeed", "Inventory", "Damage", "Candy",
-    },
-    VerifiedDice = {},
-    DiceLuckMap = {},
-    DiceDisplayNameMap = {},
-    DiceTierMap = {},
-    OwnedDiceCount = {},
-    CurrentEquippedDice = nil,
+-- State Internal & Tracking
+local State = {
+    CurrentDiceName = "Mendeteksi...",
+    CurrentDiceLuck = 1,
+    LastEquippedDiceId = nil,
+    FailedEquipCount = 0,
+    ManualOverrideUntil = 0,
     LearnedDiceArgs = {},
-
-    DiscoveredTraits = {},
-    TopTraitsMap = {
-        ["transcendent"] = true,
-        ["monarch"] = true,
-        ["divine"] = true,
-        ["celestial"] = true,
-        ["glitched"] = true,
-        ["godly"] = true,
-        ["mythic"] = true,
-    },
-    InventoryPetUuids = {},
-
-    CandyShopItems = {
-        "HauntedCrate", "PumpkinDice", "HalloweenDice", "CandyLuck1", "CandyLuck2",
-        "CandyMultiplier1", "CandyRollSpeed1", "CandyPack1", "CandyPack2", "CandyPack3",
-    },
-    QuestShopItems = {
-        "Luck1", "RollSpeed1", "MutationLuck1", "GoldenDice1",
-    },
-    ValidCandyTokens = {},
+    LearnedUpgradeArgs = {},
+    TowerUnderway = false,
+    CurrentTowerFloor = 1,
+    PlayerPlotModel = nil,
+    LogBuffer = {},
+    LogMaxLines = 8,
 }
 
-local LearningLogs = {}
-local function AddLearningLog(remoteName, arg1, arg2, arg3)
-    local timeStr = os.date("%H:%M:%S")
-    local line = string.format("%s | %s: (%s, %s, %s)", timeStr, tostring(remoteName), tostring(arg1), tostring(arg2), tostring(arg3))
-    for _, existing in ipairs(LearningLogs) do
-        if existing:sub(12) == line:sub(12) then return end
+-- Cache Remote Game
+local Remotes = {}
+local function CacheRemotes()
+    local rf = ReplicatedStorage:FindFirstChild("RemoteFunctions") or ReplicatedStorage:FindFirstChild("Remotes")
+    local re = ReplicatedStorage:FindFirstChild("RemoteEvents") or ReplicatedStorage:FindFirstChild("Remotes")
+    
+    if rf then
+        Remotes.Roll = rf:FindFirstChild("Roll") or rf:FindFirstChild("RollPet")
+        Remotes.BuyUpgrade = rf:FindFirstChild("BuyUpgrade")
+        Remotes.BuyRebirthUpgrade = rf:FindFirstChild("BuyRebirthUpgrade")
+        Remotes.EquipDice = rf:FindFirstChild("EquipDice") or rf:FindFirstChild("SetDice")
+        Remotes.BuyDice = rf:FindFirstChild("BuyDice")
+        Remotes.RerollTrait = rf:FindFirstChild("RerollTrait") or rf:FindFirstChild("RollTrait")
+        Remotes.RollGrade = rf:FindFirstChild("RollGrade") or rf:FindFirstChild("RerollGrade")
+        Remotes.EquipBest = rf:FindFirstChild("EquipBest") or rf:FindFirstChild("EquipBestPets")
+        Remotes.FusePets = rf:FindFirstChild("FusePets") or rf:FindFirstChild("FuseAll")
+        Remotes.SellPet = rf:FindFirstChild("SellPet")
+        Remotes.Rebirth = rf:FindFirstChild("Rebirth")
+        Remotes.SpinWheel = rf:FindFirstChild("SpinWheel")
+        Remotes.ClaimPlaytime = rf:FindFirstChild("ClaimPlaytimeReward")
+        Remotes.ClaimQuest = rf:FindFirstChild("ClaimQuestReward")
+        Remotes.ClaimStarterQuest = rf:FindFirstChild("ClaimStarterQuestReward")
+        Remotes.ClaimDaily = rf:FindFirstChild("ClaimDailyReward")
+        Remotes.ClaimGroupChest = rf:FindFirstChild("ClaimGroupChest")
+        Remotes.ClaimFriendChest = rf:FindFirstChild("ClaimFriendChest")
+        Remotes.ClaimFreePet = rf:FindFirstChild("ClaimFreePet")
+        Remotes.ClaimAllAchievements = rf:FindFirstChild("ClaimAllAchievements")
+        Remotes.WatchSkipAd = rf:FindFirstChild("WatchSkipAd")
+        Remotes.TowerAttack = rf:FindFirstChild("TowerTap") or rf:FindFirstChild("TowerAttack")
+        Remotes.ReviveResponse = rf:FindFirstChild("TowerReviveResponse") or rf:FindFirstChild("DeclineRevive")
+        Remotes.CandyShopBuy = rf:FindFirstChild("BuyCandyShop") or rf:FindFirstChild("CandyShopBuy")
+        Remotes.QuestShopBuy = rf:FindFirstChild("BuyQuestShop") or rf:FindFirstChild("QuestShopBuy")
     end
-    table.insert(LearningLogs, 1, line)
-    if #LearningLogs > 50 then table.remove(LearningLogs) end
-end
 
-local function IsValidKey(key)
-    if key == nil then return false end
-    if type(key) == "function" or type(key) == "userdata" or type(key) == "table" then return false end
-    local str = tostring(key)
-    if #str == 0 or #str > 45 or BlacklistedNames[str] then return false end
-    if str == "__index" or str == "RBX_ReimportId" or str == "OwnerUserId" then return false end
-    return true
-end
-
-local function AddUniqueKey(list, key)
-    if not IsValidKey(key) then return end
-    for _, existing in ipairs(list) do
-        if existing == key then return end
+    if re then
+        Remotes.CollectCash = re:FindFirstChild("CollectCash") or re:FindFirstChild("PickupCash")
+        Remotes.PickupCandy = re:FindFirstChild("PickupCandy") or re:FindFirstChild("CollectCandy")
+        Remotes.TowerEvent = re:FindFirstChild("TowerEvent") or re:FindFirstChild("TowerState")
     end
-    table.insert(list, key)
+end
+CacheRemotes()
+
+-- Logger Ringan
+local function Log(msg)
+    local timestamp = os.date("%X")
+    local line = string.format("[%s] %s", timestamp, msg)
+    table.insert(State.LogBuffer, 1, line)
+    if #State.LogBuffer > State.LogMaxLines then
+        table.remove(State.LogBuffer)
+    end
+    print("★ ROCKSTAR: " .. msg)
 end
 
-local function IsVoidDice(diceId)
-    local low = tostring(diceId or ""):lower()
-    return low:find("void") ~= nil or low:find("kekosongan") ~= nil
-end
-
-local TierMultipliers = {
-    ["biasa"] = 1,
-    ["common"] = 1,
-    ["dasar"] = 1,
-    ["basic"] = 1,
-    ["tidak biasa"] = 5,
-    ["uncommon"] = 5,
-    ["langka"] = 25,
-    ["rare"] = 25,
-    ["epik"] = 5000,
-    ["epic"] = 5000,
-    ["legendaris"] = 100000,
-    ["legendary"] = 100000,
-    ["mitos"] = 10000000,
-    ["mythic"] = 10000000,
-    ["mythical"] = 10000000,
-    ["divine"] = 100000000,
-    ["ilahi"] = 100000000,
-    ["dewa"] = 100000000,
-    ["godly"] = 250000000,
-    ["glitched"] = 500000000,
-    ["rahasia"] = 1000000000,
-    ["secret"] = 1000000000,
-    ["event"] = 100000,
+-- ============================================================================
+-- 2. TIER MULTIPLIER & ENSIKLOPEDIA DADU UNIVERSAL
+-- ============================================================================
+local TierMultiplier = {
+    ["Common"] = 1,
+    ["Uncommon"] = 2,
+    ["Rare"] = 5,
+    ["Epic"] = 15,
+    ["Legendary"] = 50,
+    ["Mythic"] = 200,
+    ["Mythical"] = 200,
+    ["Exotic"] = 1000,
+    ["Secret"] = 5000,
+    ["Divine"] = 25000,
+    ["Celestial"] = 100000,
+    ["Infinity"] = 500000,
 }
 
-local function ParseLuckMultiplier(text)
-    if not text or type(text) ~= "string" then return 1 end
-    local clean = text:gsub(",", ""):gsub("%%", ""):lower()
+local KnownDiceCatalog = {
+    { Name = "Common", Aliases = {"Biasa", "Common"}, Luck = 1, Tier = "Common" },
+    { Name = "Wooden", Aliases = {"Kayu", "Wood", "Wooden"}, Luck = 1.25, Tier = "Common" },
+    { Name = "Stone", Aliases = {"Batu", "Stone"}, Luck = 1.5, Tier = "Uncommon" },
+    { Name = "Bronze", Aliases = {"Perunggu", "Bronze"}, Luck = 2.0, Tier = "Uncommon" },
+    { Name = "Silver", Aliases = {"Perak", "Silver"}, Luck = 3.0, Tier = "Rare" },
+    { Name = "Gold", Aliases = {"Emas", "Gold", "Golden"}, Luck = 5.0, Tier = "Rare" },
+    { Name = "Diamond", Aliases = {"Berlian", "Diamond"}, Luck = 10.0, Tier = "Epic" },
+    { Name = "Emerald", Aliases = {"Zamrud", "Emerald"}, Luck = 25.0, Tier = "Epic" },
+    { Name = "Ruby", Aliases = {"Delima", "Ruby"}, Luck = 50.0, Tier = "Epic" },
+    { Name = "Amethyst", Aliases = {"Kecubung", "Amethyst"}, Luck = 100.0, Tier = "Legendary" },
+    { Name = "Obsidian", Aliases = {"Obsidian"}, Luck = 250.0, Tier = "Legendary" },
+    { Name = "Plasma", Aliases = {"Plasma"}, Luck = 750.0, Tier = "Legendary" },
+    { Name = "Void", Aliases = {"Kekosongan", "Void"}, Luck = 1500.0, Tier = "Legendary" },
+    { Name = "Solar", Aliases = {"Solar", "Matahari"}, Luck = 10000000.0, Tier = "Mythical" },
+    { Name = "Lunar", Aliases = {"Lunar", "Bulan"}, Luck = 40000000.0, Tier = "Mythical" },
+    { Name = "Galaxy", Aliases = {"Galaxy", "Galaksi"}, Luck = 100000000.0, Tier = "Divine" },
+    { Name = "Infinity", Aliases = {"Infinity", "Tak Terbatas"}, Luck = 500000000.0, Tier = "Infinity" },
+}
 
-    local nStr, unit = clean:match("([%d%.]+)%s*([kmbtq]?)%s*x")
-    if not nStr then
-        nStr, unit = clean:match("x%s*([%d%.]+)%s*([kmbtq]?)")
-    end
-    if not nStr then
-        nStr, unit = clean:match("([%d%.]+)%s*([kmbtq]?)%s*k")
-    end
-    if not nStr then
-        nStr = clean:match("([%d%.]+)")
-        unit = ""
-    end
-
-    local num = tonumber(nStr)
-    if not num then return 1 end
-
-    unit = tostring(unit or ""):lower()
-    if unit == "k" then
-        num = num * 1000
-    elseif unit == "m" then
-        num = num * 1000000
-    elseif unit == "b" then
-        num = num * 1000000000
-    elseif unit == "t" then
-        num = num * 1000000000000
-    elseif unit == "q" then
-        num = num * 1000000000000000
-    end
-    return num
-end
-
-local function ParseTierMultiplier(text)
-    if not text or type(text) ~= "string" then return 1 end
-    local low = text:lower()
-    for tierName, mult in pairs(TierMultipliers) do
-        if low:find(tierName) then
-            return mult
+-- Parsing angka string (contoh: "10M", "40Mx", "250K", "1.5x")
+local function ParseMultiplierString(str)
+    if not str then return nil end
+    local clean = string.gsub(str, "[,%+xX🍀]", "")
+    clean = string.gsub(clean, "%s+", "")
+    
+    local numStr, unit = string.match(clean, "([%d%.]+)%s*([kKmMbBtT]?)")
+    if numStr then
+        local val = tonumber(numStr)
+        if val then
+            unit = string.upper(unit or "")
+            if unit == "K" then val = val * 1e3
+            elseif unit == "M" then val = val * 1e6
+            elseif unit == "B" then val = val * 1e9
+            elseif unit == "T" then val = val * 1e12 end
+            return val
         end
     end
+    return nil
+end
+
+-- Evaluasi Luck Dadu dari Judul dan Tier
+local function EvaluateDiceLuck(rawTitle, rawTier, rawLuckStr)
+    local parsedLuck = ParseMultiplierString(rawLuckStr)
+    if parsedLuck and parsedLuck > 0 then
+        return parsedLuck
+    end
+
+    local normTitle = string.lower(rawTitle or "")
+    for _, item in ipairs(KnownDiceCatalog) do
+        for _, alias in ipairs(item.Aliases) do
+            if string.find(normTitle, string.lower(alias), 1, true) then
+                return item.Luck
+            end
+        end
+    end
+
+    local normTier = string.gsub(rawTier or "", "[%[%]%s]", "")
+    for tierName, mult in pairs(TierMultiplier) do
+        if string.find(string.lower(normTier), string.lower(tierName), 1, true) then
+            return mult * 10
+        end
+    end
+
     return 1
 end
 
-local function CalculateDiceScore(diceNameOrText, luckStr)
-    local luckVal = ParseLuckMultiplier(luckStr or diceNameOrText)
-    local tierVal = ParseTierMultiplier(diceNameOrText)
-    if luckVal and luckVal > 1 then
-        return luckVal
-    end
-    return tierVal
-end
-
-local function RegisterVerifiedDice(diceId, luckVal, orderVal, displayName)
-    if not IsValidKey(diceId) then return end
-    local strId = tostring(diceId)
-    if strId:match("^GoldenDice%d+$") then return end
-    if strId:match("^Luck%d+$") or strId:match("^RollSpeed%d+$") or strId:match("^MutationLuck%d+$") or strId:match("^TreadmillLuck%d+$") then return end
-    if strId:match("^Cash%d+$") or strId:match("^Inventory%d+$") then return end
-
-    local finalScore = 1
-    if type(luckVal) == "string" then
-        finalScore = ParseLuckMultiplier(luckVal)
-    elseif type(luckVal) == "number" and luckVal > 0 then
-        finalScore = luckVal
-    else
-        finalScore = CalculateDiceScore(displayName or strId, nil)
-    end
-
-    local oNum = tonumber(orderVal)
-    if (not finalScore or finalScore <= 1) and oNum and oNum > 0 then
-        finalScore = oNum * 50
-    end
-
-    local oldScore = DiscoveredData.DiceLuckMap[strId]
-    if not oldScore or finalScore > oldScore then
-        DiscoveredData.DiceLuckMap[strId] = finalScore
-    end
-
-    if displayName and type(displayName) == "string" and #displayName > 0 then
-        DiscoveredData.DiceDisplayNameMap[strId] = displayName
-    elseif not DiscoveredData.DiceDisplayNameMap[strId] then
-        DiscoveredData.DiceDisplayNameMap[strId] = strId
-    end
-
-    local exists = false
-    for _, d in ipairs(DiscoveredData.VerifiedDice) do
-        if d == strId then exists = true break end
-    end
-    if not exists then
-        table.insert(DiscoveredData.VerifiedDice, strId)
-    end
-
-    table.sort(DiscoveredData.VerifiedDice, function(a, b)
-        local lA = DiscoveredData.DiceLuckMap[a] or 1
-        local lB = DiscoveredData.DiceLuckMap[b] or 1
-        if lA == lB then
-            return tostring(a) < tostring(b)
-        end
-        return lA < lB
-    end)
-end
-
--- Pre-Seeded Real Game Dice (English & Indonesian Dual-Key)
-local PreSeededDice = {
-    {"Dasar",                     1,               "Biasa",       "Dasar | Biasa"},
-    {"Basic",                     1,               "Biasa",       "Dasar | Biasa"},
-    {"Kayu",                      1,               "Biasa",       "Kayu | Biasa"},
-    {"Wood",                      1,               "Biasa",       "Kayu | Biasa"},
-    {"Batu",                      5,               "Biasa",       "Batu | Biasa"},
-    {"Stone",                     5,               "Biasa",       "Batu | Biasa"},
-    {"Besi",                      20,              "Biasa",       "Besi | Biasa"},
-    {"Iron",                      20,              "Biasa",       "Besi | Biasa"},
-    {"Perak",                     40,              "Biasa",       "Perak | Biasa"},
-    {"Silver",                    40,              "Biasa",       "Perak | Biasa"},
-    {"Kekosongan",                50,              "Langka",      "Kekosongan (Void)"},
-    {"Void",                      50,              "Langka",      "Kekosongan (Void)"},
-    {"Emas",                      100,             "Langka",      "Emas | Langka"},
-    {"Gold",                      100,             "Langka",      "Emas | Langka"},
-    {"Zamrud",                    250,             "Langka",      "Zamrud | Langka"},
-    {"Emerald",                   250,             "Langka",      "Zamrud | Langka"},
-    {"Berlian",                   500,             "Langka",      "Berlian | Langka"},
-    {"Diamond",                   500,             "Langka",      "Berlian | Langka"},
-    {"Petir",                     1000,            "Langka",      "Petir | Langka"},
-    {"Lightning",                 1000,            "Langka",      "Petir | Langka"},
-    {"Api",                       2500,            "Langka",      "Api | Langka"},
-    {"Fire",                      2500,            "Langka",      "Api | Langka"},
-    {"Badai",                     7000,            "Epik",        "Badai | Epik"},
-    {"Storm",                     7000,            "Epik",        "Badai | Epik"},
-    {"Lava",                      15000,           "Epik",        "Lava | Epik"},
-    {"Magma",                     25000,           "Epik",        "Magma | Epik"},
-    {"Bayangan",                  40000,           "Epik",        "Bayangan | Epik"},
-    {"Shadow",                    40000,           "Epik",        "Bayangan | Epik"},
-    {"PumpkinDice",               80000,           "Event",       "Dadu Labu (Pumpkin)"},
-    {"HauntedDice",               120000,          "Event",       "Dadu Berhantu"},
-    {"HalloweenDice",             180000,          "Event",       "Dadu Halloween"},
-    {"Solar",                     10000000,        "Mythical",    "Solar | Mythical"},
-    {"Lunar",                     40000000,        "Mythical",    "Lunar | Mythical"},
-    {"Galaxy",                    100000000,       "Divine",      "Galaxy | Divine"},
-    {"Galaksi",                   100000000,       "Divine",      "Galaxy | Divine"},
-    {"Bintang",                   150000000,       "Divine",      "Bintang | Divine"},
-    {"Star",                      150000000,       "Divine",      "Star | Divine"},
-    {"Kosmik",                    250000000,       "Godly",       "Kosmik | Godly"},
-    {"Cosmic",                    250000000,       "Godly",       "Cosmic | Godly"},
-    {"Nebula",                    350000000,       "Godly",       "Nebula | Godly"},
-    {"Ilahi",                     500000000,       "Ilahi",       "Ilahi | Dewa"},
-    {"Divine",                    500000000,       "Divine",      "Ilahi | Dewa"},
-    {"Godly",                     750000000,       "Godly",       "Dewa Tertinggi"},
-    {"Glitched",                  1000000000,      "Rahasia",     "Glitched | Rahasia"},
-    {"Chaos",                     2500000000,      "Rahasia",     "Chaos | Rahasia"},
-    {"Infinity",                  5000000000,      "Rahasia",     "Infinity | Rahasia"},
-}
-
-for _, item in ipairs(PreSeededDice) do
-    RegisterVerifiedDice(item[1], item[2], nil, item[4])
-    DiscoveredData.DiceTierMap[item[1]] = item[3]
-end
-
-local IsScriptCallingEquip = false
-local UpdateDiceDisplayFunc = nil
-
--- Hook Self-Learning (__namecall)
-if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function" then
-    pcall(function()
-        local oldNamecall
-        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-            local method = getnamecallmethod()
-            if (method == "InvokeServer" or method == "FireServer") and typeof(self) == "Instance" then
-                local rName = self.Name
-                local a1, a2, a3 = ...
-                if rName == "BuyDice" and a1 ~= nil then
-                    RegisterVerifiedDice(a1, nil, nil)
-                    if DiscoveredData.LearnedDiceArgs then
-                        table.insert(DiscoveredData.LearnedDiceArgs, {a1, a2})
-                    end
-                    AddLearningLog("BuyDice", a1, a2, a3)
-                elseif rName == "EquipDice" and a1 ~= nil then
-                    local dId = tostring(a1)
-                    RegisterVerifiedDice(dId, nil, nil)
-                    DiscoveredData.CurrentEquippedDice = dId
-                    DiscoveredData.OwnedDiceCount[dId] = 1
-                    if not IsScriptCallingEquip then
-                        -- Pemain mengklik dadu manual di layar game!
-                        -- Kunci dadu ini agar script TIDAK menimpanya secara otomatis
-                        Config.LockedDiceId = dId
-                        Config.DiceMode = "Manual"
-                        LastEquipTick = tick() + 5.0 -- Jeda auto-equip selama 5 detik
-                        if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
-                    end
-                    AddLearningLog("EquipDice", a1, a2, a3)
-                elseif rName == "RerollTrait" then
-                    AddLearningLog("RerollTrait", a1, a2, a3)
-                elseif rName == "RollGrade" then
-                    AddLearningLog("RollGrade", a1, a2, a3)
-                elseif rName == "BuyUpgrade" and IsValidKey(a1) then
-                    AddUniqueKey(DiscoveredData.Upgrades, a1)
-                    AddLearningLog("BuyUpgrade", a1, a2, a3)
-                elseif rName == "UpgradeRebirthStat" and IsValidKey(a1) then
-                    AddUniqueKey(DiscoveredData.RebirthStats, a1)
-                    AddLearningLog("UpgradeRebirthStat", a1, a2, a3)
-                elseif rName == "BuyCandyShop" and IsValidKey(a1) then
-                    AddUniqueKey(DiscoveredData.CandyShopItems, a1)
-                    AddLearningLog("BuyCandyShop", a1, a2, a3)
-                elseif rName == "CandyClaim" and a1 ~= nil then
-                    AddUniqueKey(DiscoveredData.ValidCandyTokens, a1)
-                    AddLearningLog("CandyClaim", a1, a2, a3)
-                elseif rName == "StartTower" and not BlacklistedNames[tostring(a1)] then
-                    AddLearningLog("StartTower", a1, a2, a3)
-                elseif rName == "PodiumAction" then
-                    AddLearningLog("PodiumAction", a1, a2, a3)
-                end
-            end
-            return oldNamecall(self, ...)
-        end)
-    end)
-end
-
 -- ============================================================================
--- 3. PEMINDAI DATA GAME LENGKAP
+-- 3. SCANNING DICE SHOP GUI DENGAN METODE PRESISI (ANTI TUMPANG TINDIH)
 -- ============================================================================
-local function RefreshGameKnowledge()
-    if SharedFolder then
-        for _, inst in ipairs(SharedFolder:GetDescendants()) do
-            if inst:IsA("ModuleScript") then
-                local mName = inst.Name:lower()
-                if not mName:find("controller") and not mName:find("client") and not mName:find("renderer") and not mName:find("ui") then
-                    local ok, mod = pcall(require, inst)
-                    if ok and type(mod) == "table" then
-                        local function inspectConfigTable(tbl, depth, contextHint)
-                            if depth > 3 then return end
-                            for k, v in pairs(tbl) do
-                                if type(v) == "table" then
-                                    local keyStr = tostring(k)
-                                    local lowKey = keyStr:lower()
-                                    local hint = contextHint or mName
-
-                                    local itemId = v.Id or v.ID or v.Key or v.DiceId or v.TraitId or v.UpgradeId or (type(k) == "string" and k)
-                                    local luckVal = v.Luck or v.LuckMultiplier or v.RollLuck or v.BonusLuck or v.Multiplier or v.Boost or v.Power
-                                    local orderVal = v.LayoutOrder or v.Order or v.Tier or v.Rank or v.Index or (type(k) == "number" and k)
-
-                                    if hint:find("dice") or lowKey:find("dice") or v.DiceId or (luckVal and (v.Price or v.Cost) and not hint:find("upgrade")) then
-                                        if itemId and IsValidKey(itemId) then
-                                            RegisterVerifiedDice(itemId, luckVal, orderVal)
-                                        end
-                                    elseif hint:find("trait") or lowKey:find("trait") or v.TraitId then
-                                        if itemId and IsValidKey(itemId) then
-                                            AddUniqueKey(DiscoveredData.DiscoveredTraits, itemId)
-                                            local chance = tonumber(v.Chance or v.Weight or v.Probability)
-                                            local mult = tonumber(v.Multiplier or v.Boost or v.CashMultiplier or v.Power)
-                                            if (chance and chance <= 5) or (mult and mult >= 3) then
-                                                DiscoveredData.TopTraitsMap[tostring(itemId):lower()] = true
-                                            end
-                                        end
-                                    elseif hint:find("upgrade") and not hint:find("rebirth") then
-                                        if itemId and IsValidKey(itemId) then AddUniqueKey(DiscoveredData.Upgrades, itemId) end
-                                    elseif hint:find("rebirth") then
-                                        if itemId and IsValidKey(itemId) then AddUniqueKey(DiscoveredData.RebirthStats, itemId) end
-                                    elseif hint:find("candy") then
-                                        if itemId and IsValidKey(itemId) then AddUniqueKey(DiscoveredData.CandyShopItems, itemId) end
-                                    end
-
-                                    local nextHint = hint
-                                    if lowKey:find("dice") or lowKey:find("trait") or lowKey:find("grade") or lowKey:find("upgrade") or lowKey:find("candy") then
-                                        nextHint = lowKey
-                                    end
-                                    inspectConfigTable(v, depth + 1, nextHint)
-                                end
-                            end
-                        end
-                        inspectConfigTable(mod, 1, mName)
-                    end
-                end
-            end
-        end
-    end
-
-    if Remotes.GetData then
-        local ok, pData = pcall(function() return Remotes.GetData:InvokeServer() end)
-        if ok and type(pData) == "table" then
-            for k, v in pairs(pData) do
-                local lowerK = tostring(k):lower()
-                if (lowerK:find("equippeddice") or lowerK:find("currentdice") or lowerK:find("selecteddice") or lowerK == "dice") and (type(v) == "string" or type(v) == "number") then
-                    DiscoveredData.CurrentEquippedDice = v
-                    RegisterVerifiedDice(v, nil, nil)
-                end
-                if type(v) == "number" and (lowerK:find("tower") or lowerK:find("stage") or lowerK:find("floor")) then
-                    if v >= 1 and v <= 1000 and v > Config.HighestUnlockedStage then
-                        Config.HighestUnlockedStage = math.floor(v)
-                    end
-                elseif type(v) == "table" then
-                    if lowerK:find("dice") then
-                        for dk, dv in pairs(v) do
-                            if type(dk) == "string" and IsValidKey(dk) then
-                                RegisterVerifiedDice(dk, nil, nil)
-                                local qty = (type(dv) == "number" and dv) or (dv == true and 1) or 0
-                                DiscoveredData.OwnedDiceCount[dk] = qty
-                            elseif type(dv) == "string" and IsValidKey(dv) then
-                                RegisterVerifiedDice(dv, nil, nil)
-                                DiscoveredData.OwnedDiceCount[dv] = 1
-                            elseif type(dv) == "table" then
-                                local dId = dv.Id or dv.ID or dv.DiceId or dv.Name or (type(dk) == "string" and dk)
-                                if dId and IsValidKey(dId) then
-                                    RegisterVerifiedDice(dId, dv.Luck, dv.Order)
-                                    DiscoveredData.OwnedDiceCount[dId] = tonumber(dv.Amount or dv.Count or dv.Quantity) or 1
-                                end
-                            end
-                        end
-                    elseif lowerK:find("pet") or lowerK:find("inventory") then
-                        for pk, pv in pairs(v) do
-                            if type(pv) == "table" then
-                                local uuid = pv.UUID or pv.Uuid or pv.Id or pv.ID or (type(pk) == "string" and #pk >= 8 and pk)
-                                if uuid and IsValidKey(uuid) then AddUniqueKey(DiscoveredData.InventoryPetUuids, uuid) end
-                            elseif type(pk) == "string" and #pk >= 12 then
-                                AddUniqueKey(DiscoveredData.InventoryPetUuids, pk)
-                            end
-                        end
-                    elseif lowerK:find("upgrade") and not lowerK:find("rebirth") then
-                        for uk, uv in pairs(v) do
-                            if type(uv) ~= "function" then AddUniqueKey(DiscoveredData.Upgrades, uk) end
-                        end
-                    elseif lowerK:find("rebirth") then
-                        for rk, rv in pairs(v) do
-                            if type(rv) ~= "function" then AddUniqueKey(DiscoveredData.RebirthStats, rk) end
-                        end
-                    elseif lowerK:find("candy") and not lowerK:find("amount") then
-                        for ck, cv in pairs(v) do
-                            if type(cv) ~= "function" then AddUniqueKey(DiscoveredData.CandyShopItems, ck) end
-                        end
-                    end
-                end
-            end
-        end
-    end
-end
-
-task.spawn(RefreshGameKnowledge)
-
--- ============================================================================
--- 4. FUNGSI HELPER POSISI, PLOT & INTERAKSI PROXIMITY
--- ============================================================================
-local function GetHRP()
-    local char = LocalPlayer.Character
-    return char and char:FindFirstChild("HumanoidRootPart")
-end
-
-local function SafeTeleport(targetCFrame)
-    local hrp = GetHRP()
-    if hrp and targetCFrame then
-        hrp.CFrame = (typeof(targetCFrame) == "CFrame" and targetCFrame) or CFrame.new(targetCFrame)
-    end
-end
-
-local CachedMyPlot = nil
-local function GetMyPlot()
-    if CachedMyPlot and CachedMyPlot.Parent == Workspace and CachedMyPlot:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
-        return CachedMyPlot
-    end
-    for i = 1, 8 do
-        local plot = Workspace:FindFirstChild("Plot" .. i)
-        if plot and plot:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
-            CachedMyPlot = plot
-            return plot
-        end
-    end
-    for _, child in ipairs(Workspace:GetChildren()) do
-        if child:IsA("Model") and child.Name:match("^Plot%d+$") and child:GetAttribute("OwnerUserId") == LocalPlayer.UserId then
-            CachedMyPlot = child
-            return child
-        end
-    end
-    return nil
-end
-
-local function GetMyPodiums()
-    local plot = GetMyPlot()
-    if not plot then return {} end
-    local podiums = {}
-    local f1 = plot:FindFirstChild("Podiums")
-    if f1 then
-        for _, p in ipairs(f1:GetChildren()) do
-            if p:IsA("Model") then table.insert(podiums, p) end
-        end
-    end
-    local floor2 = plot:FindFirstChild("Floor2")
-    local f2 = floor2 and floor2:FindFirstChild("Podiums")
-    if f2 then
-        for _, p in ipairs(f2:GetChildren()) do
-            if p:IsA("Model") then table.insert(podiums, p) end
-        end
-    end
-    table.sort(podiums, function(a, b)
-        return (tonumber(a:GetAttribute("Slot")) or 99) < (tonumber(b:GetAttribute("Slot")) or 99)
-    end)
-    return podiums
-end
-
-local function SafeFirePrompt(prompt)
-    if not prompt or not prompt:IsA("ProximityPrompt") or not prompt.Enabled then return false end
-    prompt.HoldDuration = 0
-    if typeof(fireproximityprompt) == "function" then
-        pcall(fireproximityprompt, prompt)
-        return true
-    else
-        pcall(function()
-            prompt:InputHoldBegin()
-            task.wait()
-            prompt:InputHoldEnd()
-        end)
-        return true
-    end
-end
-
-local function SafeFireClick(cd)
-    if not cd or not cd:IsA("ClickDetector") then return false end
-    if typeof(fireclickdetector) == "function" then
-        pcall(fireclickdetector, cd)
-        return true
-    end
-    return false
-end
-
-local function FireGuiButton(btn)
-    if not btn or not (btn:IsA("TextButton") or btn:IsA("ImageButton")) then return false end
-    local fired = false
-    if typeof(firesignal) == "function" then
-        pcall(function() firesignal(btn.Activated) fired = true end)
-        pcall(function() firesignal(btn.MouseButton1Click) fired = true end)
-    end
-    if typeof(getconnections) == "function" then
-        pcall(function()
-            for _, conn in ipairs(getconnections(btn.Activated)) do conn:Fire() fired = true end
-            for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do conn:Fire() fired = true end
-        end)
-    end
-    return fired
-end
-
 local function GetDiceCardsFromGui()
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pGui then return {} end
+    local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not playerGui then return {} end
 
-    local cards = {}
+    local targetContainers = {}
+    for _, gui in ipairs(playerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and (string.find(string.lower(gui.Name), "dice") or string.find(string.lower(gui.Name), "shop") or gui:FindFirstChild("MainFrame", true)) then
+            for _, desc in ipairs(gui:GetDescendants()) do
+                if (desc:IsA("ScrollingFrame") or desc:IsA("Frame")) and desc:FindFirstChildOfClass("UIListLayout") then
+                    table.insert(targetContainers, desc)
+                end
+            end
+        end
+    end
 
-    for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and g.Name ~= "RockstarHubUI" then
-            local isDiceShop = false
-            for _, desc in ipairs(g:GetDescendants()) do
-                if desc:IsA("TextLabel") and (desc.Text:find("Dice Shop") or desc.Text:find("Toko Dadu")) then
-                    isDiceShop = true
+    local cardsFound = {}
+    for _, container in ipairs(targetContainers) do
+        for _, card in ipairs(container:GetChildren()) do
+            if card:IsA("Frame") or card:IsA("ImageLabel") or card:IsA("ImageButton") then
+                local titleLabel, tierLabel, luckLabel, equipBtn, buyBtn
+                local isEquipped = false
+                local isOwned = false
+
+                for _, el in ipairs(card:GetDescendants()) do
+                    if el:IsA("TextLabel") or el:IsA("TextButton") then
+                        local txt = string.lower(el.Text)
+                        
+                        if string.find(txt, "equipped") or string.find(txt, "terpasang") or string.find(txt, "dipakai") then
+                            isEquipped = true
+                            isOwned = true
+                        elseif string.find(txt, "equip") or string.find(txt, "pasang") or string.find(txt, "pakai") then
+                            if el:IsA("TextButton") or el:IsA("ImageButton") or el.Parent:IsA("TextButton") or el.Parent:IsA("ImageButton") then
+                                equipBtn = el:IsA("TextButton") and el or el.Parent
+                                isOwned = true
+                            end
+                        elseif string.find(txt, "buy") or string.find(txt, "beli") or string.find(txt, "$") or string.find(txt, "🪙") then
+                            if el:IsA("TextButton") or el:IsA("ImageButton") or el.Parent:IsA("TextButton") or el.Parent:IsA("ImageButton") then
+                                buyBtn = el:IsA("TextButton") and el or el.Parent
+                            end
+                        end
+
+                        if el:IsA("TextLabel") then
+                            if string.find(txt, "🍀") or string.find(txt, "luck") or string.find(txt, "x") then
+                                luckLabel = el.Text
+                            end
+                            for tierName, _ in pairs(TierMultiplier) do
+                                if string.find(txt, string.lower(tierName)) then
+                                    tierLabel = el.Text
+                                    break
+                                end
+                            end
+                            if not titleLabel and el.Text ~= "" and not string.find(txt, "luck") and not string.find(txt, "buy") and not string.find(txt, "equip") then
+                                titleLabel = el.Text
+                            end
+                        end
+                    end
+                end
+
+                if titleLabel then
+                    local cleanName = string.match(titleLabel, "([^|%-\n]+)") or titleLabel
+                    cleanName = string.gsub(cleanName, "%s+$", "")
+                    cleanName = string.gsub(cleanName, "^%s+", "")
+
+                    local calculatedLuck = EvaluateDiceLuck(cleanName, tierLabel, luckLabel)
+                    
+                    local cardStatus = "unowned"
+                    if isEquipped then cardStatus = "equipped"
+                    elseif isOwned then cardStatus = "owned"
+                    end
+
+                    table.insert(cardsFound, {
+                        CardInstance = card,
+                        Name = cleanName,
+                        RawTitle = titleLabel,
+                        Tier = tierLabel or "Unknown",
+                        Luck = calculatedLuck,
+                        Status = cardStatus,
+                        EquipButton = equipBtn,
+                        BuyButton = buyBtn,
+                    })
+                end
+            end
+        end
+    end
+
+    return cardsFound
+end
+
+-- ============================================================================
+-- 4. LOGIKA PEMASANGAN DADU (ZERO FLICKERING & ZERO SPAM)
+-- ============================================================================
+local IsScriptCallingEquip = false
+
+local function EquipTargetDiceNow(force)
+    if tick() < State.ManualOverrideUntil then
+        return
+    end
+
+    if not Config.AutoEquipDice and not force then
+        return
+    end
+
+    local cards = GetDiceCardsFromGui()
+    if #cards == 0 then
+        return
+    end
+
+    local targetCard = nil
+
+    if Config.DiceMode == "Manual" and Config.LockedDiceId then
+        for _, card in ipairs(cards) do
+            if string.find(string.lower(card.Name), string.lower(Config.LockedDiceId), 1, true) then
+                if card.Status == "owned" or card.Status == "equipped" then
+                    targetCard = card
                     break
                 end
             end
-
-            if isDiceShop then
-                local listContainers = {}
-                for _, desc in ipairs(g:GetDescendants()) do
-                    if desc:IsA("ScrollingFrame") or desc:FindFirstChildOfClass("UIListLayout") or desc:FindFirstChildOfClass("UIGridLayout") then
-                        table.insert(listContainers, desc)
+        end
+    else
+        local highestLuck = -1
+        for _, card in ipairs(cards) do
+            if card.Status == "owned" or card.Status == "equipped" then
+                if not (Config.SkipVoidDice and string.lower(card.Name) == "void" and highestLuck > 1500) then
+                    if card.Luck > highestLuck then
+                        highestLuck = card.Luck
+                        targetCard = card
                     end
                 end
+            end
+        end
+    end
 
-                for _, container in ipairs(listContainers) do
-                    for _, card in ipairs(container:GetChildren()) do
-                        if card:IsA("GuiObject") and not card:IsA("UIListLayout") and not card:IsA("UIGridLayout") and not card:IsA("UIPadding") then
-                            local titleText = ""
-                            local luckText = ""
-                            local btn = nil
-                            local btnStatus = "none"
+    if not targetCard then
+        return
+    end
 
-                            for _, el in ipairs(card:GetDescendants()) do
-                                if el:IsA("TextLabel") and el.Text and #el.Text > 0 then
-                                    local txt = el.Text
-                                    if txt:find("|") then
-                                        titleText = txt
-                                    elseif txt:find("Luck") or txt:find("Keberuntungan") or txt:find("🍀") then
-                                        luckText = txt
-                                    end
-                                elseif el:IsA("TextButton") or el:IsA("ImageButton") then
-                                    local bTxt = ""
-                                    if el:IsA("TextButton") then
-                                        bTxt = el.Text:lower()
-                                    else
-                                        for _, sub in ipairs(el:GetChildren()) do
-                                            if sub:IsA("TextLabel") then bTxt = sub.Text:lower() break end
-                                        end
-                                    end
-                                    if bTxt:find("equipped") or bTxt:find("dilengkapi") then
-                                        btnStatus = "equipped"
-                                        btn = el
-                                    elseif bTxt:find("equip") or bTxt:find("lengkapi") then
-                                        btnStatus = "equip"
-                                        btn = el
-                                    elseif bTxt:find("buy") or bTxt:find("beli") then
-                                        btnStatus = "buy"
-                                        btn = el
-                                    end
-                                end
-                            end
+    if targetCard.Status == "equipped" then
+        State.CurrentDiceName = targetCard.Name
+        State.CurrentDiceLuck = targetCard.Luck
+        State.FailedEquipCount = 0
+        return
+    end
 
-                            if #titleText > 0 or btn ~= nil then
-                                local dName = titleText:match("^([^|]+)") or card:GetAttribute("DiceId") or card.Name
-                                dName = tostring(dName):gsub("^%s+", ""):gsub("%s+$", "")
-                                local luckScore = CalculateDiceScore(titleText, luckText)
+    if State.LastEquippedDiceId == targetCard.Name and State.FailedEquipCount >= 3 then
+        return
+    end
 
-                                table.insert(cards, {
-                                    Card = card,
-                                    Name = dName,
-                                    FullName = #titleText > 0 and titleText or dName,
-                                    Luck = luckScore,
-                                    Status = btnStatus,
-                                    Button = btn,
-                                })
-                            end
+    if targetCard.Status == "owned" and targetCard.EquipButton then
+        IsScriptCallingEquip = true
+        pcall(function()
+            for _, conn in ipairs(getconnections(targetCard.EquipButton.MouseButton1Click)) do
+                conn:Fire()
+            end
+            for _, conn in ipairs(getconnections(targetCard.EquipButton.Activated)) do
+                conn:Fire()
+            end
+        end)
+        
+        task.delay(0.5, function()
+            IsScriptCallingEquip = false
+        end)
+
+        Log("Memasang Dadu: " .. targetCard.Name .. " (🍀 " .. targetCard.Luck .. "x)")
+        State.LastEquippedDiceId = targetCard.Name
+        State.FailedEquipCount = State.FailedEquipCount + 1
+        return
+    end
+
+    if Remotes.EquipDice then
+        IsScriptCallingEquip = true
+        pcall(function()
+            local arg = State.LearnedDiceArgs[targetCard.Name] or targetCard.Name
+            Remotes.EquipDice:InvokeServer(arg)
+        end)
+        task.delay(0.5, function()
+            IsScriptCallingEquip = false
+        end)
+
+        Log("Remote Equip: " .. targetCard.Name)
+        State.LastEquippedDiceId = targetCard.Name
+        State.FailedEquipCount = State.FailedEquipCount + 1
+    end
+end
+
+-- ============================================================================
+-- 5. DETEKSI KLIK MANUAL PEMAIN & HOOK PENGAMAN
+-- ============================================================================
+pcall(function()
+    local gmt = getrawmetatable(game)
+    setreadonly(gmt, false)
+    local oldNamecall = gmt.__namecall
+
+    gmt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
+
+        if (method == "InvokeServer" or method == "FireServer") and self then
+            if Remotes.EquipDice and self == Remotes.EquipDice then
+                if not IsScriptCallingEquip then
+                    local diceArg = args[1]
+                    if diceArg and type(diceArg) == "string" then
+                        State.ManualOverrideUntil = tick() + 5
+                        Config.DiceMode = "Manual"
+                        Config.LockedDiceId = diceArg
+                        Log("Pemain Memasang Dadu Manual: " .. tostring(diceArg) .. " (Terkunci 5 Detik)")
+                    end
+                end
+            elseif Remotes.BuyUpgrade and self == Remotes.BuyUpgrade then
+                if #args >= 1 and type(args[1]) == "string" then
+                    State.LearnedUpgradeArgs[args[1]] = args
+                end
+            end
+        end
+
+        return oldNamecall(self, ...)
+    end)
+
+    setreadonly(gmt, true)
+end)
+
+-- ============================================================================
+-- 6. SISTEM UPGRADE PODIUM, TRAIT, GRADE & SHOP
+-- ============================================================================
+local function GetPlayerPlot()
+    if State.PlayerPlotModel and State.PlayerPlotModel.Parent then
+        return State.PlayerPlotModel
+    end
+
+    local plots = Workspace:FindFirstChild("Plots") or Workspace:FindFirstChild("PlotsFolder")
+    if plots then
+        for _, plot in ipairs(plots:GetChildren()) do
+            local owner = plot:FindFirstChild("Owner") or plot:FindFirstChild("OwnerName")
+            if owner and (owner.Value == LocalPlayer or owner.Value == LocalPlayer.Name) then
+                State.PlayerPlotModel = plot
+                return plot
+            end
+            local sign = plot:FindFirstChild("Sign", true)
+            if sign and sign:IsA("TextLabel") and string.find(string.lower(sign.Text), string.lower(LocalPlayer.Name)) then
+                State.PlayerPlotModel = plot
+                return plot
+            end
+        end
+    end
+    return nil
+end
+
+local function UpgradeAllPlotPodiums()
+    local plot = GetPlayerPlot()
+    if not plot then return end
+
+    local podiumsFolder = plot:FindFirstChild("Podiums") or plot:FindFirstChild("Stands") or plot
+    for i = 1, 16 do
+        local podium = podiumsFolder:FindFirstChild("Podium" .. i) or podiumsFolder:FindFirstChild("Stand" .. i)
+        if podium then
+            local prompt = podium:FindFirstChildOfClass("ProximityPrompt") or podium:FindFirstChild("UpgradePrompt", true)
+            if prompt then
+                if Config.AutoTeleportUpgrade then
+                    local char = LocalPlayer.Character
+                    if char and char:FindFirstChild("HumanoidRootPart") then
+                        char.HumanoidRootPart.CFrame = podium:GetPivot() + Vector3.new(0, 3, 0)
+                        task.wait(0.08)
+                    end
+                end
+                fireproximityprompt(prompt)
+            end
+        end
+    end
+end
+
+-- ============================================================================
+-- 7. BACKGROUND LOOPS OTOMATISASI LENGKAP
+-- ============================================================================
+
+-- Loop 1: Auto Roll Pet
+task.spawn(function()
+    while true do
+        if Config.AutoRoll and Remotes.Roll then
+            pcall(function()
+                Remotes.Roll:InvokeServer()
+            end)
+            if Config.AutoEquipBest and Remotes.EquipBest then
+                pcall(function() Remotes.EquipBest:InvokeServer() end)
+            end
+            if Config.AutoFuse and Remotes.FusePets then
+                pcall(function() Remotes.FusePets:InvokeServer() end)
+            end
+            task.wait(Config.RollDelay)
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+-- Loop 2: Auto Collect Cash, Treadmill & Auto Collect Upgrade
+task.spawn(function()
+    while true do
+        if Config.AutoCollectCash then
+            local plot = GetPlayerPlot()
+            if plot then
+                for _, desc in ipairs(plot:GetDescendants()) do
+                    if desc:IsA("TouchTransmitter") or desc.Name == "CashDrop" or desc.Name == "Coin" then
+                        local part = desc:IsA("BasePart") and desc or desc.Parent
+                        local char = LocalPlayer.Character
+                        if part and char and char:FindFirstChild("HumanoidRootPart") then
+                            firetouchinterest(char.HumanoidRootPart, part, 0)
+                            firetouchinterest(char.HumanoidRootPart, part, 1)
+                        end
+                    end
+                end
+            end
+            if Remotes.CollectCash then
+                pcall(function() Remotes.CollectCash:FireServer() end)
+            end
+        end
+
+        if Config.AutoTreadmill then
+            local plot = GetPlayerPlot()
+            local treadmill = plot and (plot:FindFirstChild("Treadmill", true) or plot:FindFirstChild("TreadmillZone", true))
+            if treadmill and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                local tPart = treadmill:IsA("BasePart") and treadmill or treadmill:FindFirstChildOfClass("BasePart")
+                if tPart then
+                    firetouchinterest(LocalPlayer.Character.HumanoidRootPart, tPart, 0)
+                    firetouchinterest(LocalPlayer.Character.HumanoidRootPart, tPart, 1)
+                end
+            end
+        end
+
+        task.wait(0.4)
+    end
+end)
+
+-- Loop 3: Auto Beli Dadu Toko (TANPA GANTI DADU PEMAIN)
+task.spawn(function()
+    while true do
+        if Config.AutoBuyDiceOnly then
+            local cards = GetDiceCardsFromGui()
+            for _, card in ipairs(cards) do
+                if card.Status == "unowned" and card.BuyButton then
+                    pcall(function()
+                        for _, conn in ipairs(getconnections(card.BuyButton.MouseButton1Click)) do
+                            conn:Fire()
+                        end
+                    end)
+                    task.wait(0.2)
+                end
+            end
+        end
+        task.wait(1.5)
+    end
+end)
+
+-- Loop 4: Auto Pasang Dadu (Thread Tenang 4 Detik)
+task.spawn(function()
+    while true do
+        if Config.AutoEquipDice then
+            EquipTargetDiceNow(false)
+        end
+        task.wait(4.0)
+    end
+end)
+
+-- Loop 5: Auto Peningkatan Podium & Shop
+task.spawn(function()
+    while true do
+        if Config.AutoUpgradePodium then
+            UpgradeAllPlotPodiums()
+        end
+
+        if Config.AutoBuyAllUpgrades and Remotes.BuyUpgrade then
+            for upgradeName, argTbl in pairs(State.LearnedUpgradeArgs) do
+                pcall(function()
+                    Remotes.BuyUpgrade:InvokeServer(unpack(argTbl))
+                end)
+            end
+        end
+
+        if Config.AutoBuyRebirthUpgrades and Remotes.BuyRebirthUpgrade then
+            for i = 1, 10 do
+                pcall(function() Remotes.BuyRebirthUpgrade:InvokeServer(i) end)
+            end
+        end
+
+        if Config.AutoBuyCandyShop and Remotes.CandyShopBuy then
+            for i = 1, 8 do
+                pcall(function() Remotes.CandyShopBuy:InvokeServer(i) end)
+            end
+        end
+
+        if Config.AutoBuyQuestShop and Remotes.QuestShopBuy then
+            for i = 1, 8 do
+                pcall(function() Remotes.QuestShopBuy:InvokeServer(i) end)
+            end
+        end
+
+        task.wait(1.0)
+    end
+end)
+
+-- Loop 6: Auto Menara Pertarungan
+task.spawn(function()
+    while true do
+        if Config.AutoTower then
+            if Config.AutoTeleportToTowerPad then
+                local pad = Workspace:FindFirstChild("TowerPad", true) or Workspace:FindFirstChild("TowerEntrance", true)
+                local char = LocalPlayer.Character
+                if pad and char and char:FindFirstChild("HumanoidRootPart") then
+                    local pPart = pad:IsA("BasePart") and pad or pad:FindFirstChildOfClass("BasePart")
+                    if pPart and (char.HumanoidRootPart.Position - pPart.Position).Magnitude > 25 then
+                        char.HumanoidRootPart.CFrame = pPart.CFrame + Vector3.new(0, 3, 0)
+                        task.wait(0.5)
+                    end
+                end
+            end
+
+            if Config.AutoTapTowerCombat and Remotes.TowerAttack then
+                pcall(function()
+                    Remotes.TowerAttack:InvokeServer()
+                end)
+            end
+
+            if Config.AutoDeclineRevive and Remotes.ReviveResponse then
+                pcall(function()
+                    Remotes.ReviveResponse:InvokeServer(false)
+                end)
+            end
+            task.wait(0.12)
+        else
+            task.wait(1.0)
+        end
+    end
+end)
+
+-- Loop 7: Event, Hadiah, Candy & Utilitas
+task.spawn(function()
+    while true do
+        if Config.AutoClaimCandy then
+            local candies = Workspace:FindFirstChild("Candies") or Workspace:FindFirstChild("HalloweenCandy")
+            if candies then
+                for _, candy in ipairs(candies:GetChildren()) do
+                    if candy:IsA("BasePart") and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        if Config.AutoTeleportCandy then
+                            LocalPlayer.Character.HumanoidRootPart.CFrame = candy.CFrame
+                            task.wait(0.08)
+                        else
+                            firetouchinterest(LocalPlayer.Character.HumanoidRootPart, candy, 0)
+                            firetouchinterest(LocalPlayer.Character.HumanoidRootPart, candy, 1)
                         end
                     end
                 end
             end
         end
-    end
 
-    return cards
-end
-
--- ============================================================================
--- 5. SISTEM DADU v7.5 (ANTI-SWITCH & UNIVERSAL DICE ENGINE)
--- ============================================================================
-local function GetTargetDiceId()
-    local list = DiscoveredData.VerifiedDice
-    if #list == 0 then return nil end
-
-    if Config.DiceMode == "Manual" and Config.LockedDiceId and IsValidKey(Config.LockedDiceId) then
-        return Config.LockedDiceId
-    end
-
-    -- HANYA pilih dadu yang TERBUKTI DIMILIKI oleh pemain (OwnedDiceCount > 0)
-    local bestId = nil
-    local maxLuck = -1
-    for _, dId in ipairs(list) do
-        local isSkippedVoid = Config.SkipVoidDice and IsVoidDice(dId)
-        local ownedQty = DiscoveredData.OwnedDiceCount[dId]
-        if not isSkippedVoid and (ownedQty and ownedQty > 0) then
-            local lk = DiscoveredData.DiceLuckMap[dId] or 1
-            if lk > maxLuck then
-                maxLuck = lk
-                bestId = dId
-            end
+        if Config.AutoSpinWheel and Remotes.SpinWheel then
+            pcall(function() Remotes.SpinWheel:InvokeServer() end)
         end
-    end
-
-    -- JIKA TIDAK ADA DADU MILIK PEMAIN YANG DITEMUKAN:
-    -- KEMBALIKAN DADU YANG SEDANG TERPASANG (JANGAN PERNAH MENEBAK DADU LAIN!)
-    return bestId or DiscoveredData.CurrentEquippedDice
-end
-
-local function RunBuyDiceStockOnly()
-    if not Remotes.BuyDice then return end
-
-    if Config.AutoTeleportDiceShop then
-        local modelFolder = Workspace:FindFirstChild("Model")
-        local dicePad = modelFolder and modelFolder:FindFirstChild("DiceShopPad") or Workspace:FindFirstChild("DiceShopPad", true)
-        local zone = dicePad and dicePad:FindFirstChild("Zone")
-        local prompt = zone and zone:FindFirstChild("StandDiceShop", true)
-        if zone and zone:IsA("BasePart") then
-            local hrp = GetHRP()
-            if hrp and (hrp.Position - zone.Position).Magnitude > 14 then
-                SafeTeleport(zone.CFrame + Vector3.new(0, 3.5, 0))
-                task.wait(0.12)
-            end
-            if prompt then SafeFirePrompt(prompt) end
+        if Config.AutoWatchSkipAd and Remotes.WatchSkipAd then
+            pcall(function() Remotes.WatchSkipAd:InvokeServer() end)
         end
-    end
-
-    local list = DiscoveredData.VerifiedDice
-    for i = #list, 2, -1 do
-        local diceId = list[i]
-        if IsValidKey(diceId) and not (Config.SkipVoidDice and IsVoidDice(diceId)) then
-            pcall(function()
-                Remotes.BuyDice:InvokeServer(diceId)
-            end)
-            task.wait(0.04)
+        if Config.AutoRebirth and Remotes.Rebirth then
+            pcall(function() Remotes.Rebirth:InvokeServer() end)
         end
-    end
-end
 
-local LastEquipTick = 0
-local FailedEquipCount = {}
-
-local function EquipTargetDiceNow(forceEquip)
-    if not forceEquip and (tick() - LastEquipTick < 3.0) then return end
-
-    -- 1. Evaluasi UI Toko Dadu jika sedang terbuka di layar
-    local cards = GetDiceCardsFromGui()
-    if #cards > 0 then
-        local currentCard = nil
-        local bestOwnedCard = nil
-        local bestLuck = -1
-
-        for _, c in ipairs(cards) do
-            RegisterVerifiedDice(c.Name, c.Luck, nil, c.FullName)
-            if c.Status == "equipped" or c.Status == "equip" then
-                DiscoveredData.OwnedDiceCount[c.Name] = 1
+        if Config.AutoClaimRewards then
+            if Remotes.ClaimDaily then pcall(function() Remotes.ClaimDaily:InvokeServer() end) end
+            if Remotes.ClaimStarterQuest then pcall(function() Remotes.ClaimStarterQuest:InvokeServer() end) end
+            if Remotes.ClaimAllAchievements then pcall(function() Remotes.ClaimAllAchievements:InvokeServer() end) end
+            if Remotes.ClaimGroupChest then pcall(function() Remotes.ClaimGroupChest:InvokeServer() end) end
+            if Remotes.ClaimFriendChest then pcall(function() Remotes.ClaimFriendChest:InvokeServer() end) end
+            if Remotes.ClaimFreePet then pcall(function() Remotes.ClaimFreePet:InvokeServer() end) end
+            if Remotes.ClaimPlaytime then
+                for i = 1, 12 do pcall(function() Remotes.ClaimPlaytime:InvokeServer(i) end) end
             end
-            if c.Status == "equipped" then
-                currentCard = c
-                DiscoveredData.CurrentEquippedDice = c.Name
-            end
-            if (c.Status == "equip" or c.Status == "equipped") and not (Config.SkipVoidDice and IsVoidDice(c.Name)) then
-                if c.Luck > bestLuck then
-                    bestLuck = c.Luck
-                    bestOwnedCard = c
-                end
+            if Remotes.ClaimQuest then
+                for i = 1, 15 do pcall(function() Remotes.ClaimQuest:InvokeServer(i) end) end
             end
         end
 
-        -- JIKA DADU TERBAIK SUDAH TERPASANG (EQUIPPED): SELESAI, JANGAN LAKUKAN APA-APA!
-        if bestOwnedCard and bestOwnedCard.Status == "equipped" then
-            DiscoveredData.CurrentEquippedDice = bestOwnedCard.Name
-            return
-        end
-
-        -- JIKA ADA DADU MILIK KITA YANG LEBIH BAGUS DARI YANG SEDANG TERPASANG:
-        if bestOwnedCard and bestOwnedCard.Status == "equip" and bestOwnedCard.Button then
-            local curLuck = currentCard and currentCard.Luck or 0
-            if forceEquip or bestOwnedCard.Luck > curLuck then
-                IsScriptCallingEquip = true
-                FireGuiButton(bestOwnedCard.Button)
-                task.wait(0.1)
-                if Remotes.EquipDice then
-                    pcall(function() Remotes.EquipDice:InvokeServer(bestOwnedCard.Name) end)
-                end
-                DiscoveredData.CurrentEquippedDice = bestOwnedCard.Name
-                LastEquipTick = tick()
-                task.delay(0.5, function() IsScriptCallingEquip = false end)
-                if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
-                return
-            end
-        end
+        task.wait(3.0)
     end
+end)
 
-    -- 2. Evaluasi via Remote jika UI tidak terbuka
-    if not Remotes.EquipDice then return end
-    local targetDice = GetTargetDiceId()
-    if not targetDice or not IsValidKey(targetDice) then return end
-
-    -- JANGAN PERNAH panggil EquipDice jika dadu sudah sama persis!
-    if not forceEquip and DiscoveredData.CurrentEquippedDice == targetDice then
-        return
-    end
-
-    -- Cegah loop jika targetDice berulang kali gagal dipasang server
-    if (FailedEquipCount[targetDice] or 0) >= 3 and not forceEquip then
-        return
-    end
-
-    IsScriptCallingEquip = true
-    local ok, res = pcall(function()
-        return Remotes.EquipDice:InvokeServer(targetDice)
-    end)
-    LastEquipTick = tick()
-    task.delay(0.5, function() IsScriptCallingEquip = false end)
-
-    if ok and res ~= false then
-        DiscoveredData.CurrentEquippedDice = targetDice
-        FailedEquipCount[targetDice] = 0
-    else
-        FailedEquipCount[targetDice] = (FailedEquipCount[targetDice] or 0) + 1
-    end
-
-    if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
-end
-
--- ============================================================================
--- 6. SISTEM AUTO TRAIT, GRADE & PENINGKATAN
--- ============================================================================
-local function GetPodiumPetUuid(podium)
-    if not podium then return nil end
-    local stand = podium:FindFirstChild("Stand")
-    local model = stand and (stand:FindFirstChild("Pet") or stand:FindFirstChildOfClass("Model"))
-    if model then
-        local uuid = model:GetAttribute("PetUuid") or model:GetAttribute("UUID") or model:GetAttribute("Id")
-        if uuid and IsValidKey(uuid) and tostring(uuid) ~= "0" and tostring(uuid):lower() ~= "none" then
-            return tostring(uuid)
-        end
-    end
-    local pUuid = podium:GetAttribute("EquippedPetUuid") or podium:GetAttribute("PetUuid")
-    if pUuid and IsValidKey(pUuid) and tostring(pUuid) ~= "0" and tostring(pUuid):lower() ~= "none" then
-        return tostring(pUuid)
-    end
-    return nil
-end
-
-local function GetPodiumPetInfo(podium)
-    if not podium then return nil, nil, nil end
-    local petUuid = GetPodiumPetUuid(podium)
-    local traitVal, gradeVal = nil, nil
-
-    local stand = podium:FindFirstChild("Stand")
-    local model = stand and (stand:FindFirstChild("Pet") or stand:FindFirstChildOfClass("Model"))
-    if model then
-        traitVal = model:GetAttribute("Trait") or model:GetAttribute("TraitName")
-        gradeVal = model:GetAttribute("Grade") or model:GetAttribute("PetGrade")
-    end
-
-    if not traitVal then traitVal = podium:GetAttribute("PetTrait") end
-    if not gradeVal then gradeVal = podium:GetAttribute("PetGrade") end
-
-    return petUuid, traitVal, gradeVal
-end
-
-local function IsTopTierTrait(traitName)
-    if not traitName or type(traitName) ~= "string" or #traitName == 0 then return false end
-    local low = traitName:lower()
-    if DiscoveredData.TopTraitsMap[low] then return true end
-    for _, kw in ipairs(BestTraitKeywords) do
-        if low:find(kw) then return true end
-    end
-    return false
-end
-
-local function IsTopTierGrade(gradeName)
-    if not gradeName or type(gradeName) ~= "string" or #gradeName == 0 then return false end
-    local up = gradeName:upper():gsub("%s+", "")
-    return BestGradeList[up] == true
-end
-
-local function RunAutoBestTrait()
-    if not Remotes.RerollTrait then return end
-
-    if Config.AutoTeleportTraitShop then
-        local tPad = Workspace:FindFirstChild("TraitShopPad", true) or Workspace:FindFirstChild("TraitPad", true)
-        local zone = tPad and (tPad:FindFirstChild("Zone") or tPad:FindFirstChildOfClass("BasePart"))
-        if zone then
-            local hrp = GetHRP()
-            if hrp and (hrp.Position - zone.Position).Magnitude > 14 then
-                SafeTeleport(zone.CFrame + Vector3.new(0, 3.5, 0))
-                task.wait(0.12)
-            end
-        end
-    end
-
-    for _, podium in ipairs(GetMyPodiums()) do
-        if not Config.AutoRerollTrait then break end
-        local slot = tonumber(podium:GetAttribute("Slot")) or 1
-        local petUuid, currentTrait, _ = GetPodiumPetInfo(podium)
-
-        if petUuid and #petUuid >= 8 then
-            local hasTopTrait = IsTopTierTrait(currentTrait)
-            local shouldReroll = false
-
-            if Config.TraitTargetMode == "BestOnly" then
-                shouldReroll = not hasTopTrait
-            elseif Config.TraitTargetMode == "FillEmpty" then
-                shouldReroll = (currentTrait == nil or tostring(currentTrait):lower() == "none" or #tostring(currentTrait) == 0)
-            else
-                shouldReroll = true
-            end
-
-            if shouldReroll then
-                pcall(function()
-                    Remotes.RerollTrait:InvokeServer(petUuid, slot)
-                end)
-                pcall(function()
-                    Remotes.RerollTrait:InvokeServer(petUuid)
-                end)
-                task.wait(0.08)
-            end
-        end
-    end
-end
-
-local function RunAutoBestGrade()
-    if not Remotes.RollGrade then return end
-
-    for _, podium in ipairs(GetMyPodiums()) do
-        if not Config.AutoRollGrade then break end
-        local slot = tonumber(podium:GetAttribute("Slot")) or 1
-        local petUuid, _, currentGrade = GetPodiumPetInfo(podium)
-
-        if petUuid and #petUuid >= 8 then
-            local hasTopGrade = IsTopTierGrade(currentGrade)
-            local shouldRoll = false
-
-            if Config.GradeTargetMode == "BestOnly" then
-                shouldRoll = not hasTopGrade
-            else
-                shouldRoll = true
-            end
-
-            if shouldRoll then
-                pcall(function()
-                    Remotes.RollGrade:InvokeServer(petUuid, slot)
-                end)
-                pcall(function()
-                    Remotes.RollGrade:InvokeServer(petUuid)
-                end)
-                task.wait(0.08)
-            end
-        end
-    end
-end
-
-local function UpgradeSinglePodium(podium, autoTeleport)
-    if not podium then return end
-    local upPad = podium:FindFirstChild("UpgradePad")
-    local zone = upPad and upPad:FindFirstChild("Zone")
-    local prompt = zone and zone:FindFirstChild("StandPodiumUpgrade", true)
-
-    if zone and zone:IsA("BasePart") then
-        local hrp = GetHRP()
-        if autoTeleport and hrp and (hrp.Position - zone.Position).Magnitude > 12 then
-            SafeTeleport(zone.CFrame + Vector3.new(0, 3.5, 0))
-            task.wait(0.06)
-        end
-        if prompt then
-            SafeFirePrompt(prompt)
-        end
-    end
-
-    if Remotes.PodiumAction then
-        local slot = tonumber(podium:GetAttribute("Slot")) or 1
-        pcall(function()
-            Remotes.PodiumAction:FireServer("Upgrade", slot)
-        end)
-    end
-end
-
-local function RunAutoBuyAllUpgrades()
-    if not Remotes.BuyUpgrade then return end
-    for _, upId in ipairs(DiscoveredData.Upgrades) do
-        if IsValidKey(upId) then
-            pcall(function()
-                Remotes.BuyUpgrade:InvokeServer(upId)
-            end)
-            task.wait(0.02)
-        end
-    end
-
-    if Config.AutoBuyAutoCollect then
-        local plot = GetMyPlot()
-        local autoCollectBtn = plot and plot:FindFirstChild("AutoCollectPad", true)
-        local btnPart = autoCollectBtn and (autoCollectBtn:FindFirstChild("Button") or autoCollectBtn:FindFirstChild("Zone") or autoCollectBtn)
-        if btnPart and btnPart:IsA("BasePart") then
-            local hrp = GetHRP()
-            if hrp and typeof(firetouchinterest) == "function" then
-                pcall(function()
-                    firetouchinterest(hrp, btnPart, 0)
-                    firetouchinterest(hrp, btnPart, 1)
-                end)
-            end
-        end
-    end
-end
-
-local function RunAutoBuyRebirthUpgrades()
-    if not Remotes.UpgradeRebirthStat then return end
-    for _, rStat in ipairs(DiscoveredData.RebirthStats) do
-        if IsValidKey(rStat) then
-            pcall(function()
-                Remotes.UpgradeRebirthStat:InvokeServer(rStat)
-            end)
-            task.wait(0.02)
-        end
-    end
-end
-
-local function RunAutoBuyEventShops()
-    if Config.AutoBuyCandyShop and Remotes.BuyCandyShop then
-        for _, cItem in ipairs(DiscoveredData.CandyShopItems) do
-            if IsValidKey(cItem) then
-                pcall(function() Remotes.BuyCandyShop:InvokeServer(cItem) end)
-                task.wait(0.02)
-            end
-        end
-    end
-    if Config.AutoBuyQuestShop and Remotes.BuyQuestShop then
-        for _, qItem in ipairs(DiscoveredData.QuestShopItems) do
-            if IsValidKey(qItem) then
-                pcall(function() Remotes.BuyQuestShop:InvokeServer(qItem) end)
-                task.wait(0.02)
-            end
-        end
-    end
-end
-
--- ============================================================================
--- 7. KLAIM 3 RAHASIA DADU EMAS & HALLOWEEN CANDY
--- ============================================================================
-local SecretStashLocations = {
-    Alley = Vector3.new(198.8, 328.2, -67.1),
-    TowerTop = Vector3.new(158.5, 396.9, 87.7),
-    Hidden = Vector3.new(-281.2, 316.3, 212.2),
-}
-
-local function ClaimAllSecretStashes()
-    local hrp = GetHRP()
-    if not hrp then return end
-    local originalCFrame = hrp.CFrame
-
-    for name, pos in pairs(SecretStashLocations) do
-        local model = Workspace:FindFirstChild(name .. "Secret", true)
-        local goldenDice = model and model:FindFirstChild("GoldenDice")
-        local prompt = goldenDice and goldenDice:FindFirstChildOfClass("ProximityPrompt")
-
-        if not prompt then
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("ProximityPrompt") and obj.Parent and obj.Parent.Name == "GoldenDice" then
-                    local pPos = obj.Parent.Position
-                    if (pPos - pos).Magnitude < 10 then
-                        prompt = obj
-                        break
-                    end
-                end
-            end
-        end
-
-        SafeTeleport(pos + Vector3.new(0, 3, 0))
-        task.wait(0.2)
-        if prompt then
-            SafeFirePrompt(prompt)
-            task.wait(0.15)
-        end
-    end
-
-    task.wait(0.2)
-    SafeTeleport(originalCFrame)
-end
-
-local function CollectHalloweenCandies()
-    local hrp = GetHRP()
-    if not hrp then return end
-
-    local candyDropsFolder = Workspace:FindFirstChild("CandyDrops") or Workspace:FindFirstChild("CandyRain") or Workspace:FindFirstChild("Halloween")
-    if candyDropsFolder then
-        for _, candy in ipairs(candyDropsFolder:GetChildren()) do
-            if candy:IsA("BasePart") or candy:IsA("MeshPart") then
-                if Config.AutoTeleportCandy then
-                    SafeTeleport(candy.CFrame)
-                    task.wait(0.04)
-                end
-                if typeof(firetouchinterest) == "function" then
-                    pcall(function()
-                        firetouchinterest(hrp, candy, 0)
-                        firetouchinterest(hrp, candy, 1)
-                    end)
-                end
-                local p = candy:FindFirstChildOfClass("ProximityPrompt")
-                if p then SafeFirePrompt(p) end
-            end
-        end
-    end
-
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        if (obj.Name:find("Candy") or obj.Name:find("Permen")) and (obj:IsA("BasePart") or obj:IsA("MeshPart")) then
-            if typeof(firetouchinterest) == "function" then
-                pcall(function()
-                    firetouchinterest(hrp, obj, 0)
-                    firetouchinterest(hrp, obj, 1)
-                end)
-            end
-        end
-    end
-
-    if Remotes.CandyClaim and Remotes.CandyClaim:IsA("RemoteEvent") then
-        for _, token in ipairs(DiscoveredData.ValidCandyTokens) do
-            pcall(function() Remotes.CandyClaim:FireServer(token) end)
-        end
-    end
-end
-
--- ============================================================================
--- 8. SISTEM AUTO MENARA (TOWER COMBAT & STAGE SELECTOR)
--- ============================================================================
-local function GetTargetTowerStage()
-    if Config.TowerStageMode == "Highest" then
-        return math.max(1, Config.HighestUnlockedStage)
-    end
-    return math.max(1, Config.SelectedStage)
-end
-
-local function StartTowerStage(stageNum)
-    if not Remotes.StartTower then return false end
-    local target = stageNum or GetTargetTowerStage()
-
-    if Config.AutoTeleportToTowerPad then
-        local towerModel = Workspace:FindFirstChild("Tower") or Workspace:FindFirstChild("Menara")
-        local enterPad = towerModel and (towerModel:FindFirstChild("EnterPad") or towerModel:FindFirstChild("Pad") or towerModel:FindFirstChild("Zone"))
-        if enterPad and enterPad:IsA("BasePart") then
-            local hrp = GetHRP()
-            if hrp and (hrp.Position - enterPad.Position).Magnitude > 16 then
-                SafeTeleport(enterPad.CFrame + Vector3.new(0, 3.5, 0))
-                task.wait(0.12)
-            end
-            local prompt = enterPad:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then SafeFirePrompt(prompt) end
-        end
-    end
-
-    local ok1 = pcall(function() Remotes.StartTower:InvokeServer(target) end)
-    if not ok1 then
-        pcall(function() Remotes.StartTower:FireServer(target) end)
-    end
-    pcall(function() Remotes.StartTower:InvokeServer(tostring(target)) end)
-    pcall(function() Remotes.StartTower:InvokeServer(tonumber(target), "Solo") end)
-    return true
-end
-
-local function AutoClickTowerGUI(stageNum)
-    local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pGui then return false end
-
-    for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and (g.Name:find("Tower") or g.Name:find("Menara") or g.Name:find("Dungeon")) then
-            for _, desc in ipairs(g:GetDescendants()) do
-                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-                    local txt = (desc:IsA("TextButton") and desc.Text:lower()) or ""
-                    if txt:find("start") or txt:find("mulai") or txt:find("battle") or txt:find("tarung") or txt:find("fight") or txt:find("masuk") then
-                        FireGuiButton(desc)
-                    elseif stageNum and (txt == tostring(stageNum) or txt:find("stage " .. tostring(stageNum)) or txt:find("lantai " .. tostring(stageNum))) then
-                        FireGuiButton(desc)
-                    end
-                end
-            end
-        end
-    end
-    return true
-end
-
--- Listener Event Menara
-if Remotes.TowerEvent and Remotes.TowerEvent:IsA("RemoteEvent") then
-    Remotes.TowerEvent.OnClientEvent:Connect(function(eventType, payload)
-        if typeof(eventType) == "string" then
-            local low = eventType:lower()
-            if low:find("start") or low:find("enter") or low:find("floor") then
-                TowerRuntime.InTower = true
-                if type(payload) == "table" and payload.Floor then
-                    TowerRuntime.CurrentFloor = tonumber(payload.Floor) or TowerRuntime.CurrentFloor
-                end
-            elseif low:find("end") or low:find("finish") or low:find("leave") or low:find("victory") or low:find("defeat") then
-                TowerRuntime.InTower = false
-            end
-        end
+-- Anti AFK
+if Config.AntiAFK then
+    LocalPlayer.Idled:Connect(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
     end)
 end
 
 -- ============================================================================
--- 9. TAMPILAN UI CYBER-BLUE EDITION
+-- 8. USER INTERFACE (CYBER-BLUE EDITION // ROCKSTAR HUB v7.5)
 -- ============================================================================
+local TweenService = game:GetService("TweenService")
+
 local Theme = {
     Background = Color3.fromRGB(11, 16, 26),
-    Sidebar    = Color3.fromRGB(15, 23, 42),
-    Header     = Color3.fromRGB(13, 20, 36),
-    Element    = Color3.fromRGB(19, 31, 56),
-    Border     = Color3.fromRGB(24, 43, 77),
-    Accent     = Color3.fromRGB(0, 215, 255),
-    AccentDim  = Color3.fromRGB(0, 140, 180),
-    TextMain   = Color3.fromRGB(240, 246, 252),
-    TextDim    = Color3.fromRGB(139, 155, 180),
-    Success    = Color3.fromRGB(56, 239, 125),
-    Warning    = Color3.fromRGB(255, 170, 0),
-    Hover      = Color3.fromRGB(26, 44, 80),
+    Header = Color3.fromRGB(16, 24, 40),
+    Sidebar = Color3.fromRGB(14, 20, 32),
+    Card = Color3.fromRGB(19, 29, 48),
+    Border = Color3.fromRGB(30, 58, 95),
+    Accent = Color3.fromRGB(0, 180, 255),
+    AccentHover = Color3.fromRGB(50, 205, 255),
+    ActiveGreen = Color3.fromRGB(0, 230, 130),
+    InactiveRed = Color3.fromRGB(235, 65, 85),
+    TextMain = Color3.fromRGB(235, 245, 255),
+    TextSub = Color3.fromRGB(130, 155, 185),
 }
 
-local OldGui = CoreGui:FindFirstChild("RockstarHubUI") or (LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("RockstarHubUI"))
-if OldGui then OldGui:Destroy() end
-
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarHubUI"
+ScreenGui.Name = "RockstarHub_PutarHewan_v7_5"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-pcall(function() ScreenGui.Parent = CoreGui end)
-if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+pcall(function()
+    if syn and syn.protect_gui then
+        syn.protect_gui(ScreenGui)
+        ScreenGui.Parent = CoreGui
+    elseif gethui then
+        ScreenGui.Parent = gethui()
+    else
+        ScreenGui.Parent = CoreGui
+    end
+end)
 
--- Circular Floating Toggle Button (R★)
+if not ScreenGui.Parent then
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+-- Floating Toggle Button (R★)
 local FloatingToggle = Instance.new("TextButton")
-FloatingToggle.Name = "RockstarToggle"
-FloatingToggle.Size = UDim2.new(0, 48, 0, 48)
-FloatingToggle.Position = UDim2.new(0.02, 0, 0.45, 0)
-FloatingToggle.BackgroundColor3 = Theme.Background
+FloatingToggle.Name = "FloatingToggle"
+FloatingToggle.Size = UDim2.new(0, 46, 0, 46)
+FloatingToggle.Position = UDim2.new(0, 16, 0.5, -23)
+FloatingToggle.BackgroundColor3 = Theme.Header
 FloatingToggle.Text = "R★"
 FloatingToggle.TextColor3 = Theme.Accent
 FloatingToggle.Font = Enum.Font.GothamBold
-FloatingToggle.TextSize = 18
-FloatingToggle.AutoButtonColor = false
+FloatingToggle.TextSize = 16
+FloatingToggle.BorderSizePixel = 0
 FloatingToggle.Parent = ScreenGui
 
 local FT_Corner = Instance.new("UICorner")
@@ -1425,10 +835,10 @@ MFStroke.Color = Theme.Border
 MFStroke.Thickness = 1.2
 MFStroke.Parent = MainFrame
 
--- Draggable MainFrame
+-- Draggable MainFrame (PC & Mobile / Touch Support)
 local draggingMF, dragStartMF, startPosMF
 MainFrame.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 and input.Position.Y - MainFrame.AbsolutePosition.Y <= 40 then
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and input.Position.Y - MainFrame.AbsolutePosition.Y <= 40 then
         draggingMF = true
         dragStartMF = input.Position
         startPosMF = MainFrame.Position
@@ -1441,7 +851,7 @@ MainFrame.InputBegan:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if draggingMF and input.UserInputType == Enum.UserInputType.MouseMovement then
+    if draggingMF and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStartMF
         MainFrame.Position = UDim2.new(startPosMF.X.Scale, startPosMF.X.Offset + delta.X, startPosMF.Y.Scale, startPosMF.Y.Offset + delta.Y)
     end
@@ -1451,12 +861,12 @@ FloatingToggle.MouseButton1Click:Connect(function()
     MainFrame.Visible = not MainFrame.Visible
 end)
 
--- Top Header Bar
+-- Top Header Bar (100% FIXED: Parent ke MainFrame)
 local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 42)
 Header.BackgroundColor3 = Theme.Header
 Header.BorderSizePixel = 0
-Header.Parent = Header
+Header.Parent = MainFrame
 
 local HeaderStroke = Instance.new("Frame")
 HeaderStroke.Size = UDim2.new(1, 0, 0, 1)
@@ -1477,35 +887,39 @@ Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
 local VersionBadge = Instance.new("TextLabel")
-VersionBadge.Size = UDim2.new(0, 130, 0, 22)
-VersionBadge.Position = UDim2.new(0, 340, 0.5, -11)
-VersionBadge.BackgroundColor3 = Theme.Element
-VersionBadge.Text = "v7.5 • ANTI-SWITCH"
+VersionBadge.Size = UDim2.new(0, 80, 0, 20)
+VersionBadge.Position = UDim2.new(0, 340, 0.5, -10)
+VersionBadge.BackgroundColor3 = Theme.Card
+VersionBadge.Text = "v7.5 CYBER"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
-VersionBadge.TextSize = 11
+VersionBadge.TextSize = 10
 VersionBadge.Parent = Header
+
 local VBCorner = Instance.new("UICorner")
-VBCorner.CornerRadius = UDim.new(0, 5)
+VBCorner.CornerRadius = UDim.new(0, 4)
 VBCorner.Parent = VersionBadge
 
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 30, 0, 30)
-CloseBtn.Position = UDim2.new(1, -36, 0.5, -15)
-CloseBtn.BackgroundColor3 = Theme.Element
+CloseBtn.Size = UDim2.new(0, 32, 0, 32)
+CloseBtn.Position = UDim2.new(1, -38, 0.5, -16)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 60)
 CloseBtn.Text = "✕"
-CloseBtn.TextColor3 = Theme.TextDim
+CloseBtn.TextColor3 = Theme.TextSub
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 13
+CloseBtn.BorderSizePixel = 0
 CloseBtn.Parent = Header
+
 local CBCorner = Instance.new("UICorner")
 CBCorner.CornerRadius = UDim.new(0, 6)
 CBCorner.Parent = CloseBtn
+
 CloseBtn.MouseButton1Click:Connect(function()
     MainFrame.Visible = false
 end)
 
--- Left Sidebar Navigation
+-- Sidebar Tabs
 local Sidebar = Instance.new("Frame")
 Sidebar.Size = UDim2.new(0, 155, 1, -42)
 Sidebar.Position = UDim2.new(0, 0, 0, 42)
@@ -1513,27 +927,22 @@ Sidebar.BackgroundColor3 = Theme.Sidebar
 Sidebar.BorderSizePixel = 0
 Sidebar.Parent = MainFrame
 
-local SideBorder = Instance.new("Frame")
-SideBorder.Size = UDim2.new(0, 1, 1, 0)
-SideBorder.Position = UDim2.new(1, -1, 0, 0)
-SideBorder.BackgroundColor3 = Theme.Border
-SideBorder.BorderSizePixel = 0
-SideBorder.Parent = Sidebar
+local SidebarStroke = Instance.new("Frame")
+SidebarStroke.Size = UDim2.new(0, 1, 1, 0)
+SidebarStroke.Position = UDim2.new(1, -1, 0, 0)
+SidebarStroke.BackgroundColor3 = Theme.Border
+SidebarStroke.BorderSizePixel = 0
+SidebarStroke.Parent = Sidebar
 
-local NavList = Instance.new("ScrollingFrame")
-NavList.Size = UDim2.new(1, 0, 1, -10)
-NavList.Position = UDim2.new(0, 0, 0, 5)
-NavList.BackgroundTransparency = 1
-NavList.ScrollBarThickness = 2
-NavList.ScrollBarImageColor3 = Theme.AccentDim
-NavList.CanvasSize = UDim2.new(0, 0, 0, 320)
-NavList.Parent = Sidebar
+local SidebarList = Instance.new("UIListLayout")
+SidebarList.Padding = UDim.new(0, 6)
+SidebarList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SidebarList.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarList.Parent = Sidebar
 
-local NavLayout = Instance.new("UIListLayout")
-NavLayout.SortOrder = Enum.SortOrder.LayoutOrder
-NavLayout.Padding = UDim.new(0, 3)
-NavLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-NavLayout.Parent = NavList
+local SidebarPadding = Instance.new("UIPadding")
+SidebarPadding.PaddingTop = UDim.new(0, 10)
+SidebarPadding.Parent = Sidebar
 
 -- Content Container
 local ContentContainer = Instance.new("Frame")
@@ -1542,751 +951,372 @@ ContentContainer.Position = UDim2.new(0, 155, 0, 42)
 ContentContainer.BackgroundTransparency = 1
 ContentContainer.Parent = MainFrame
 
-local Tabs = {}
-local NavButtons = {}
-local CurrentTab = nil
+local TabFrames = {}
+local TabButtons = {}
 
-local function CreateTab(name, icon, layoutOrder)
-    local NavBtn = Instance.new("TextButton")
-    NavBtn.Size = UDim2.new(1, -14, 0, 32)
-    NavBtn.BackgroundColor3 = Theme.Sidebar
-    NavBtn.Text = "   " .. icon .. "  " .. name
-    NavBtn.TextColor3 = Theme.TextDim
-    NavBtn.Font = Enum.Font.GothamMedium
-    NavBtn.TextSize = 12
-    NavBtn.TextXAlignment = Enum.TextXAlignment.Left
-    NavBtn.LayoutOrder = layoutOrder or 1
-    NavBtn.AutoButtonColor = false
-    NavBtn.Parent = NavList
+local TabDefs = {
+    { Id = "Roll", Name = "🎲 Putar & Pet" },
+    { Id = "Dice", Name = "🎲 Toko Dadu" },
+    { Id = "Upgrade", Name = "⚡ Peningkatan" },
+    { Id = "Tower", Name = "🏰 Menara" },
+    { Id = "Event", Name = "🎃 Halloween" },
+    { Id = "Log", Name = "📋 Konsol Log" },
+}
 
-    local NBCorner = Instance.new("UICorner")
-    NBCorner.CornerRadius = UDim.new(0, 6)
-    NBCorner.Parent = NavBtn
-
-    local TabPage = Instance.new("ScrollingFrame")
-    TabPage.Name = name .. "Tab"
-    TabPage.Size = UDim2.new(1, -16, 1, -12)
-    TabPage.Position = UDim2.new(0, 8, 0, 6)
-    TabPage.BackgroundTransparency = 1
-    TabPage.ScrollBarThickness = 3
-    TabPage.ScrollBarImageColor3 = Theme.AccentDim
-    TabPage.Visible = false
-    TabPage.CanvasSize = UDim2.new(0, 0, 0, 480)
-    TabPage.Parent = ContentContainer
-
-    local PageLayout = Instance.new("UIListLayout")
-    PageLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    PageLayout.Padding = UDim.new(0, 7)
-    PageLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    PageLayout.Parent = TabPage
-
-    Tabs[name] = TabPage
-    NavButtons[name] = NavBtn
-
-    local function Activate()
-        for tabName, page in pairs(Tabs) do
-            page.Visible = (tabName == name)
-            local btn = NavButtons[tabName]
-            if tabName == name then
-                btn.BackgroundColor3 = Theme.Element
-                btn.TextColor3 = Theme.Accent
-                btn.Font = Enum.Font.GothamBold
-            else
-                btn.BackgroundColor3 = Theme.Sidebar
-                btn.TextColor3 = Theme.TextDim
-                btn.Font = Enum.Font.GothamMedium
-            end
+local function SwitchTab(tabId)
+    for id, frame in pairs(TabFrames) do
+        frame.Visible = (id == tabId)
+    end
+    for id, btn in pairs(TabButtons) do
+        if id == tabId then
+            btn.BackgroundColor3 = Theme.Card
+            btn.TextColor3 = Theme.Accent
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
+            btn.TextColor3 = Theme.TextSub
         end
-        CurrentTab = name
     end
-
-    NavBtn.MouseButton1Click:Connect(Activate)
-
-    -- Builder Tools untuk Konten
-    local ComponentFactory = {}
-
-    function ComponentFactory:AddToggle(title, defaultState, callback)
-        local Row = Instance.new("Frame")
-        Row.Size = UDim2.new(1, -10, 0, 34)
-        Row.BackgroundColor3 = Theme.Element
-        Row.Parent = TabPage
-
-        local RCorner = Instance.new("UICorner")
-        RCorner.CornerRadius = UDim.new(0, 6)
-        RCorner.Parent = Row
-
-        local RStroke = Instance.new("UIStroke")
-        RStroke.Color = Theme.Border
-        RStroke.Thickness = 1
-        RStroke.Parent = Row
-
-        local Lbl = Instance.new("TextLabel")
-        Lbl.Size = UDim2.new(1, -55, 1, 0)
-        Lbl.Position = UDim2.new(0, 10, 0, 0)
-        Lbl.BackgroundTransparency = 1
-        Lbl.Text = title
-        Lbl.TextColor3 = Theme.TextMain
-        Lbl.Font = Enum.Font.GothamMedium
-        Lbl.TextSize = 12
-        Lbl.TextXAlignment = Enum.TextXAlignment.Left
-        Lbl.Parent = Row
-
-        local Switch = Instance.new("TextButton")
-        Switch.Size = UDim2.new(0, 36, 0, 20)
-        Switch.Position = UDim2.new(1, -44, 0.5, -10)
-        Switch.BackgroundColor3 = defaultState and Theme.Accent or Theme.Sidebar
-        Switch.Text = ""
-        Switch.Parent = Row
-
-        local SCorner = Instance.new("UICorner")
-        SCorner.CornerRadius = UDim.new(1, 0)
-        SCorner.Parent = Switch
-
-        local Dot = Instance.new("Frame")
-        Dot.Size = UDim2.new(0, 14, 0, 14)
-        Dot.Position = defaultState and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-        Dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        Dot.Parent = Switch
-        local DCorner = Instance.new("UICorner")
-        DCorner.CornerRadius = UDim.new(1, 0)
-        DCorner.Parent = Dot
-
-        local state = defaultState
-        local function SetToggle(val)
-            state = val
-            Switch.BackgroundColor3 = state and Theme.Accent or Theme.Sidebar
-            Dot.Position = state and UDim2.new(1, -17, 0.5, -7) or UDim2.new(0, 3, 0.5, -7)
-            if callback then callback(state) end
-        end
-
-        Switch.MouseButton1Click:Connect(function()
-            SetToggle(not state)
-        end)
-
-        return { Set = SetToggle, Get = function() return state end }
-    end
-
-    function ComponentFactory:AddButton(title, callback)
-        local Btn = Instance.new("TextButton")
-        Btn.Size = UDim2.new(1, -10, 0, 32)
-        Btn.BackgroundColor3 = Theme.Element
-        Btn.Text = title
-        Btn.TextColor3 = Theme.Accent
-        Btn.Font = Enum.Font.GothamBold
-        Btn.TextSize = 12
-        Btn.AutoButtonColor = true
-        Btn.Parent = TabPage
-
-        local BCorner = Instance.new("UICorner")
-        BCorner.CornerRadius = UDim.new(0, 6)
-        BCorner.Parent = Btn
-
-        local BStroke = Instance.new("UIStroke")
-        BStroke.Color = Theme.Border
-        BStroke.Thickness = 1.2
-        BStroke.Parent = Btn
-
-        Btn.MouseButton1Click:Connect(function()
-            if callback then callback() end
-        end)
-        return Btn
-    end
-
-    function ComponentFactory:AddSection(title)
-        local SecFrame = Instance.new("Frame")
-        SecFrame.Size = UDim2.new(1, -10, 0, 26)
-        SecFrame.BackgroundTransparency = 1
-        SecFrame.Parent = TabPage
-
-        local SecLbl = Instance.new("TextLabel")
-        SecLbl.Size = UDim2.new(1, 0, 1, 0)
-        SecLbl.BackgroundTransparency = 1
-        SecLbl.Text = "——  " .. title .. "  ——"
-        SecLbl.TextColor3 = Theme.Accent
-        SecLbl.Font = Enum.Font.GothamBold
-        SecLbl.TextSize = 11
-        SecLbl.TextXAlignment = Enum.TextXAlignment.Center
-        SecLbl.Parent = SecFrame
-    end
-
-    return ComponentFactory
 end
 
-local Tab1 = CreateTab("Roll & Dadu", "🎲", 1)
-local Tab2 = CreateTab("Peningkatan", "⬆️", 2)
-local Tab3 = CreateTab("Plot & Uang", "💰", 3)
-local Tab4 = CreateTab("Auto Menara", "🗼", 4)
-local Tab5 = CreateTab("Halloween", "🎃", 5)
-local Tab6 = CreateTab("Klaim & TP", "🎁", 6)
-local Tab7 = CreateTab("Log Status", "📍", 7)
+for idx, tab in ipairs(TabDefs) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 138, 0, 36)
+    btn.BackgroundColor3 = (idx == 1) and Theme.Card or Color3.fromRGB(16, 22, 34)
+    btn.Text = tab.Name
+    btn.TextColor3 = (idx == 1) and Theme.Accent or Theme.TextSub
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 11
+    btn.BorderSizePixel = 0
+    btn.LayoutOrder = idx
+    btn.Parent = Sidebar
 
--- ============================================================================
--- 10. KONTEN TAB 1: ROLL & DADU
--- ============================================================================
-Tab1:AddSection("Auto Roll & Pet")
-Tab1:AddToggle("⚡ Auto Roll Cepat (Tanpa Delay)", Config.AutoRoll, function(v) Config.AutoRoll = v end)
-Tab1:AddToggle("🐾 Auto Equip Pet Terkuat (Best Pets)", Config.AutoEquipBest, function(v) Config.AutoEquipBest = v end)
-Tab1:AddToggle("🧬 Auto Gabung Pet (Auto Fuse All)", Config.AutoFuse, function(v) Config.AutoFuse = v end)
-Tab1:AddToggle("🗑️ Auto Jual Pet Terlemah (Sell Weakest)", Config.AutoSellWeakest, function(v) Config.AutoSellWeakest = v end)
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
 
-Tab1:AddSection("Sistem Dadu v7.5 (Anti-Switch & True Luck)")
-Tab1:AddToggle("🛒 Auto Beli Stok Dadu Toko (Tanpa Mengganti Dadu)", Config.AutoBuyDiceOnly, function(v) Config.AutoBuyDiceOnly = v end)
-Tab1:AddToggle("🎲 Auto Pasang Dadu (Equip Dice)", Config.AutoEquipDice, function(v) Config.AutoEquipDice = v end)
-Tab1:AddToggle("🚫 Jangan Pakai Dadu Kekosongan (Skip Void Dice)", Config.SkipVoidDice, function(v) Config.SkipVoidDice = v end)
+    btn.MouseButton1Click:Connect(function()
+        SwitchTab(tab.Id)
+    end)
+    TabButtons[tab.Id] = btn
 
-local DiceCtrlRow = Instance.new("Frame")
-DiceCtrlRow.Size = UDim2.new(1, -10, 0, 72)
-DiceCtrlRow.BackgroundColor3 = Theme.Element
-DiceCtrlRow.Parent = Tabs["Roll & Dadu"]
-local DCRCorner = Instance.new("UICorner")
-DCRCorner.CornerRadius = UDim.new(0, 8)
-DCRCorner.Parent = DiceCtrlRow
+    local page = Instance.new("ScrollingFrame")
+    page.Size = UDim2.new(1, -16, 1, -16)
+    page.Position = UDim2.new(0, 8, 0, 8)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = Theme.Accent
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.Visible = (idx == 1)
+    page.Parent = ContentContainer
 
-local DiceModeBtn = Instance.new("TextButton")
-DiceModeBtn.Size = UDim2.new(1, -20, 0, 24)
-DiceModeBtn.Position = UDim2.new(0, 10, 0, 6)
-DiceModeBtn.BackgroundColor3 = Theme.Hover
-DiceModeBtn.Text = "Mode Dadu: [Auto-Best Luck] (Otomatis Terkuat)"
-DiceModeBtn.TextColor3 = Theme.Accent
-DiceModeBtn.Font = Enum.Font.GothamBold
-DiceModeBtn.TextSize = 11
-DiceModeBtn.Parent = DiceCtrlRow
-local DMB_Corner = Instance.new("UICorner")
-DMB_Corner.CornerRadius = UDim.new(0, 6)
-DMB_Corner.Parent = DiceModeBtn
+    local pageList = Instance.new("UIListLayout")
+    pageList.Padding = UDim.new(0, 8)
+    pageList.SortOrder = Enum.SortOrder.LayoutOrder
+    pageList.Parent = page
 
-local PrevDiceBtn = Instance.new("TextButton")
-PrevDiceBtn.Size = UDim2.new(0, 70, 0, 28)
-PrevDiceBtn.Position = UDim2.new(0, 10, 0, 36)
-PrevDiceBtn.BackgroundColor3 = Theme.Sidebar
-PrevDiceBtn.Text = "◀ Prev"
-PrevDiceBtn.TextColor3 = Theme.TextMain
-PrevDiceBtn.Font = Enum.Font.GothamBold
-PrevDiceBtn.TextSize = 11
-PrevDiceBtn.Parent = DiceCtrlRow
-local PDB_Corner = Instance.new("UICorner")
-PDB_Corner.CornerRadius = UDim.new(0, 6)
-PDB_Corner.Parent = PrevDiceBtn
-
-local DiceNameDisplay = Instance.new("TextLabel")
-DiceNameDisplay.Size = UDim2.new(1, -165, 0, 28)
-DiceNameDisplay.Position = UDim2.new(0, 83, 0, 36)
-DiceNameDisplay.BackgroundColor3 = Theme.Sidebar
-DiceNameDisplay.Text = "Dadu: Memuat..."
-DiceNameDisplay.TextColor3 = Theme.Success
-DiceNameDisplay.Font = Enum.Font.GothamBold
-DiceNameDisplay.TextSize = 11
-DiceNameDisplay.Parent = DiceCtrlRow
-local DND_Corner = Instance.new("UICorner")
-DND_Corner.CornerRadius = UDim.new(0, 6)
-DND_Corner.Parent = DiceNameDisplay
-
-local NextDiceBtn = Instance.new("TextButton")
-NextDiceBtn.Size = UDim2.new(0, 70, 0, 28)
-NextDiceBtn.Position = UDim2.new(1, -78, 0, 36)
-NextDiceBtn.BackgroundColor3 = Theme.Sidebar
-NextDiceBtn.Text = "Next ▶"
-NextDiceBtn.TextColor3 = Theme.TextMain
-NextDiceBtn.Font = Enum.Font.GothamBold
-NextDiceBtn.TextSize = 11
-NextDiceBtn.Parent = DiceCtrlRow
-local NDB_Corner = Instance.new("UICorner")
-NDB_Corner.CornerRadius = UDim.new(0, 6)
-NDB_Corner.Parent = NextDiceBtn
-
-local function FormatLuckNumber(num)
-    if not num or num <= 1 then return "1x" end
-    if num >= 1000000000000 then
-        return string.format("%.1fTx", num / 1000000000000)
-    elseif num >= 1000000000 then
-        return string.format("%.1fBx", num / 1000000000)
-    elseif num >= 1000000 then
-        return string.format("%.1fMx", num / 1000000)
-    elseif num >= 1000 then
-        return string.format("%.0fkx", num / 1000)
-    else
-        return string.format("%dx", math.floor(num))
-    end
+    TabFrames[tab.Id] = page
 end
+
+-- Helper Komponen UI: Card Container
+local function CreateCard(parent, titleText, height)
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(1, -4, 0, height or 100)
+    card.BackgroundColor3 = Theme.Card
+    card.BorderSizePixel = 0
+    card.AutomaticSize = height and Enum.AutomaticSize.None or Enum.AutomaticSize.Y
+    card.Parent = parent
+
+    local cCorner = Instance.new("UICorner")
+    cCorner.CornerRadius = UDim.new(0, 8)
+    cCorner.Parent = card
+
+    local cStroke = Instance.new("UIStroke")
+    cStroke.Color = Theme.Border
+    cStroke.Thickness = 1
+    cStroke.Parent = card
+
+    local cPadding = Instance.new("UIPadding")
+    cPadding.PaddingTop = UDim.new(0, 10)
+    cPadding.PaddingBottom = UDim.new(0, 10)
+    cPadding.PaddingLeft = UDim.new(0, 12)
+    cPadding.PaddingRight = UDim.new(0, 12)
+    cPadding.Parent = card
+
+    local cList = Instance.new("UIListLayout")
+    cList.Padding = UDim.new(0, 8)
+    cList.SortOrder = Enum.SortOrder.LayoutOrder
+    cList.Parent = card
+
+    if titleText then
+        local cTitle = Instance.new("TextLabel")
+        cTitle.Size = UDim2.new(1, 0, 0, 18)
+        cTitle.BackgroundTransparency = 1
+        cTitle.Text = string.upper(titleText)
+        cTitle.TextColor3 = Theme.Accent
+        cTitle.Font = Enum.Font.GothamBold
+        cTitle.TextSize = 10
+        cTitle.TextXAlignment = Enum.TextXAlignment.Left
+        cTitle.Parent = card
+    end
+
+    return card
+end
+
+-- Helper Komponen UI: Toggle Switch
+local function CreateToggle(parent, labelText, descText, configKey, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 36)
+    row.BackgroundTransparency = 1
+    row.Parent = parent
+
+    local textCol = Instance.new("Frame")
+    textCol.Size = UDim2.new(1, -60, 1, 0)
+    textCol.BackgroundTransparency = 1
+    textCol.Parent = row
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 18)
+    label.BackgroundTransparency = 1
+    label.Text = labelText
+    label.TextColor3 = Theme.TextMain
+    label.Font = Enum.Font.GothamMedium
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = textCol
+
+    if descText then
+        local desc = Instance.new("TextLabel")
+        desc.Size = UDim2.new(1, 0, 0, 14)
+        desc.Position = UDim2.new(0, 0, 0, 18)
+        desc.BackgroundTransparency = 1
+        desc.Text = descText
+        desc.TextColor3 = Theme.TextSub
+        desc.Font = Enum.Font.Gotham
+        desc.TextSize = 10
+        desc.TextXAlignment = Enum.TextXAlignment.Left
+        desc.Parent = textCol
+    end
+
+    local switch = Instance.new("TextButton")
+    switch.Size = UDim2.new(0, 48, 0, 24)
+    switch.Position = UDim2.new(1, -48, 0.5, -12)
+    switch.BackgroundColor3 = Config[configKey] and Theme.ActiveGreen or Theme.InactiveRed
+    switch.Text = Config[configKey] and "ON" or "OFF"
+    switch.TextColor3 = Color3.fromRGB(255, 255, 255)
+    switch.Font = Enum.Font.GothamBold
+    switch.TextSize = 10
+    switch.BorderSizePixel = 0
+    switch.Parent = row
+
+    local sCorner = Instance.new("UICorner")
+    sCorner.CornerRadius = UDim.new(1, 0)
+    sCorner.Parent = switch
+
+    switch.MouseButton1Click:Connect(function()
+        Config[configKey] = not Config[configKey]
+        switch.BackgroundColor3 = Config[configKey] and Theme.ActiveGreen or Theme.InactiveRed
+        switch.Text = Config[configKey] and "ON" or "OFF"
+        if callback then callback(Config[configKey]) end
+    end)
+
+    return row
+end
+
+-- ============================================================================
+-- 9. ISI TAB UI
+-- ============================================================================
+
+-- TAB 1: PUTAR & PET
+local p1Card = CreateCard(TabFrames["Roll"], "Otomatisasi Putar Hewan")
+CreateToggle(p1Card, "Auto Putar (Auto Roll)", "Putar gacha hewan peliharaan otomatis", "AutoRoll")
+CreateToggle(p1Card, "Auto Pasang Hewan Terbaik", "Pasang otomatis pet dengan bonus tertinggi", "AutoEquipBest")
+CreateToggle(p1Card, "Auto Gabung Hewan (Fuse)", "Gabungkan pet duplikat untuk menaikkan tier", "AutoFuse")
+
+local p1PlotCard = CreateCard(TabFrames["Roll"], "Otomatisasi Plot & Pendapatan")
+CreateToggle(p1PlotCard, "Auto Ambil Uang Plot", "Ambil tumpukan uang kas plot tanpa jalan kaki", "AutoCollectCash")
+CreateToggle(p1PlotCard, "Auto Treadmill", "Berlari di treadmill plot untuk menaikkan speed", "AutoTreadmill")
+
+-- TAB 2: TOKO DADU v7.5
+local p2Card = CreateCard(TabFrames["Dice"], "Mode Pemasangan Dadu (Anti Bentrok)")
+local DiceStatusLabel = Instance.new("TextLabel")
+DiceStatusLabel.Size = UDim2.new(1, 0, 0, 20)
+DiceStatusLabel.BackgroundTransparency = 1
+DiceStatusLabel.Text = "Dadu Terdeteksi: Membaca toko..."
+DiceStatusLabel.TextColor3 = Theme.AccentHover
+DiceStatusLabel.Font = Enum.Font.GothamMedium
+DiceStatusLabel.TextSize = 11
+DiceStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+DiceStatusLabel.Parent = p2Card
 
 local function UpdateDiceDisplay()
-    local list = DiscoveredData.VerifiedDice
-    if #list == 0 then
-        DiceNameDisplay.Text = "Dadu: (Memindai Toko Dadu...)"
-        return
+    local cards = GetDiceCardsFromGui()
+    for _, c in ipairs(cards) do
+        if c.Status == "equipped" then
+            DiceStatusLabel.Text = string.format("Dadu Aktif: %s (Tier: %s | 🍀 %sx)", c.Name, c.Tier, tostring(c.Luck))
+            return
+        end
     end
-
-    if Config.DiceMode == "AutoBest" then
-        local bestId = GetTargetDiceId()
-        local lk = (bestId and DiscoveredData.DiceLuckMap[bestId]) or 1
-        local disp = (bestId and DiscoveredData.DiceDisplayNameMap[bestId]) or tostring(bestId or "None")
-        DiceModeBtn.Text = "Mode: [Auto-Best Luck] (Otomatis Terkuat)"
-        DiceModeBtn.TextColor3 = Theme.Success
-        DiceNameDisplay.Text = string.format("Terbaik: %s (%s)", disp, FormatLuckNumber(lk))
-    else
-        DiceModeBtn.Text = "Mode: [Kunci Manual] (Hanya Dadu Pilihan)"
-        DiceModeBtn.TextColor3 = Theme.Warning
-        local curId = Config.LockedDiceId or list[Config.SelectedDiceIndex] or list[1]
-        local lk = (curId and DiscoveredData.DiceLuckMap[curId]) or 1
-        local disp = (curId and DiscoveredData.DiceDisplayNameMap[curId]) or tostring(curId or "None")
-        DiceNameDisplay.Text = string.format("Terkunci: %s (%s)", disp, FormatLuckNumber(lk))
-    end
+    DiceStatusLabel.Text = "Dadu Aktif: Tidak ada info di GUI"
 end
-UpdateDiceDisplayFunc = UpdateDiceDisplay
 
-DiceModeBtn.MouseButton1Click:Connect(function()
+local ModeSwitchBtn = Instance.new("TextButton")
+ModeSwitchBtn.Size = UDim2.new(1, 0, 0, 32)
+ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
+ModeSwitchBtn.Text = "Mode Dadu: " .. (Config.DiceMode == "AutoBest" and "🌟 Auto-Best Luck" or "🔒 Kunci Manual")
+ModeSwitchBtn.TextColor3 = Theme.Accent
+ModeSwitchBtn.Font = Enum.Font.GothamBold
+ModeSwitchBtn.TextSize = 11
+ModeSwitchBtn.BorderSizePixel = 0
+ModeSwitchBtn.Parent = p2Card
+
+local msbCorner = Instance.new("UICorner")
+msbCorner.CornerRadius = UDim.new(0, 6)
+msbCorner.Parent = ModeSwitchBtn
+
+ModeSwitchBtn.MouseButton1Click:Connect(function()
     if Config.DiceMode == "AutoBest" then
         Config.DiceMode = "Manual"
-        local list = DiscoveredData.VerifiedDice
-        if #list > 0 then
-            Config.LockedDiceId = list[Config.SelectedDiceIndex] or list[#list]
-        end
+        ModeSwitchBtn.Text = "Mode Dadu: 🔒 Kunci Manual (Dadu Terpilih)"
     else
         Config.DiceMode = "AutoBest"
-        Config.LockedDiceId = nil
+        ModeSwitchBtn.Text = "Mode Dadu: 🌟 Auto-Best Luck (Tertinggi)"
     end
-    UpdateDiceDisplay()
 end)
 
-PrevDiceBtn.MouseButton1Click:Connect(function()
-    local list = DiscoveredData.VerifiedDice
-    if #list == 0 then return end
-    Config.DiceMode = "Manual"
-    Config.SelectedDiceIndex = Config.SelectedDiceIndex - 1
-    if Config.SelectedDiceIndex < 1 then Config.SelectedDiceIndex = #list end
-    Config.LockedDiceId = list[Config.SelectedDiceIndex]
-    UpdateDiceDisplay()
-    EquipTargetDiceNow(true)
-end)
+CreateToggle(p2Card, "Auto Pasang Dadu (Auto-Equip)", "Pasang dadu sesuai mode (Auto-Best / Manual)", "AutoEquipDice")
+CreateToggle(p2Card, "Abaikan Dadu Kekosongan (Void)", "Cegah pakai dadu Void jika memiliki Solar/Lunar/Galaxy", "SkipVoidDice")
+CreateToggle(p2Card, "Hanya Beli Stok Dadu (Tanpa Ganti)", "Beli stok dadu tanpa mengganggu dadu di tangan", "AutoBuyDiceOnly")
 
-NextDiceBtn.MouseButton1Click:Connect(function()
-    local list = DiscoveredData.VerifiedDice
-    if #list == 0 then return end
-    Config.DiceMode = "Manual"
-    Config.SelectedDiceIndex = Config.SelectedDiceIndex + 1
-    if Config.SelectedDiceIndex > #list then Config.SelectedDiceIndex = 1 end
-    Config.LockedDiceId = list[Config.SelectedDiceIndex]
-    UpdateDiceDisplay()
-    EquipTargetDiceNow(true)
-end)
+local ForceEquipBtn = Instance.new("TextButton")
+ForceEquipBtn.Size = UDim2.new(1, 0, 0, 30)
+ForceEquipBtn.BackgroundColor3 = Color3.fromRGB(30, 65, 110)
+ForceEquipBtn.Text = "⚡ Paksa Pasang Dadu Terbaik Sekarang"
+ForceEquipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ForceEquipBtn.Font = Enum.Font.GothamBold
+ForceEquipBtn.TextSize = 11
+ForceEquipBtn.BorderSizePixel = 0
+ForceEquipBtn.Parent = p2Card
 
-Tab1:AddButton("🎯 Pasang Dadu Pilihan Sekarang", function()
+local febCorner = Instance.new("UICorner")
+febCorner.CornerRadius = UDim.new(0, 6)
+febCorner.Parent = ForceEquipBtn
+
+ForceEquipBtn.MouseButton1Click:Connect(function()
+    State.ManualOverrideUntil = 0
     EquipTargetDiceNow(true)
     UpdateDiceDisplay()
 end)
 
--- ============================================================================
--- 11. KONTEN TAB 2: PENINGKATAN & TRAIT
--- ============================================================================
-Tab2:AddSection("Auto Peningkatan Podium (Plot 6 / Milik Anda)")
-Tab2:AddToggle("🏗️ Auto Upgrade 16 Podium", Config.AutoUpgradePodium, function(v) Config.AutoUpgradePodium = v end)
-Tab2:AddToggle("📍 Auto Teleport ke UpgradePad Podium", Config.AutoTeleportUpgrade, function(v) Config.AutoTeleportUpgrade = v end)
+-- TAB 3: PENINGKATAN, TRAIT & REBIRTH
+local p3Card = CreateCard(TabFrames["Upgrade"], "Peningkatan Podium Plot")
+CreateToggle(p3Card, "Auto Tingkatkan 16 Podium", "Tingkatkan podium plot secara berurutan", "AutoUpgradePodium")
+CreateToggle(p3Card, "Teleport ke Podium saat Upgrade", "Mendekat otomatis ke podium saat ditingkatkan", "AutoTeleportUpgrade")
+CreateToggle(p3Card, "Auto Beli Semua Peningkatan", "Beli upgrade general yang telah dipelajari", "AutoBuyAllUpgrades")
+CreateToggle(p3Card, "Auto Beli Peningkatan Rebirth", "Beli peningkatan toko rebirth otomatis", "AutoBuyRebirthUpgrades")
+CreateToggle(p3Card, "Auto Rebirth", "Lakukan Rebirth otomatis saat persyaratan terpenuhi", "AutoRebirth")
 
-Tab2:AddSection("Auto Peningkatan Statistik Plot & Rebirth")
-Tab2:AddToggle("📈 Auto Beli Semua Upgrade Plot (Luck1..5, dll)", Config.AutoBuyAllUpgrades, function(v) Config.AutoBuyAllUpgrades = v end)
-Tab2:AddToggle("🔄 Auto Beli Rebirth Upgrade (RebirthStats)", Config.AutoBuyRebirthUpgrades, function(v) Config.AutoBuyRebirthUpgrades = v end)
+-- TAB 4: MENARA PERTARUNGAN & PILIH STAGE
+local p4Card = CreateCard(TabFrames["Tower"], "Pengaturan Menara Pertarungan")
+local StageLabel = Instance.new("TextLabel")
+StageLabel.Size = UDim2.new(1, 0, 0, 18)
+StageLabel.BackgroundTransparency = 1
+StageLabel.Text = "Stage Terpilih: " .. Config.SelectedStage
+StageLabel.TextColor3 = Theme.TextMain
+StageLabel.Font = Enum.Font.GothamMedium
+StageLabel.TextSize = 12
+StageLabel.TextXAlignment = Enum.TextXAlignment.Left
+StageLabel.Parent = p4Card
 
-Tab2:AddSection("Auto Trait & Grade Pet Terbaik (Podium)")
-Tab2:AddToggle("✨ Auto Reroll Trait Terbaik (Stop di Transcendent/Monarch)", Config.AutoRerollTrait, function(v) Config.AutoRerollTrait = v end)
-Tab2:AddToggle("🎖️ Auto Roll Grade Terbaik (Stop di S/SS/SSS/X)", Config.AutoRollGrade, function(v) Config.AutoRollGrade = v end)
-Tab2:AddToggle("🚪 Dekati TraitShopPad Otomatis", Config.AutoTeleportTraitShop, function(v) Config.AutoTeleportTraitShop = v end)
-
--- ============================================================================
--- 12. KONTEN TAB 3: PLOT & UANG
--- ============================================================================
-Tab3:AddSection("Pengumpulan Uang & Hadiah")
-Tab3:AddToggle("💵 Auto Kumpulkan Uang Plot (CollectPad)", Config.AutoCollectCash, function(v) Config.AutoCollectCash = v end)
-Tab3:AddToggle("🏃 Auto Treadmill (Lari Menambah Luck)", Config.AutoTreadmill, function(v) Config.AutoTreadmill = v end)
-Tab3:AddToggle("📺 Auto Lewati Iklan (WatchSkipAd)", Config.AutoWatchSkipAd, function(v) Config.AutoWatchSkipAd = v end)
-Tab3:AddToggle("🔄 Auto Rebirth (Kelahiran Kembali)", Config.AutoRebirth, function(v) Config.AutoRebirth = v end)
-
--- ============================================================================
--- 13. KONTEN TAB 4: AUTO MENARA
--- ============================================================================
-Tab4:AddSection("Kontrol Auto Menara / Tower")
-Tab4:AddToggle("🗼 Aktifkan Auto Menara", Config.AutoTower, function(v) Config.AutoTower = v end)
-Tab4:AddToggle("⚔️ Auto Tap Serangan Pertarungan", Config.AutoTapTowerCombat, function(v) Config.AutoTapTowerCombat = v end)
-Tab4:AddToggle("🔁 Auto Coba Lagi Jika Kalah (Retry)", Config.AutoRetryTower, function(v) Config.AutoRetryTower = v end)
-Tab4:AddToggle("❌ Tolak Hidupkan Kembali Berbayar", Config.AutoDeclineRevive, function(v) Config.AutoDeclineRevive = v end)
-
-Tab4:AddSection("Pemilihan Stage Menara")
-local StageCtrlRow = Instance.new("Frame")
-StageCtrlRow.Size = UDim2.new(1, -10, 0, 72)
-StageCtrlRow.BackgroundColor3 = Theme.Element
-StageCtrlRow.Parent = Tabs["Auto Menara"]
-local SCRCorner = Instance.new("UICorner")
-SCRCorner.CornerRadius = UDim.new(0, 8)
-SCRCorner.Parent = StageCtrlRow
-
-local StageModeBtn = Instance.new("TextButton")
-StageModeBtn.Size = UDim2.new(1, -20, 0, 24)
-StageModeBtn.Position = UDim2.new(0, 10, 0, 6)
-StageModeBtn.BackgroundColor3 = Theme.Hover
-StageModeBtn.Text = "Mode: [Pilihan Sendiri (Selected)]"
-StageModeBtn.TextColor3 = Theme.Accent
-StageModeBtn.Font = Enum.Font.GothamBold
-StageModeBtn.TextSize = 11
-StageModeBtn.Parent = StageCtrlRow
-local SMB_Corner = Instance.new("UICorner")
-SMB_Corner.CornerRadius = UDim.new(0, 6)
-SMB_Corner.Parent = StageModeBtn
+local StageControlRow = Instance.new("Frame")
+StageControlRow.Size = UDim2.new(1, 0, 0, 32)
+StageControlRow.BackgroundTransparency = 1
+StageControlRow.Parent = p4Card
 
 local PrevStageBtn = Instance.new("TextButton")
-PrevStageBtn.Size = UDim2.new(0, 65, 0, 28)
-PrevStageBtn.Position = UDim2.new(0, 10, 0, 36)
-PrevStageBtn.BackgroundColor3 = Theme.Sidebar
-PrevStageBtn.Text = "◀ -1"
-PrevStageBtn.TextColor3 = Theme.TextMain
+PrevStageBtn.Size = UDim2.new(0, 80, 1, 0)
+PrevStageBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
+PrevStageBtn.Text = "◀ Kurang"
+PrevStageBtn.TextColor3 = Theme.Accent
 PrevStageBtn.Font = Enum.Font.GothamBold
 PrevStageBtn.TextSize = 11
-PrevStageBtn.Parent = StageCtrlRow
-local PSB_Corner = Instance.new("UICorner")
-PSB_Corner.CornerRadius = UDim.new(0, 6)
-PSB_Corner.Parent = PrevStageBtn
+PrevStageBtn.BorderSizePixel = 0
+PrevStageBtn.Parent = StageControlRow
 
-local StageNumDisplay = Instance.new("TextLabel")
-StageNumDisplay.Size = UDim2.new(1, -220, 0, 28)
-StageNumDisplay.Position = UDim2.new(0, 80, 0, 36)
-StageNumDisplay.BackgroundColor3 = Theme.Sidebar
-StageNumDisplay.Text = "Target: Stage 1"
-StageNumDisplay.TextColor3 = Theme.Success
-StageNumDisplay.Font = Enum.Font.GothamBold
-StageNumDisplay.TextSize = 12
-StageNumDisplay.Parent = StageCtrlRow
-local SND_Corner = Instance.new("UICorner")
-SND_Corner.CornerRadius = UDim.new(0, 6)
-SND_Corner.Parent = StageNumDisplay
+local psCorner = Instance.new("UICorner")
+psCorner.CornerRadius = UDim.new(0, 6)
+psCorner.Parent = PrevStageBtn
 
 local NextStageBtn = Instance.new("TextButton")
-NextStageBtn.Size = UDim2.new(0, 65, 0, 28)
-NextStageBtn.Position = UDim2.new(1, -135, 0, 36)
-NextStageBtn.BackgroundColor3 = Theme.Sidebar
-NextStageBtn.Text = "+1 ▶"
-NextStageBtn.TextColor3 = Theme.TextMain
+NextStageBtn.Size = UDim2.new(0, 80, 1, 0)
+NextStageBtn.Position = UDim2.new(0, 90, 0, 0)
+NextStageBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
+NextStageBtn.Text = "Tambah ▶"
+NextStageBtn.TextColor3 = Theme.Accent
 NextStageBtn.Font = Enum.Font.GothamBold
 NextStageBtn.TextSize = 11
-NextStageBtn.Parent = StageCtrlRow
-local NSB_Corner = Instance.new("UICorner")
-NSB_Corner.CornerRadius = UDim.new(0, 6)
-NSB_Corner.Parent = NextStageBtn
+NextStageBtn.BorderSizePixel = 0
+NextStageBtn.Parent = StageControlRow
 
-local Plus10StageBtn = Instance.new("TextButton")
-Plus10StageBtn.Size = UDim2.new(0, 60, 0, 28)
-Plus10StageBtn.Position = UDim2.new(1, -68, 0, 36)
-Plus10StageBtn.BackgroundColor3 = Theme.Sidebar
-Plus10StageBtn.Text = "+10 ⏩"
-Plus10StageBtn.TextColor3 = Theme.TextMain
-Plus10StageBtn.Font = Enum.Font.GothamBold
-Plus10StageBtn.TextSize = 11
-Plus10StageBtn.Parent = StageCtrlRow
-local P10_Corner = Instance.new("UICorner")
-P10_Corner.CornerRadius = UDim.new(0, 6)
-P10_Corner.Parent = Plus10StageBtn
+local nsCorner = Instance.new("UICorner")
+nsCorner.CornerRadius = UDim.new(0, 6)
+nsCorner.Parent = NextStageBtn
 
 local function UpdateStageLabel()
-    if Config.TowerStageMode == "Highest" then
-        StageModeBtn.Text = "Mode: [Tertinggi Terbuka (Highest)]"
-        StageModeBtn.TextColor3 = Theme.Success
-        StageNumDisplay.Text = "Target: Stage " .. tostring(Config.HighestUnlockedStage)
-    else
-        StageModeBtn.Text = "Mode: [Pilihan Sendiri (Selected)]"
-        StageModeBtn.TextColor3 = Theme.Accent
-        StageNumDisplay.Text = "Target: Stage " .. tostring(Config.SelectedStage)
-    end
+    StageLabel.Text = "Stage Terpilih: " .. Config.SelectedStage .. " (Mode: " .. Config.TowerStageMode .. ")"
 end
 
-StageModeBtn.MouseButton1Click:Connect(function()
-    Config.TowerStageMode = (Config.TowerStageMode == "Selected") and "Highest" or "Selected"
-    UpdateStageLabel()
-end)
-
 PrevStageBtn.MouseButton1Click:Connect(function()
-    Config.TowerStageMode = "Selected"
-    Config.SelectedStage = math.max(1, Config.SelectedStage - 1)
-    UpdateStageLabel()
+    if Config.SelectedStage > 1 then
+        Config.SelectedStage = Config.SelectedStage - 1
+        UpdateStageLabel()
+    end
 end)
 
 NextStageBtn.MouseButton1Click:Connect(function()
-    Config.TowerStageMode = "Selected"
-    Config.SelectedStage = math.min(100, Config.SelectedStage + 1)
+    Config.SelectedStage = Config.SelectedStage + 1
     UpdateStageLabel()
 end)
 
-Plus10StageBtn.MouseButton1Click:Connect(function()
-    Config.TowerStageMode = "Selected"
-    Config.SelectedStage = math.min(100, Config.SelectedStage + 10)
-    UpdateStageLabel()
-end)
+CreateToggle(p4Card, "Auto Masuk & Selesaikan Menara", "Masuk ke menara dan jalankan auto combat", "AutoTower")
+CreateToggle(p4Card, "Auto Ketuk Serangan Cepat", "Kirim serangan cepat terus-menerus ke musuh menara", "AutoTapTowerCombat")
+CreateToggle(p4Card, "Tolak Tawaran Revive Robux", "Tolak jendela popup revive otomatis agar tidak macet", "AutoDeclineRevive")
 
-Tab4:AddButton("🚀 Masuk Menara Sekarang", function()
-    StartTowerStage(GetTargetTowerStage())
-end)
+-- TAB 5: HALLOWEEN EVENT & HADIAH
+local p5Card = CreateCard(TabFrames["Event"], "Event Halloween 2026")
+CreateToggle(p5Card, "Auto Ambil Permen Halloween", "Kumpulkan permen labu yang tersebar di map", "AutoClaimCandy")
+CreateToggle(p5Card, "Teleport ke Titik Permen", "Pindah langsung ke lokasi permen terdekat", "AutoTeleportCandy")
+CreateToggle(p5Card, "Auto Beli Toko Permen", "Tukarkan permen di Toko Candy Shop otomatis", "AutoBuyCandyShop")
 
--- ============================================================================
--- 14. KONTEN TAB 5: HALLOWEEN & RAHASIA
--- ============================================================================
-Tab5:AddSection("Event Halloween (Spooky)")
-Tab5:AddToggle("🍬 Auto Kumpulkan Permen (CandyRain / Drops)", Config.AutoClaimCandy, function(v) Config.AutoClaimCandy = v end)
-Tab5:AddToggle("⚡ Auto Teleport ke Jatuhan Permen", Config.AutoTeleportCandy, function(v) Config.AutoTeleportCandy = v end)
-Tab5:AddToggle("📦 Auto Beli Toko Permen (CandyShop & Crate)", Config.AutoBuyCandyShop, function(v) Config.AutoBuyCandyShop = v end)
-Tab5:AddToggle("📜 Auto Beli Toko Misi (QuestShop)", Config.AutoBuyQuestShop, function(v) Config.AutoBuyQuestShop = v end)
+local p5RewardCard = CreateCard(TabFrames["Event"], "Hadiah Gratis & Putar Roda")
+CreateToggle(p5RewardCard, "Auto Putar Roda Keberuntungan", "Putar Wheel of Fortune setiap putaran gratis siap", "AutoSpinWheel")
+CreateToggle(p5RewardCard, "Auto Klaim Semua Hadiah", "Klaim Daily, Peti Teman, Grup, Quest & Waktu Bermain", "AutoClaimRewards")
 
-Tab5:AddSection("3 Rahasia Dadu Emas Map")
-Tab5:AddButton("🏆 Klaim Semua Dadu Emas (Alley, Tower, Hidden)", function()
-    ClaimAllSecretStashes()
-end)
-
--- ============================================================================
--- 15. KONTEN TAB 6: KLAIM HADIAH & TELEPORT
--- ============================================================================
-Tab6:AddSection("Klaim Otomatis")
-Tab6:AddToggle("🎁 Auto Klaim Semua Hadiah (Daily, Quest, Playtime)", Config.AutoClaimRewards, function(v) Config.AutoClaimRewards = v end)
-Tab6:AddToggle("🎡 Auto Putar Roda Keberuntungan (SpinWheel)", Config.AutoSpinWheel, function(v) Config.AutoSpinWheel = v end)
-
-Tab6:AddSection("Teleport Lokasi Kunci Map")
-Tab6:AddButton("🏠 Teleport ke Plot Sendiri (Plot 6)", function()
-    local plot = GetMyPlot()
-    local spawnPad = plot and (plot:FindFirstChild("SpawnPad") or plot:FindFirstChild("Spawn") or plot:FindFirstChild("Floor1"))
-    if spawnPad then SafeTeleport(spawnPad.CFrame + Vector3.new(0, 3.5, 0)) end
-end)
-
-Tab6:AddButton("🎲 Teleport ke Toko Dadu (DiceShopPad)", function()
-    local dicePad = Workspace:FindFirstChild("DiceShopPad", true)
-    local zone = dicePad and dicePad:FindFirstChild("Zone")
-    if zone then SafeTeleport(zone.CFrame + Vector3.new(0, 3.5, 0)) end
-end)
-
-Tab6:AddButton("🍬 Teleport ke Toko Permen Halloween (CandyShop)", function()
-    local candyPad = Workspace:FindFirstChild("CandyShopPad", true)
-    local zone = candyPad and candyPad:FindFirstChild("Zone")
-    if zone then SafeTeleport(zone.CFrame + Vector3.new(0, 3.5, 0)) end
-end)
-
-Tab6:AddButton("🗼 Teleport ke Menara (TowerPad)", function()
-    local tower = Workspace:FindFirstChild("Tower", true) or Workspace:FindFirstChild("Menara", true)
-    if tower then SafeTeleport(tower.CFrame + Vector3.new(0, 3.5, 0)) end
-end)
-
--- ============================================================================
--- 16. KONTEN TAB 7: LOG & DIAGNOSTIK
--- ============================================================================
-Tab7:AddSection("Log Interaksi Remote & Diagnostik")
-local LogBox = Instance.new("TextLabel")
-LogBox.Size = UDim2.new(1, -10, 0, 320)
-LogBox.BackgroundColor3 = Theme.Sidebar
-LogBox.Text = "Memuat log diagnostik..."
-LogBox.TextColor3 = Theme.TextDim
-LogBox.Font = Enum.Font.Code
-LogBox.TextSize = 10
-LogBox.TextXAlignment = Enum.TextXAlignment.Left
-LogBox.TextYAlignment = Enum.TextYAlignment.Top
-LogBox.Parent = Tabs["Log Status"]
-local LBCorner = Instance.new("UICorner")
-LBCorner.CornerRadius = UDim.new(0, 6)
-LBCorner.Parent = LogBox
+-- TAB 6: KONSOL LOG REALTIME
+local p6Card = CreateCard(TabFrames["Log"], "Status Sistem & Aktivitas")
+local LogText = Instance.new("TextLabel")
+LogText.Size = UDim2.new(1, 0, 0, 160)
+LogText.BackgroundTransparency = 1
+LogText.Text = "Menunggu aktivitas..."
+LogText.TextColor3 = Theme.TextSub
+LogText.Font = Enum.Font.Code
+LogText.TextSize = 10
+LogText.TextXAlignment = Enum.TextXAlignment.Left
+LogText.TextYAlignment = Enum.TextYAlignment.Top
+LogText.Parent = p6Card
 
 local function RefreshLogDisplay()
-    local lines = {}
-    table.insert(lines, "=== LOG STATUS ROCKSTAR v7.5 (ANTI-SWITCH) ===")
-    table.insert(lines, "Plot Terdeteksi: Plot6 (Owner: 11818951686)")
-    table.insert(lines, "Stage Menara Terbuka: " .. tostring(Config.HighestUnlockedStage))
-    table.insert(lines, "Dadu Terverifikasi: " .. tostring(#DiscoveredData.VerifiedDice))
-    table.insert(lines, "Permen Event Terbaca: " .. tostring(#DiscoveredData.ValidCandyTokens))
-    table.insert(lines, "--------------------------------")
-    for i = 1, math.min(15, #LearningLogs) do
-        table.insert(lines, LearningLogs[i])
-    end
-    LogBox.Text = table.concat(lines, "\n")
+    LogText.Text = table.concat(State.LogBuffer, "\n")
 end
 
--- Buka tab pertama secara default
-Tabs["Roll & Dadu"].Visible = true
-NavButtons["Roll & Dadu"].BackgroundColor3 = Theme.Element
-NavButtons["Roll & Dadu"].TextColor3 = Theme.Accent
-NavButtons["Roll & Dadu"].Font = Enum.Font.GothamBold
-
--- ============================================================================
--- 17. LOOP LATAR BELAKANG INDEPENDEN
--- ============================================================================
-
--- Loop 1: Auto Roll
+-- Refresh berkala
 task.spawn(function()
     while true do
-        if Config.AutoRoll and Remotes.RequestRoll then
-            pcall(function() Remotes.RequestRoll:InvokeServer() end)
-        end
-        task.wait(Config.RollDelay)
+        pcall(RefreshLogDisplay)
+        pcall(UpdateDiceDisplay)
+        task.wait(2.0)
     end
 end)
 
--- Loop 2: Auto Collect Cash & Treadmill
-task.spawn(function()
-    while true do
-        if Config.AutoCollectCash then
-            local plot = GetMyPlot()
-            local hrp = GetHRP()
-            if plot and hrp then
-                for _, podium in ipairs(GetMyPodiums()) do
-                    local colPad = podium:FindFirstChild("CollectPad")
-                    if colPad and colPad:IsA("BasePart") then
-                        if typeof(firetouchinterest) == "function" then
-                            pcall(function()
-                                firetouchinterest(hrp, colPad, 0)
-                                firetouchinterest(hrp, colPad, 1)
-                            end)
-                        end
-                    end
-                end
-            end
-        end
-
-        if Config.AutoTreadmill then
-            local plot = GetMyPlot()
-            local tm = plot and plot:FindFirstChild("Treadmill")
-            local deck = tm and tm:FindFirstChild("Deck")
-            local promptAtt = deck and deck:FindFirstChild("PromptAnchor")
-            local prompt = promptAtt and promptAtt:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then SafeFirePrompt(prompt) end
-        end
-
-        if Config.AutoClaimCandy then
-            CollectHalloweenCandies()
-        end
-
-        task.wait(0.25)
-    end
-end)
-
--- Loop 3: Auto Buy Peningkatan Status & Toko
-task.spawn(function()
-    while true do
-        if Config.AutoBuyAllUpgrades then RunAutoBuyAllUpgrades() end
-        if Config.AutoBuyRebirthUpgrades then RunAutoBuyRebirthUpgrades() end
-        if Config.AutoBuyCandyShop or Config.AutoBuyQuestShop then RunAutoBuyEventShops() end
-        if Config.AutoBuyDiceOnly then RunBuyDiceStockOnly() end
-        task.wait(1.2)
-    end
-end)
-
--- Dedicated Thread: Auto-Equip Dadu Terbaik (Tenang, Anti-Spam & Anti-Bentrok)
-task.spawn(function()
-    while true do
-        if Config.AutoEquipDice and Config.DiceMode == "AutoBest" then
-            pcall(function()
-                EquipTargetDiceNow(false)
-            end)
-        end
-        task.wait(4.0) -- Evaluasi setiap 4 detik, bukan setiap detik
-    end
-end)
-
--- Loop 4: Auto Upgrade Podium
-task.spawn(function()
-    while true do
-        if Config.AutoUpgradePodium then
-            for _, podium in ipairs(GetMyPodiums()) do
-                if not Config.AutoUpgradePodium then break end
-                UpgradeSinglePodium(podium, Config.AutoTeleportUpgrade)
-                task.wait(0.08)
-            end
-        end
-        task.wait(1.5)
-    end
-end)
-
--- Loop 5: Auto Trait & Grade
-task.spawn(function()
-    while true do
-        if Config.AutoRerollTrait then RunAutoBestTrait() end
-        if Config.AutoRollGrade then RunAutoBestGrade() end
-        task.wait(1.2)
-    end
-end)
-
--- Loop 6: Auto Menara
-task.spawn(function()
-    while true do
-        if Config.AutoTower then
-            local targetStage = GetTargetTowerStage()
-            if Config.AutoRetryTower and Remotes.SetTowerAutoRetry then
-                pcall(function() Remotes.SetTowerAutoRetry:FireServer(true) end)
-            end
-            if Config.AutoDeclineRevive and Remotes.DeclineRevive then
-                pcall(function() Remotes.DeclineRevive:InvokeServer() end)
-            end
-            AutoClickTowerGUI(targetStage)
-
-            if not TowerRuntime.InTower then
-                StartTowerStage(targetStage)
-            else
-                if Config.AutoTapTowerCombat and typeof(VirtualUser) == "Instance" then
-                    pcall(function()
-                        VirtualUser:CaptureController()
-                        VirtualUser:Button1Down(Vector2.new(500, 500))
-                        task.wait(0.05)
-                        VirtualUser:Button1Up(Vector2.new(500, 500))
-                    end)
-                end
-            end
-        end
-        task.wait(0.8)
-    end
-end)
-
--- Loop 7: Klaim Hadiah & Anti AFK
-task.spawn(function()
-    while true do
-        if Config.AutoEquipBest and Remotes.EquipBestPets then
-            pcall(function() Remotes.EquipBestPets:InvokeServer() end)
-        end
-        if Config.AutoFuse and Remotes.FusePets then
-            pcall(function() Remotes.FusePets:InvokeServer() end)
-            pcall(function() Remotes.FusePets:InvokeServer("All") end)
-        end
-        if Config.AutoSellWeakest and Remotes.SellWeakest then
-            pcall(function() Remotes.SellWeakest:InvokeServer() end)
-        end
-        if Config.AutoSpinWheel and Remotes.SpinWheel then
-            pcall(function() Remotes.SpinWheel:InvokeServer() end)
-        end
-        if Config.AutoWatchSkipAd and Remotes.WatchSkipAd then
-            pcall(function() Remotes.WatchSkipAd:InvokeServer() end)
-        end
-        if Config.AutoRebirth and Remotes.Rebirth then
-            pcall(function() Remotes.Rebirth:InvokeServer() end)
-        end
-
-        if Config.AutoClaimRewards then
-            if Remotes.ClaimDaily then pcall(function() Remotes.ClaimDaily:InvokeServer() end) end
-            if Remotes.ClaimStarterQuest then pcall(function() Remotes.ClaimStarterQuest:InvokeServer() end) end
-            if Remotes.ClaimAllAchievements then pcall(function() Remotes.ClaimAllAchievements:InvokeServer() end) end
-            if Remotes.ClaimGroupChest then pcall(function() Remotes.ClaimGroupChest:InvokeServer() end) end
-            if Remotes.ClaimFriendChest then pcall(function() Remotes.ClaimFriendChest:InvokeServer() end) end
-            if Remotes.ClaimFreePet then pcall(function() Remotes.ClaimFreePet:InvokeServer() end) end
-            if Remotes.ClaimPlaytime then
-                for i = 1, 12 do pcall(function() Remotes.ClaimPlaytime:InvokeServer(i) end) end
-            end
-            if Remotes.ClaimQuest then
-                for i = 1, 15 do pcall(function() Remotes.ClaimQuest:InvokeServer(i) end) end
-            end
-        end
-
-        task.spawn(RefreshLogDisplay)
-        task.wait(3.0)
-    end
-end)
-
--- Anti AFK
-if Config.AntiAFK then
-    LocalPlayer.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
-    end)
-end
-
-task.delay(1, function()
-    UpdateDiceDisplay()
-    UpdateStageLabel()
-end)
-
-print("★ Rockstar Hub v7.5 (Anti-Switch & Universal Dice Shop) Berhasil Dijalankan! Tema: Cyber-Blue ★")
+print("★ ROCKSTAR HUB v7.5 - [🎃] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! ★")
