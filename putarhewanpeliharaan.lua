@@ -1,7 +1,7 @@
 -- ============================================================================
--- * ROCKSTAR HUB v8.1 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
+-- * ROCKSTAR HUB v8.2 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
 -- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v8.1:
+-- Update v8.2:
 --   [[OK]] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
 --   [[OK]] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
 --   [[OK]] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
@@ -56,7 +56,7 @@ local Config = {
     AutoSellWeakest = false,
     AutoSellAll = false,
 
-    -- Sistem Dadu v8.1
+    -- Sistem Dadu v8.2
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -638,32 +638,46 @@ local function AutoClickTowerGUI(stageNum)
 
     for _, g in ipairs(pGui:GetChildren()) do
         if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub") then
-            for _, desc in ipairs(g:GetDescendants()) do
-                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                    local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
-                    local bName = desc.Name:lower()
+            local gName = g.Name:lower()
+            -- Proteksi Ketat: Hanya periksa GUI Menara / Battle / Stage
+            local isTowerGui = gName:find("tower") or gName:find("stage") or gName:find("floor") or gName:find("battle") or gName:find("menara")
+            -- Anti-Robux & Anti-Komunitas: Abaikan toko, komunitas, robux, pass
+            local isBlacklisted = gName:find("shop") or gName:find("store") or gName:find("robux") or gName:find("pass") 
+                or gName:find("communit") or gName:find("audit") or gName:find("group") or gName:find("code")
 
-                    -- Klik tombol mulai / bertarung
-                    if bText:find("start") or bText:find("fight") or bText:find("battle") or bText:find("mulai") 
-                       or bText:find("tarung") or bText:find("masuk") or bText:find("play") or bText:find("enter") 
-                       or bText:find("retry") or bText:find("ulang") or bText:find("next") or bText:find("lanjut")
-                       or bName:find("start") or bName:find("fight") or bName:find("battle") or bName:find("enter") then
-                        pcall(function()
-                            if typeof(getconnections) == "function" then
-                                for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
-                                for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
-                            end
-                        end)
-                    end
+            if isTowerGui and not isBlacklisted then
+                for _, desc in ipairs(g:GetDescendants()) do
+                    if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                        local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                        local bName = desc.Name:lower()
 
-                    -- Klik tombol stage
-                    if stageNum and (bText == tostring(stageNum) or bName == "stage" .. tostring(stageNum) or bName == tostring(stageNum)) then
-                        pcall(function()
-                            if typeof(getconnections) == "function" then
-                                for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
-                                for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                        -- Jangan pernah klik tombol beli item atau verifikasi komunitas
+                        local isRobuxBtn = bText:find("robux") or bText:find("r%$") or bText:find("%$") or bText:find("buy") 
+                            or bText:find("beli") or bText:find("join") or bText:find("claim") or bName:find("buy") or bName:find("robux")
+
+                        if not isRobuxBtn then
+                            -- Klik tombol mulai menara
+                            if bText:find("fight") or bText:find("battle") or bText:find("tarung") or bText:find("masuk") 
+                               or (bText:find("start") and not bText:find("up"))
+                               or bName:find("fight") or bName:find("battle") or bName:find("start") or bName:find("enter") then
+                                pcall(function()
+                                    if typeof(getconnections) == "function" then
+                                        for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+                                        for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                                    end
+                                end)
                             end
-                        end)
+
+                            -- Klik tombol nomor stage
+                            if stageNum and (bText == tostring(stageNum) or bName == "stage" .. tostring(stageNum) or bName == tostring(stageNum)) then
+                                pcall(function()
+                                    if typeof(getconnections) == "function" then
+                                        for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+                                        for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                                    end
+                                end)
+                            end
+                        end
                     end
                 end
             end
@@ -962,53 +976,41 @@ task.spawn(function()
     end
 end)
 
--- Loop 6B: Fast Combat Tap di Menara (20 Clicks Per Second)
+-- Loop 6B: Fast Combat Tap di Menara (Aman, Tanpa Klik Layar Acak)
 task.spawn(function()
     while true do
         if Config.AutoTower and Config.AutoTapTowerCombat then
-            local cam = Workspace.CurrentCamera
-            local vp = cam and cam.ViewportSize or Vector2.new(800, 600)
-            local center = Vector2.new(vp.X / 2, vp.Y / 2)
+            -- 1. Panggil remote serangan resmi game
+            SafeCall("TowerAttack", false)
+            SafeCall("TowerTap", false)
 
-            -- 1. VirtualInputManager Click
-            if VIM then
-                pcall(function()
-                    VIM:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
-                    VIM:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
-                end)
-            end
-
-            -- 2. VirtualUser Click
-            pcall(function()
-                VirtualUser:CaptureController()
-                VirtualUser:Button1Down(center)
-                VirtualUser:Button1Up(center)
-            end)
-
-            -- 3. Klik tombol tap overlay di GUI jika ada
+            -- 2. Klik tombol tap / serang HANYA jika berada di dalam GUI pertarungan Menara
             pcall(function()
                 local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
                 if pGui then
-                    for _, desc in ipairs(pGui:GetDescendants()) do
-                        if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                            local txt = (desc:IsA("TextButton") and desc.Text:lower()) or ""
-                            local n = desc.Name:lower()
-                            if n:find("tap") or n:find("attack") or n:find("hit") or txt:find("tap") or txt:find("serang") then
-                                pcall(function()
-                                    if typeof(getconnections) == "function" then
-                                        for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
-                                        for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                    for _, g in ipairs(pGui:GetChildren()) do
+                        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub") then
+                            local gn = g.Name:lower()
+                            if gn:find("tower") or gn:find("battle") or gn:find("combat") then
+                                for _, desc in ipairs(g:GetDescendants()) do
+                                    if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                                        local txt = (desc:IsA("TextButton") and desc.Text:lower()) or ""
+                                        local n = desc.Name:lower()
+                                        if n:find("tap") or n:find("attack") or n:find("hit") or txt:find("tap") or txt:find("serang") then
+                                            if typeof(getconnections) == "function" then
+                                                for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+                                                for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
+                                            end
+                                        end
                                     end
-                                end)
+                                end
                             end
                         end
                     end
                 end
             end)
 
-            SafeCall("TowerAttack", false)
-            SafeCall("TowerTap", false)
-            task.wait(0.05)
+            task.wait(0.08)
         else
             task.wait(0.5)
         end
@@ -1137,49 +1139,6 @@ pcall(function()
     ScreenGui.IgnoreGuiInset = true
 end)
 
--- Floating Toggle Button (R*)
-local FloatingToggle = Instance.new("TextButton")
-FloatingToggle.Name = "FloatingToggle"
-FloatingToggle.Size = UDim2.new(0, 46, 0, 46)
-FloatingToggle.Position = UDim2.new(0, 16, 0.5, -23)
-FloatingToggle.BackgroundColor3 = Theme.Header
-FloatingToggle.Text = "R*"
-FloatingToggle.TextColor3 = Theme.Accent
-FloatingToggle.Font = Enum.Font.GothamBold
-FloatingToggle.TextSize = 16
-FloatingToggle.BorderSizePixel = 0
-FloatingToggle.Parent = ScreenGui
-
-local FT_Corner = Instance.new("UICorner")
-FT_Corner.CornerRadius = UDim.new(1, 0)
-FT_Corner.Parent = FloatingToggle
-
-local FT_Stroke = Instance.new("UIStroke")
-FT_Stroke.Color = Theme.Accent
-FT_Stroke.Thickness = 1.8
-FT_Stroke.Parent = FloatingToggle
-
-local draggingFT, dragStartFT, startPosFT
-FloatingToggle.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingFT = true
-        dragStartFT = input.Position
-        startPosFT = FloatingToggle.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingFT = false
-            end
-        end)
-    end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if draggingFT and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStartFT
-        FloatingToggle.Position = UDim2.new(startPosFT.X.Scale, startPosFT.X.Offset + delta.X, startPosFT.Y.Scale, startPosFT.Y.Offset + delta.Y)
-    end
-end)
-
 -- Main Hub Window (Mobile & Tablet Auto-Scaling)
 local cam = Workspace.CurrentCamera
 local vp = cam and cam.ViewportSize or Vector2.new(800, 600)
@@ -1193,6 +1152,8 @@ MainFrame.Position = UDim2.new(0.5, -winW / 2, 0.5, -winH / 2)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Visible = true
+MainFrame.Active = true
+MainFrame.ZIndex = 500
 MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 
@@ -1205,34 +1166,109 @@ MFStroke.Color = Theme.Border
 MFStroke.Thickness = 1.2
 MFStroke.Parent = MainFrame
 
-local draggingMF, dragStartMF, startPosMF
-MainFrame.InputBegan:Connect(function(input)
-    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and input.Position.Y - MainFrame.AbsolutePosition.Y <= 42 then
-        draggingMF = true
-        dragStartMF = input.Position
-        startPosMF = MainFrame.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingMF = false
-            end
-        end)
+local function ToggleMainFrame()
+    MainFrame.Visible = not MainFrame.Visible
+end
+
+-- Floating Toggle Button (R*)
+local FloatingToggle = Instance.new("TextButton")
+FloatingToggle.Name = "FloatingToggle"
+FloatingToggle.Size = UDim2.new(0, 48, 0, 48)
+FloatingToggle.Position = UDim2.new(0, 16, 0.5, -24)
+FloatingToggle.BackgroundColor3 = Theme.Header
+FloatingToggle.Text = "R*"
+FloatingToggle.TextColor3 = Theme.Accent
+FloatingToggle.Font = Enum.Font.GothamBold
+FloatingToggle.TextSize = 16
+FloatingToggle.BorderSizePixel = 0
+FloatingToggle.Active = true
+FloatingToggle.ZIndex = 1000
+FloatingToggle.Parent = ScreenGui
+
+local FT_Corner = Instance.new("UICorner")
+FT_Corner.CornerRadius = UDim.new(1, 0)
+FT_Corner.Parent = FloatingToggle
+
+local FT_Stroke = Instance.new("UIStroke")
+FT_Stroke.Color = Theme.Accent
+FT_Stroke.Thickness = 1.8
+FT_Stroke.Parent = FloatingToggle
+
+-- Dragging & Klik Responsif (PC Mouse & Mobile Touch)
+local isDraggingFT = false
+local dragStartFT = nil
+local startPosFT = nil
+local movedFarFT = false
+
+FloatingToggle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingFT = true
+        movedFarFT = false
+        dragStartFT = input.Position
+        startPosFT = FloatingToggle.Position
     end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if draggingMF and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+    if isDraggingFT and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStartFT
+        if delta.Magnitude > 6 then
+            movedFarFT = true
+            FloatingToggle.Position = UDim2.new(startPosFT.X.Scale, startPosFT.X.Offset + delta.X, startPosFT.Y.Scale, startPosFT.Y.Offset + delta.Y)
+        end
+    end
+end)
+
+local function HandleFTRelease(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        if isDraggingFT then
+            isDraggingFT = false
+            if not movedFarFT then
+                ToggleMainFrame()
+            end
+        end
+    end
+end
+
+UserInputService.InputEnded:Connect(HandleFTRelease)
+FloatingToggle.InputEnded:Connect(HandleFTRelease)
+FloatingToggle.MouseButton1Click:Connect(function()
+    if not movedFarFT then
+        ToggleMainFrame()
+    end
+end)
+pcall(function()
+    FloatingToggle.Activated:Connect(function()
+        if not movedFarFT then
+            ToggleMainFrame()
+        end
+    end)
+end)
+
+-- MainFrame Dragging
+local isDraggingMF = false
+local dragStartMF = nil
+local startPosMF = nil
+
+MainFrame.InputBegan:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and input.Position.Y - MainFrame.AbsolutePosition.Y <= 42 then
+        isDraggingMF = true
+        dragStartMF = input.Position
+        startPosMF = MainFrame.Position
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if isDraggingMF and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local delta = input.Position - dragStartMF
         MainFrame.Position = UDim2.new(startPosMF.X.Scale, startPosMF.X.Offset + delta.X, startPosMF.Y.Scale, startPosMF.Y.Offset + delta.Y)
     end
 end)
 
-local function ToggleMainFrame()
-    MainFrame.Visible = not MainFrame.Visible
-end
-
-FloatingToggle.MouseButton1Click:Connect(ToggleMainFrame)
-pcall(function()
-    FloatingToggle.Activated:Connect(ToggleMainFrame)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDraggingMF = false
+    end
 end)
 
 -- Top Header Bar
@@ -1264,7 +1300,7 @@ local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 80, 0, 20)
 VersionBadge.Position = UDim2.new(0, 340, 0.5, -10)
 VersionBadge.BackgroundColor3 = Theme.Card
-VersionBadge.Text = "v8.1 CYBER"
+VersionBadge.Text = "v8.2 CYBER"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 10
@@ -1758,5 +1794,5 @@ task.spawn(function()
     end
 end)
 
-Log("* ROCKSTAR HUB v8.1 DIMUAT LENGKAP *")
-print("* ROCKSTAR HUB v8.1 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
+Log("* ROCKSTAR HUB v8.2 DIMUAT LENGKAP *")
+print("* ROCKSTAR HUB v8.2 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
