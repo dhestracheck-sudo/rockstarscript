@@ -1,7 +1,7 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v6.0 - CYBER BLUE EDITION (100% NATIVE) ★
+-- ★ ROCKSTAR HUB v6.2 - CYBER BLUE EDITION (AUTO-UPGRADE PRECISION FIX) ★
 -- Game   : [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299)
--- Engine : Dibuat Presisi dari Data JSON Rockstar Dev Scanner v4.0
+-- Fitur  : Smart Podium Upgrade + Auto BuyUpgrade + Auto Roll + 3 Secret Dice
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -16,15 +16,18 @@ local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer or Players.PlayerAdded:Wait()
-local Remotes = ReplicatedStorage:WaitForChild("Shared", 10) and ReplicatedStorage.Shared:WaitForChild("Remotes", 10)
+local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
+local Remotes = Shared and Shared:WaitForChild("Remotes", 10)
 
 -- ============================================================================
--- 1. STATE & KONFIGURASI FITUR
+-- 1. STATE & DATA PEMBELAJARAN OTOMATIS (SELF-LEARNING + MODULE EXTRACTOR)
 -- ============================================================================
 local State = {
     AutoRoll = false,
     AutoCollectCash = false,
     AutoUpgradePodium = false,
+    AutoBuyUpgrades = false,
+    AutoBuyDice = false,
     AutoEquipBest = false,
     AutoTreadmill = false,
     AutoSpinWheel = false,
@@ -34,17 +37,39 @@ local State = {
     AutoRebirth = false,
     AutoSellWeakest = false,
     AutoCandyClaim = false,
-    WalkSpeed = 16,
     CustomSpeed = false,
 }
 
+-- Menyimpan ID Upgrade, RebirthStat, Dice, & format PodiumAction yang ditemukan otomatis
+local Discovered = {
+    UpgradeIds = {
+        "Luck", "RollSpeed", "Cooldown", "Cash", "Money", "Income",
+        "Multiplier", "Capacity", "Inventory", "Storage", "WalkSpeed",
+        "AutoRoll", "PetEquip", "PlotSlots"
+    },
+    RebirthStatIds = {
+        "Luck", "Cash", "Money", "RollSpeed", "Multiplier", "Capacity", "Income"
+    },
+    DiceIds = {},
+    LearnedPodiumArgs = nil,
+    LearnedUpgradeArgs = {},
+}
+
+local function AddUnique(list, val)
+    if val == nil then return end
+    for _, v in ipairs(list) do
+        if v == val then return end
+    end
+    table.insert(list, val)
+end
+
 -- ============================================================================
--- 2. FUNGSI HELPER PRESISI MAP (PLOT, PODIUM, PROMPT, & REMOTE)
+-- 2. FUNGSI REMOTE, PARSER UANG, & DETEKTOR PLOT PRESISI
 -- ============================================================================
 local function GetRemote(name)
     if not Remotes then
-        local sh = ReplicatedStorage:FindFirstChild("Shared")
-        Remotes = sh and sh:FindFirstChild("Remotes")
+        Shared = ReplicatedStorage:FindFirstChild("Shared")
+        Remotes = Shared and Shared:FindFirstChild("Remotes")
     end
     return Remotes and Remotes:FindFirstChild(name)
 end
@@ -69,7 +94,126 @@ local function SafeFire(remoteName, ...)
     end
 end
 
--- Cari Plot milik LocalPlayer berdasarkan atribut OwnerUserId
+-- Konversi teks uang (misal "$1.42T", "220k", "174") menjadi angka murni
+local SuffixMap = {
+    k = 1e3, m = 1e6, b = 1e9, t = 1e12,
+    qa = 1e15, qi = 1e18, sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33,
+    qd = 1e15
+}
+
+local function ParseMoney(val)
+    if type(val) == "number" then return val end
+    if type(val) ~= "string" then return 0 end
+    local clean = val:lower():gsub("[,%$%s]", ""):gsub("/s", "")
+    local numStr, suf = clean:match("^([%d%.]+)([a-z]*)$")
+    local num = tonumber(numStr)
+    if not num then return tonumber(clean) or 0 end
+    if suf and suf ~= "" and SuffixMap[suf] then
+        return num * SuffixMap[suf]
+    end
+    return num
+end
+
+local function GetPlayerMoney()
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    local mVal = ls and ls:FindFirstChild("Money")
+    if mVal then
+        return ParseMoney(mVal.Value)
+    end
+    return 0
+end
+
+-- Ekstrak semua ID Upgrade & Dice asli dari GetData dan ModuleScript di ReplicatedStorage.Shared
+local function ExtractGameConfigs()
+    -- 1. Cek dari GetData RemoteFunction
+    pcall(function()
+        local ok, data = SafeInvoke("GetData")
+        if ok and type(data) == "table" then
+            if type(data.Upgrades) == "table" then
+                for k, _ in pairs(data.Upgrades) do AddUnique(Discovered.UpgradeIds, k) end
+            end
+            if type(data.RebirthUpgrades) == "table" then
+                for k, _ in pairs(data.RebirthUpgrades) do AddUnique(Discovered.RebirthStatIds, k) end
+            end
+            if type(data.RebirthStats) == "table" then
+                for k, _ in pairs(data.RebirthStats) do AddUnique(Discovered.RebirthStatIds, k) end
+            end
+            if type(data.Dice) == "table" then
+                for k, _ in pairs(data.Dice) do AddUnique(Discovered.DiceIds, k) end
+            end
+        end
+    end)
+
+    -- 2. Cek dari semua ModuleScript di dalam ReplicatedStorage.Shared
+    if Shared then
+        for _, mod in ipairs(Shared:GetDescendants()) do
+            if mod:IsA("ModuleScript") then
+                local nLower = mod.Name:lower()
+                pcall(function()
+                    local ok, tbl = pcall(require, mod)
+                    if ok and type(tbl) == "table" then
+                        if nLower:find("upgrade") then
+                            for k, v in pairs(tbl) do
+                                if type(k) == "string" then AddUnique(Discovered.UpgradeIds, k) end
+                                if type(v) == "table" and type(v.Id) == "string" then AddUnique(Discovered.UpgradeIds, v.Id) end
+                            end
+                        elseif nLower:find("rebirth") then
+                            for k, v in pairs(tbl) do
+                                if type(k) == "string" then AddUnique(Discovered.RebirthStatIds, k) end
+                                if type(v) == "table" and type(v.Id) == "string" then AddUnique(Discovered.RebirthStatIds, v.Id) end
+                            end
+                        elseif nLower:find("dice") then
+                            for k, v in pairs(tbl) do
+                                if type(k) == "string" then AddUnique(Discovered.DiceIds, k) end
+                                if type(v) == "table" and type(v.Id) == "string" then AddUnique(Discovered.DiceIds, v.Id) end
+                            end
+                        end
+                    end
+                end)
+            end
+        end
+    end
+end
+task.spawn(ExtractGameConfigs)
+
+-- Self-Learning Hook: Jika pemain klik manual 1x pada Upgrade/Podium, rekam argumennya!
+pcall(function()
+    if type(getrawmetatable) == "function" then
+        local mt = getrawmetatable(game)
+        local oldNamecall = mt.__namecall
+        if setreadonly then setreadonly(mt, false) end
+        local inHook = false
+
+        mt.__namecall = newcclosure and newcclosure(function(self, ...)
+            if not inHook then
+                local method = getnamecallmethod and getnamecallmethod()
+                if method == "InvokeServer" or method == "FireServer" then
+                    inHook = true
+                    local args = { ... }
+                    pcall(function()
+                        local name = tostring(self)
+                        if name == "PodiumAction" and #args > 0 then
+                            Discovered.LearnedPodiumArgs = args
+                        elseif name == "BuyUpgrade" and args[1] ~= nil then
+                            AddUnique(Discovered.UpgradeIds, args[1])
+                            Discovered.LearnedUpgradeArgs["BuyUpgrade"] = args
+                        elseif name == "UpgradeRebirthStat" and args[1] ~= nil then
+                            AddUnique(Discovered.RebirthStatIds, args[1])
+                        elseif name == "BuyDice" and args[1] ~= nil then
+                            AddUnique(Discovered.DiceIds, args[1])
+                        end
+                    end)
+                    inHook = false
+                end
+            end
+            return oldNamecall(self, ...)
+        end) or mt.__namecall
+
+        if setreadonly then setreadonly(mt, true) end
+    end
+end)
+
+-- Cari Plot milik LocalPlayer
 local function GetMyPlot()
     for i = 1, 8 do
         local plot = Workspace:FindFirstChild("Plot" .. tostring(i))
@@ -80,29 +224,25 @@ local function GetMyPlot()
     return nil
 end
 
--- Ambil semua Podium yang sudah terbuka (Lantai 1 & Lantai 2) di Plot kita
+-- Ambil semua Podium yang terbuka di Plot (Lantai 1 & Lantai 2)
 local function GetMyPodiums()
     local list = {}
     local plot = GetMyPlot()
     if not plot then return list end
 
-    local f1 = plot:FindFirstChild("Podiums")
-    if f1 then
-        for _, pod in ipairs(f1:GetChildren()) do
+    local function CollectFromFolder(folder)
+        if not folder then return end
+        for _, pod in ipairs(folder:GetChildren()) do
             if pod:IsA("Model") and pod:GetAttribute("Locked") ~= true then
                 table.insert(list, pod)
             end
         end
     end
 
+    CollectFromFolder(plot:FindFirstChild("Podiums"))
     local floor2 = plot:FindFirstChild("Floor2")
-    local f2 = floor2 and floor2:FindFirstChild("Podiums")
-    if f2 then
-        for _, pod in ipairs(f2:GetChildren()) do
-            if pod:IsA("Model") and pod:GetAttribute("Locked") ~= true then
-                table.insert(list, pod)
-            end
-        end
+    if floor2 then
+        CollectFromFolder(floor2:FindFirstChild("Podiums"))
     end
     return list
 end
@@ -120,14 +260,28 @@ end
 
 local function TriggerPrompt(prompt)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    pcall(function()
+        prompt.RequiresLineOfSight = false
+        prompt.MaxActivationDistance = 999
+    end)
     if type(fireproximityprompt) == "function" then
         pcall(fireproximityprompt, prompt)
     else
         pcall(function()
             prompt:InputHoldBegin()
-            task.wait(math.max(0.05, prompt.HoldDuration or 0))
+            task.wait(math.max(0.04, prompt.HoldDuration or 0))
             prompt:InputHoldEnd()
         end)
+    end
+end
+
+local function TriggerClickDetector(cd)
+    if not cd or not cd:IsA("ClickDetector") then return end
+    pcall(function()
+        cd.MaxActivationDistance = 999
+    end)
+    if type(fireclickdetector) == "function" then
+        pcall(fireclickdetector, cd)
     end
 end
 
@@ -139,7 +293,6 @@ local function TriggerTouch(part)
         pcall(firetouchinterest, hrp, part, 0)
         pcall(firetouchinterest, hrp, part, 1)
     else
-        -- Sentuh sangat cepat tanpa memindahkan pandangan
         local oldCF = hrp.CFrame
         hrp.CFrame = part.CFrame + Vector3.new(0, 2, 0)
         task.wait(0.05)
@@ -148,7 +301,101 @@ local function TriggerTouch(part)
 end
 
 -- ============================================================================
--- 3. UI ROCKSTAR HUB v6.0 (CUSTOM CYBER BLUE - VERSI SENDIRI)
+-- 3. MESIN UPGRADE PODIUM PRESISI (MENDUKUNG JARAK DEKAT & SEMUA FORMAT REMOTE)
+-- ============================================================================
+local function UpgradeSinglePodium(pod, useTeleportIfNeeded)
+    if not pod then return false end
+    local slot = pod:GetAttribute("Slot") or tonumber(pod.Name:match("%d+"))
+    local petUuid = pod:GetAttribute("PetUuid")
+    -- Hanya upgrade podium yang sudah ada pet di atasnya
+    if not petUuid or petUuid == "" then return false end
+
+    local cost = tonumber(pod:GetAttribute("UpgradeCost")) or 0
+    local myMoney = GetPlayerMoney()
+
+    local screenMesh = pod:FindFirstChild("Screen")
+    local podPromptFolder = screenMesh and screenMesh:FindFirstChild("PodiumPrompt")
+    local upgPrompt = podPromptFolder and podPromptFolder:FindFirstChild("ProximityPrompt")
+    local upgMaxPrompt = podPromptFolder and podPromptFolder:FindFirstChild("UpgradeMaxPrompt")
+
+    local screenFace = pod:FindFirstChild("ScreenFace")
+    local maxFace = screenFace and screenFace:FindFirstChild("MaxFace")
+    local cdSingle = screenFace and screenFace:FindFirstChildOfClass("ClickDetector")
+    local cdMax = maxFace and maxFace:FindFirstChildOfClass("ClickDetector")
+
+    -- Cek apakah uang cukup (berdasarkan UpgradeCost ATAU teks UpgradeMaxPrompt bukan +0)
+    local canAfford = (cost > 0 and myMoney >= cost)
+    if not canAfford and upgMaxPrompt then
+        local actText = tostring(upgMaxPrompt.ActionText or "")
+        if actText ~= "" and not actText:find("%(%+0%)") then
+            canAfford = true
+        end
+    end
+    if not canAfford and cost == 0 then
+        canAfford = true
+    end
+    if not canAfford then return false end
+
+    local oldLevel = tonumber(pod:GetAttribute("Level")) or 1
+
+    -- 1. Coba panggil PodiumAction dengan argumen yang dipelajari atau pola standar
+    if Discovered.LearnedPodiumArgs then
+        local a1 = Discovered.LearnedPodiumArgs[1]
+        local a2 = Discovered.LearnedPodiumArgs[2]
+        if type(a1) == "number" then
+            SafeInvoke("PodiumAction", slot, a2 or "UpgradeMax")
+            SafeInvoke("PodiumAction", slot, "Upgrade")
+        elseif type(a1) == "string" then
+            SafeInvoke("PodiumAction", a1, slot)
+        end
+    end
+
+    if slot then
+        SafeInvoke("PodiumAction", "UpgradeMax", slot)
+        SafeInvoke("PodiumAction", "Upgrade", slot)
+        SafeInvoke("PodiumAction", slot, "UpgradeMax")
+        SafeInvoke("PodiumAction", slot, "Upgrade")
+        SafeInvoke("PodiumAction", slot, "Max")
+        SafeInvoke("PodiumAction", "Max", slot)
+    end
+
+    -- 2. Coba Trigger ClickDetector & ProximityPrompt dari jarak jauh dulu
+    if cdMax then TriggerClickDetector(cdMax) end
+    if cdSingle then TriggerClickDetector(cdSingle) end
+    if upgMaxPrompt then TriggerPrompt(upgMaxPrompt) end
+    if upgPrompt then TriggerPrompt(upgPrompt) end
+
+    task.wait(0.08)
+
+    -- 3. Jika level belum naik (karena server mengecek jarak < 14 stud), dekatkan karakter sejenak!
+    local newLevel = tonumber(pod:GetAttribute("Level")) or 1
+    if newLevel <= oldLevel and useTeleportIfNeeded then
+        local targetPart = screenFace or screenMesh or pod:FindFirstChild("PadBase")
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if targetPart and hrp then
+            local dist = (hrp.Position - targetPart.Position).Magnitude
+            if dist > 12 then
+                local savedCF = hrp.CFrame
+                hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2.5, 4))
+                task.wait(0.14)
+                if cdMax then TriggerClickDetector(cdMax) end
+                if cdSingle then TriggerClickDetector(cdSingle) end
+                if upgMaxPrompt then TriggerPrompt(upgMaxPrompt) end
+                if upgPrompt then TriggerPrompt(upgPrompt) end
+                task.wait(0.12)
+                if not State.AutoTreadmill then
+                    hrp.CFrame = savedCF
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+-- ============================================================================
+-- 4. UI ROCKSTAR HUB v6.2 (CUSTOM CYBER BLUE)
 -- ============================================================================
 local guiParent = (type(gethui) == "function" and gethui()) or CoreGui
 local oldUI = guiParent:FindFirstChild("RockstarHubRollPetsV6")
@@ -187,8 +434,8 @@ floatStroke.Thickness = 2.2
 
 -- Main Window
 local mainWin = Instance.new("Frame")
-mainWin.Size = UDim2.new(0, 560, 0, 390)
-mainWin.Position = UDim2.new(0.5, -280, 0.5, -195)
+mainWin.Size = UDim2.new(0, 560, 0, 400)
+mainWin.Position = UDim2.new(0.5, -280, 0.5, -200)
 mainWin.BackgroundColor3 = Color3.fromRGB(7, 12, 22)
 mainWin.BorderSizePixel = 0
 mainWin.Active = true
@@ -228,14 +475,14 @@ badgeLogo.Text = "R★"
 Instance.new("UICorner", badgeLogo).CornerRadius = UDim.new(0, 7)
 
 local titleText = Instance.new("TextLabel", topBar)
-titleText.Size = UDim2.new(1, -160, 1, 0)
+titleText.Size = UDim2.new(1, -110, 1, 0)
 titleText.Position = UDim2.new(0, 54, 0, 0)
 titleText.BackgroundTransparency = 1
 titleText.Font = Enum.Font.GothamBlack
-titleText.TextSize = 14
+titleText.TextSize = 13
 titleText.TextXAlignment = Enum.TextXAlignment.Left
 titleText.TextColor3 = Color3.fromRGB(235, 248, 255)
-titleText.Text = "ROCKSTAR HUB v6.0  •  [🎃] PUTAR HEWAN PELIHARAAN"
+titleText.Text = "ROCKSTAR HUB v6.2  •  [🎃] PUTAR HEWAN PELIHARAAN"
 
 local minBtn = Instance.new("TextButton", topBar)
 minBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -409,41 +656,67 @@ local function AddButton(page, title, btnText, callback)
 end
 
 -- ============================================================================
--- 4. ISI MENU & FITUR (SESUAI STRUKTUR JSON MAP)
+-- 5. ISI TAB & FITUR LENGKAP
 -- ============================================================================
 local tabMain     = CreateTab("⚡ Auto Utama")
+local tabUpgrade  = CreateTab("⬆️ Peningkatan")
 local tabRewards  = CreateTab("🎁 Klaim & Rahasia")
 local tabEvent    = CreateTab("🎃 Event & Tower")
 local tabTeleport = CreateTab("📍 Teleport Map")
-local tabPlayer   = CreateTab("⚙️ Karakter")
 
--- Aktifkan tab pertama
 TabButtons["⚡ Auto Utama"].BackgroundColor3 = Color3.fromRGB(0, 135, 255)
 TabButtons["⚡ Auto Utama"].TextColor3 = Color3.new(1, 1, 1)
 Pages["⚡ Auto Utama"].Visible = true
 
 -- [TAB 1: AUTO UTAMA]
-AddToggle(tabMain, "🎲 Auto Roll Cepat (RequestRoll)", "Otomatis memutar dadu/hewan peliharaan terus-menerus tanpa henti", false, function(v)
+AddToggle(tabMain, "🎲 Auto Roll Cepat (RequestRoll)", "Otomatis memutar hewan peliharaan terus-menerus", false, function(v)
     State.AutoRoll = v
 end)
 
-AddToggle(tabMain, "💰 Auto Ambil Uang Podium (Plot Sendiri)", "Otomatis mengambil uang dari semua CollectPad Podium di Plot kamu", false, function(v)
+AddToggle(tabMain, "💰 Auto Ambil Uang Podium (Plot Sendiri)", "Otomatis menyentuh CollectPad semua Podium di Plot kamu", false, function(v)
     State.AutoCollectCash = v
 end)
 
-AddToggle(tabMain, "⬆️ Auto Upgrade Semua Podium (Max)", "Otomatis klik Upgrade Max pada semua Podium yang terbuka di Plot kamu", false, function(v)
-    State.AutoUpgradePodium = v
-end)
-
-AddToggle(tabMain, "🐾 Auto Equip Pet & Tim Terbaik", "Otomatis memanggil EquipBestPets & EquipBestTeam secara berkala", false, function(v)
+AddToggle(tabMain, "🐾 Auto Pasang Pet Terbaik (EquipBest)", "Otomatis memanggil EquipBestPets & EquipBestTeam", false, function(v)
     State.AutoEquipBest = v
 end)
 
-AddToggle(tabMain, "🏃 Auto Lari di Treadmill Plot", "Otomatis menempatkan karakter di atas Treadmill Plot untuk Luck Boost", false, function(v)
+AddToggle(tabMain, "🏃 Auto Lari di Treadmill Plot", "Otomatis berdiri di atas Treadmill Plot untuk Luck Boost", false, function(v)
     State.AutoTreadmill = v
 end)
 
--- [TAB 2: KLAIM & RAHASIA]
+AddToggle(tabMain, "⚡ Lari Cepat (WalkSpeed 55)", "Meningkatkan kecepatan jalan karakter di map", false, function(v)
+    State.CustomSpeed = v
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum and not v then hum.WalkSpeed = 16 end
+end)
+
+-- [TAB 2: PENINGKATAN (UPGRADE PODIUM, STATUS, & DADU)]
+AddToggle(tabUpgrade, "⬆️ Auto Peningkatan Level Podium (Smart Proximity)", "Otomatis mendekati & meng-upgrade semua Podium yang uangnya cukup", false, function(v)
+    State.AutoUpgradePodium = v
+end)
+
+AddButton(tabUpgrade, "⚡ Paksa Upgrade Semua Podium Sekarang (1x Keliling)", "UPGRADE MAX", function(btn)
+    btn.Text = "PROSES..."
+    local podiums = GetMyPodiums()
+    for _, pod in ipairs(podiums) do
+        UpgradeSinglePodium(pod, true)
+    end
+    btn.Text = "✅ SELESAI!"
+    task.delay(1.5, function() if btn and btn.Parent then btn.Text = "UPGRADE MAX" end end)
+end)
+
+AddToggle(tabUpgrade, "📈 Auto Beli Peningkatan Status (BuyUpgrade & Rebirth)", "Otomatis membeli upgrade Luck, Roll Speed, Cash, & Rebirth Stat", false, function(v)
+    State.AutoBuyUpgrades = v
+    if v then task.spawn(ExtractGameConfigs) end
+end)
+
+AddToggle(tabUpgrade, "🎲 Auto Beli & Pasang Dadu Terbaik (BuyDice)", "Otomatis membeli dan memasang dadu terbaik yang cukup uangnya", false, function(v)
+    State.AutoBuyDice = v
+    if v then task.spawn(ExtractGameConfigs) end
+end)
+
+-- [TAB 3: KLAIM & RAHASIA]
 AddButton(tabRewards, "🌟 Klaim 3 Golden Dice Rahasia (Alley, Hidden, Tower)", "KLAIM SEMUA", function(btn)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -477,7 +750,7 @@ AddToggle(tabRewards, "🎡 Auto Spin Wheel Gratis", "Otomatis memutar Spin Whee
     State.AutoSpinWheel = v
 end)
 
-AddToggle(tabRewards, "🎁 Auto Klaim Daily, Playtime, Quest & Chest", "Otomatis klaim hadiah harian, waktu main, achievement, & peti grup/teman", false, function(v)
+AddToggle(tabRewards, "🎁 Auto Klaim Daily, Playtime, Quest & Chest", "Otomatis klaim hadiah harian, waktu main, achievement, & peti", false, function(v)
     State.AutoClaimRewards = v
 end)
 
@@ -485,16 +758,14 @@ AddToggle(tabRewards, "⏩ Auto Skip 5 Menit (AdBoard Plot)", "Otomatis memicu W
     State.AutoSkipAdBoard = v
 end)
 
--- [TAB 3: EVENT & TOWER]
-AddToggle(tabEvent, "🍬 Auto Klaim Permen Halloween (CandyRain)", "Otomatis menyedot dan klaim semua permen yang jatuh saat Candy Rain", false, function(v)
+-- [TAB 4: EVENT & TOWER]
+AddToggle(tabEvent, "🍬 Auto Klaim Permen Halloween (CandyRain)", "Otomatis menyedot dan klaim semua permen saat Candy Rain", false, function(v)
     State.AutoCandyClaim = v
 end)
 
 AddToggle(tabEvent, "🗼 Auto Masuk & Retry Tower", "Otomatis mengaktifkan Auto Retry dan masuk ke dalam Tower", false, function(v)
     State.AutoTower = v
-    if v then
-        SafeFire("SetTowerAutoRetry", true)
-    end
+    if v then SafeFire("SetTowerAutoRetry", true) end
 end)
 
 AddToggle(tabEvent, "♻️ Auto Rebirth Otomatis", "Otomatis melakukan Rebirth begitu syarat uang terpenuhi", false, function(v)
@@ -505,15 +776,11 @@ AddToggle(tabEvent, "🗑️ Auto Jual Pet Terlemah (SellWeakest)", "Otomatis me
     State.AutoSellWeakest = v
 end)
 
--- [TAB 4: TELEPORT MAP]
+-- [TAB 5: TELEPORT MAP]
 AddButton(tabTeleport, "🏠 Teleport ke Plot / Base Sendiri", "TELEPORT", function()
     local plot = GetMyPlot()
     local sp = plot and plot:FindFirstChild("Spawn")
-    if sp then
-        TeleportTo(sp.Position)
-    else
-        SafeInvoke("TravelHome")
-    end
+    if sp then TeleportTo(sp.Position) else SafeInvoke("TravelHome") end
 end)
 
 AddButton(tabTeleport, "🧬 Teleport ke Mesin Fuse (FusingMachine)", "TELEPORT", function()
@@ -536,43 +803,15 @@ AddButton(tabTeleport, "🗼 Teleport ke Gerbang Towers", "TELEPORT", function()
     TeleportTo(Vector3.new(-297.8, 326.0, -28.2))
 end)
 
-AddButton(tabTeleport, "🤝 Teleport ke Area Trading (TradePad)", "TELEPORT", function()
-    TeleportTo(Vector3.new(119.6, 329.5, -26.2))
-end)
-
-AddButton(tabTeleport, "🎈 Teleport ke Balon Glitch Blimp", "TELEPORT", function()
-    TeleportTo(Vector3.new(97.5, 382.0, -235.0))
-end)
-
-AddButton(tabTeleport, "🧙 Teleport ke Ruang Rahasia Wizard's Stash", "TELEPORT", function()
-    TeleportTo(Vector3.new(-328.4, 358.4, -32.2))
-end)
-
--- [TAB 5: KARAKTER]
-AddToggle(tabPlayer, "⚡ Lari Cepat (WalkSpeed 55)", "Meningkatkan kecepatan jalan karakter di map", false, function(v)
-    State.CustomSpeed = v
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum and not v then hum.WalkSpeed = 16 end
-end)
-
-AddButton(tabPlayer, "🔓 Buka Semua Pintu Podium & Klaim Pet Gratis", "JALANKAN", function()
-    SafeInvoke("ClaimFreePet")
-    SafeInvoke("EquipBestPets")
-    SafeInvoke("EquipBestTeam")
-end)
-
 -- ============================================================================
--- 5. LOOP OTOMATISASI PRESISI (BACKGROUND ENGINE)
+-- 6. LOOP OTOMATISASI PRESISI (BACKGROUND ENGINE)
 -- ============================================================================
 
--- Anti-AFK Otomatis
 LocalPlayer.Idled:Connect(function()
-    pcall(function()
-        VirtualUser:ClickButton2(Vector2.new())
-    end)
+    pcall(function() VirtualUser:ClickButton2(Vector2.new()) end)
 end)
 
--- Loop 1: Auto Roll Cepat (RequestRoll)
+-- Loop 1: Auto Roll Cepat
 task.spawn(function()
     while screenGui.Parent do
         if State.AutoRoll then
@@ -584,7 +823,7 @@ task.spawn(function()
     end
 end)
 
--- Loop 2: Auto Collect Cash Podium & Auto Upgrade Podium
+-- Loop 2: Auto Collect Cash & Smart Podium Upgrade
 task.spawn(function()
     while screenGui.Parent do
         if State.AutoCollectCash or State.AutoUpgradePodium then
@@ -603,31 +842,45 @@ task.spawn(function()
                 end
 
                 if State.AutoUpgradePodium then
-                    local slot = pod:GetAttribute("Slot")
-                    if slot then
-                        SafeInvoke("PodiumAction", "UpgradeMax", slot)
-                        SafeInvoke("PodiumAction", "Upgrade", slot)
-                    end
-                    local screenFace = pod:FindFirstChild("ScreenFace")
-                    local maxFace = screenFace and screenFace:FindFirstChild("MaxFace")
-                    local clickDet = (maxFace and maxFace:FindFirstChildOfClass("ClickDetector")) or (screenFace and screenFace:FindFirstChildOfClass("ClickDetector"))
-                    if clickDet and type(fireclickdetector) == "function" then
-                        pcall(fireclickdetector, clickDet)
-                    end
-                    local screenMesh = pod:FindFirstChild("Screen")
-                    local podPromptFolder = screenMesh and screenMesh:FindFirstChild("PodiumPrompt")
-                    local upgMaxPrompt = podPromptFolder and podPromptFolder:FindFirstChild("UpgradeMaxPrompt")
-                    if upgMaxPrompt then
-                        TriggerPrompt(upgMaxPrompt)
-                    end
+                    UpgradeSinglePodium(pod, true)
                 end
             end
         end
-        task.wait(0.8)
+        task.wait(1.0)
     end
 end)
 
--- Loop 3: Auto Treadmill & WalkSpeed
+-- Loop 3: Auto Beli Peningkatan Status (BuyUpgrade, UpgradeRebirthStat, BuyDice)
+task.spawn(function()
+    while screenGui.Parent do
+        if State.AutoBuyUpgrades then
+            if Discovered.LearnedUpgradeArgs["BuyUpgrade"] then
+                SafeInvoke("BuyUpgrade", table.unpack(Discovered.LearnedUpgradeArgs["BuyUpgrade"]))
+            end
+            for _, upgId in ipairs(Discovered.UpgradeIds) do
+                if not State.AutoBuyUpgrades then break end
+                SafeInvoke("BuyUpgrade", upgId)
+                SafeInvoke("BuyUpgrade", upgId, true)
+            end
+            for _, statId in ipairs(Discovered.RebirthStatIds) do
+                if not State.AutoBuyUpgrades then break end
+                SafeInvoke("UpgradeRebirthStat", statId)
+            end
+        end
+
+        if State.AutoBuyDice then
+            for _, diceId in ipairs(Discovered.DiceIds) do
+                if not State.AutoBuyDice then break end
+                SafeInvoke("BuyDice", diceId)
+                SafeInvoke("EquipDice", diceId)
+            end
+        end
+
+        task.wait(2.0)
+    end
+end)
+
+-- Loop 4: Auto Treadmill & WalkSpeed
 RunService.Heartbeat:Connect(function()
     if not screenGui.Parent then return end
     local char = LocalPlayer.Character
@@ -635,9 +888,7 @@ RunService.Heartbeat:Connect(function()
 
     if State.CustomSpeed then
         local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum and hum.WalkSpeed < 55 then
-            hum.WalkSpeed = 55
-        end
+        if hum and hum.WalkSpeed < 55 then hum.WalkSpeed = 55 end
     end
 
     if State.AutoTreadmill then
@@ -650,15 +901,13 @@ RunService.Heartbeat:Connect(function()
                 hrp.CFrame = deck.CFrame + Vector3.new(0, 3.2, 0)
             end
             for _, d in ipairs(tm:GetDescendants()) do
-                if d:IsA("ProximityPrompt") then
-                    TriggerPrompt(d)
-                end
+                if d:IsA("ProximityPrompt") then TriggerPrompt(d) end
             end
         end
     end
 end)
 
--- Loop 4: Auto Equip, Rewards, Spin, Tower, Rebirth, Candy
+-- Loop 5: Auto Equip, Rewards, Spin, Tower, Rebirth, Candy
 task.spawn(function()
     while screenGui.Parent do
         if State.AutoEquipBest then
@@ -701,13 +950,8 @@ task.spawn(function()
             SafeInvoke("StartTower")
         end
 
-        if State.AutoRebirth then
-            SafeInvoke("Rebirth")
-        end
-
-        if State.AutoSellWeakest then
-            SafeInvoke("SellWeakest")
-        end
+        if State.AutoRebirth then SafeInvoke("Rebirth") end
+        if State.AutoSellWeakest then SafeInvoke("SellWeakest") end
 
         if State.AutoCandyClaim then
             SafeFire("CandyClaim")
