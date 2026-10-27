@@ -1,7 +1,7 @@
 -- ============================================================================
--- * ROCKSTAR HUB v8.0 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
+-- * ROCKSTAR HUB v8.1 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
 -- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v8.0:
+-- Update v8.1:
 --   [[OK]] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
 --   [[OK]] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
 --   [[OK]] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
@@ -56,7 +56,7 @@ local Config = {
     AutoSellWeakest = false,
     AutoSellAll = false,
 
-    -- Sistem Dadu v8.0
+    -- Sistem Dadu v8.1
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -370,9 +370,7 @@ local function GetDiceCardsFromGui()
                 end
 
                 if titleLabel then
-                    local cleanName = string.match(titleLabel, "([^|%-
-
-]+)") or titleLabel
+                    local cleanName = string.match(titleLabel, "([^|%-]+)") or titleLabel
                     cleanName = string.gsub(cleanName, "^%s+", "")
                     cleanName = string.gsub(cleanName, "%s+$", "")
 
@@ -1120,20 +1118,24 @@ pcall(function()
     end
 end)
 
--- Delta & Mobile Safe GUI Parenting (PlayerGui prioritised for 100% visibility)
+-- Delta Exe & Universal Safe GUI Parenting
 local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
 local targetParent = pGui
 
 pcall(function()
-    if typeof(gethui) == "function" then
-        local h = gethui()
-        if h and h:IsA("Instance") then targetParent = h end
-    elseif typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+    if typeof(syn) == "table" and typeof(syn.protect_gui) == "function" and CoreGui then
         syn.protect_gui(ScreenGui)
-        targetParent = CoreGui or pGui
+        targetParent = CoreGui
     end
 end)
+
 ScreenGui.Parent = targetParent or pGui
+ScreenGui.DisplayOrder = 999999
+ScreenGui.Enabled = true
+ScreenGui.ResetOnSpawn = false
+pcall(function()
+    ScreenGui.IgnoreGuiInset = true
+end)
 
 -- Floating Toggle Button (R*)
 local FloatingToggle = Instance.new("TextButton")
@@ -1224,8 +1226,13 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-FloatingToggle.MouseButton1Click:Connect(function()
+local function ToggleMainFrame()
     MainFrame.Visible = not MainFrame.Visible
+end
+
+FloatingToggle.MouseButton1Click:Connect(ToggleMainFrame)
+pcall(function()
+    FloatingToggle.Activated:Connect(ToggleMainFrame)
 end)
 
 -- Top Header Bar
@@ -1257,7 +1264,7 @@ local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 80, 0, 20)
 VersionBadge.Position = UDim2.new(0, 340, 0.5, -10)
 VersionBadge.BackgroundColor3 = Theme.Card
-VersionBadge.Text = "v8.0 CYBER"
+VersionBadge.Text = "v8.1 CYBER"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 10
@@ -1751,5 +1758,5 @@ task.spawn(function()
     end
 end)
 
-Log("* ROCKSTAR HUB v8.0 DIMUAT LENGKAP *")
-print("* ROCKSTAR HUB v8.0 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
+Log("* ROCKSTAR HUB v8.1 DIMUAT LENGKAP *")
+print("* ROCKSTAR HUB v8.1 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
