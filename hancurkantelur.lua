@@ -1,9 +1,13 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v1.0 - [🎃BOSS] HANCURKAN TELUR BRAINROT! (CYBER-BLUE) ★
+-- ★ ROCKSTAR HUB v1.1 - [🎃BOSS] HANCURKAN TELUR BRAINROT! (CYBER-BLUE) ★
 -- Game: [🎃BOSS] Hancurkan Telur Brainrot! (PlaceId: 119271610514030 | GameId: 9491545867)
--- Fitur:
---   [✓] AUTO HANCURKAN TELUR: Multi-mode (Terdekat, HP Rendah, Rarity Terbaik) + Fast Hit
---   [✓] AUTO AMBIL DROP: Auto Pick Up Brainrot & Items di Workspace
+-- Update v1.1:
+--   [✓] FIX TOTAL ROBUX POPUP: Hapus semua pemicu RewardTrack (Jalur Hadiah) & Robux prompts (100% Bebas Robux)
+--   [✓] SIKLUS BAWA BRAINROT KE BASE:
+--       - Pecahkan telur -> Ambil Brainrot yang jatuh
+--       - Deteksi CarryStatusChanged -> Teleport bawa Brainrot ke markas (Base)
+--       - Taruh di Platform kosong (RequestPlatformPlace & Equip Best)
+--       - Kembali otomatis ke area telur untuk memecahkan telur berikutnya!
 --   [✓] AUTO BASE / MARKAS: Auto Collect Cash, Upgrade Platform, Pasang Brainrot Terbaik, Inkubator
 --   [✓] AUTO PALU & TOKO: Auto Beli & Pasang Palu Terkuat, Beli Gear, Buka Zona 1-4
 --   [✓] AUTO BOSS VAULT & EGG VAULT: Auto Masuk, Serang Lengan Boss, Serang Loot Egg & Vault
@@ -26,6 +30,11 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+    task.wait(0.1)
+    LocalPlayer = Players.LocalPlayer
+end
+
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 10)
 
 -- ============================================================================
@@ -67,11 +76,12 @@ end
 -- 2. KONFIGURASI SISTEM LENGKAP
 -- ============================================================================
 local Config = {
-    -- Auto Farm Telur
+    -- Auto Farm Telur & Bawa ke Base
     AutoHitEgg = false,
+    AutoDeliverToBase = true,   -- Otomatis bawa Brainrot ke markas setelah pecahkan telur
     EggTargetMode = "Terdekat", -- "Terdekat", "HP Terendah", "Rarity Tertinggi"
     EggZoneFilter = "Semua",    -- "Semua", "Zone1", "Zone2", "Zone3", "Zone4"
-    AutoTeleportToEgg = false,
+    AutoTeleportToEgg = true,
     EggHitDelay = 0.08,         -- ~12 hits per detik
     AutoBreakLuckyBlock = true,
     AutoPickUpDrops = true,
@@ -89,7 +99,7 @@ local Config = {
     AutoBuyGear = false,
     AutoUnlockZones = false,
 
-    -- Auto Vault & Boss
+    -- Auto Vault & Boss (100% Tanpa Robux)
     AutoBossVault = false,
     AutoAttackBossTarget = true,
     AutoHitBossLoot = true,
@@ -101,7 +111,7 @@ local Config = {
     AutoEquipPet = true,
     AutoBuyPetEgg = false,
 
-    -- Hadiah & Event
+    -- Hadiah & Event Gratis (Bebas Robux)
     AutoSpinWheel = true,
     AutoClaimDaily = true,
     AutoClaimDiscovery = true,
@@ -117,9 +127,10 @@ local Config = {
 local State = {
     MyBaseId = nil,
     TargetEgg = nil,
+    IsCarrying = false,
+    IsDelivering = false,
     HitsCount = 0,
     CashEarned = 0,
-    InBossVault = false,
     LogBuffer = {},
 }
 
@@ -133,8 +144,53 @@ local function Log(msg)
     print(entry)
 end
 
+-- Listener CarryStatusChanged dari Server
+local CarryRE = GetKnitRemote("BrainrotStealService", "RE", "CarryStatusChanged")
+if CarryRE and CarryRE:IsA("RemoteEvent") then
+    CarryRE.OnClientEvent:Connect(function(status)
+        if typeof(status) == "boolean" then
+            State.IsCarrying = status
+        elseif status ~= nil then
+            State.IsCarrying = true
+        else
+            State.IsCarrying = false
+        end
+        Log("Status Membawa Brainrot: " .. (State.IsCarrying and "SEDANG MEMBAWA" or "KOSONG"))
+    end)
+end
+
 -- ============================================================================
--- 3. DETEKSI MARKAS / BASE PEMAIN
+-- 3. DETEKSI STATUS CARRY (MEMBAWA BRAINROT)
+-- ============================================================================
+local function CheckIsCarrying()
+    if State.IsCarrying then return true end
+
+    local char = LocalPlayer.Character
+    if not char then return false end
+
+    -- 1. Cek atribut karakter atau player
+    if char:GetAttribute("IsCarrying") == true or char:GetAttribute("CarryStatus") == true or char:GetAttribute("Carrying") == true then
+        return true
+    end
+    if LocalPlayer:GetAttribute("IsCarrying") == true or LocalPlayer:GetAttribute("CarryStatus") == true then
+        return true
+    end
+
+    -- 2. Cek apakah ada objek brainrot yang sedang dipegang di atas kepala
+    for _, child in ipairs(char:GetChildren()) do
+        if child:IsA("Model") or child:IsA("BasePart") then
+            local n = child.Name:lower()
+            if (n:find("brainrot") or n:find("carry") or n:find("loot")) and not child:IsA("Accessory") and not child:IsA("Tool") then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+-- ============================================================================
+-- 4. DETEKSI MARKAS / BASE PEMAIN
 -- ============================================================================
 local function GetMyBase()
     if State.MyBaseId and Workspace:FindFirstChild("Bases") and Workspace.Bases:FindFirstChild(State.MyBaseId) then
@@ -180,7 +236,73 @@ local function GetMyBase()
 end
 
 -- ============================================================================
--- 4. LOGIKA AUTO HIT EGG CERDAS (SELEKSI TARGET & OPTIMASI)
+-- 5. FUNGSI BAWA BRAINROT KE BASE & TEMPATKAN DI PLATFORM
+-- ============================================================================
+local function DeliverBrainrotToBase()
+    local base = GetMyBase()
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    if not base or not hrp then return end
+
+    State.IsDelivering = true
+    Log("Membawa Brainrot ke Markas...")
+
+    local baseFloor = base:FindFirstChild("BaseFloor") or base:FindFirstChild("SpawnLocation")
+    local floors = base:FindFirstChild("Floor_1") or base:FindFirstChild("Floor_3")
+    local platforms = floors and floors:FindFirstChild("Platforms")
+
+    -- Cari platform yang belum terisi
+    local targetPlat = nil
+    if platforms then
+        for _, p in ipairs(platforms:GetChildren()) do
+            if not p:FindFirstChild("RenderModel") and not p:FindFirstChildWhichIsA("Model") then
+                targetPlat = p
+                break
+            end
+        end
+        if not targetPlat then
+            targetPlat = platforms:FindFirstChild("Platform_1") or platforms:GetChildren()[1]
+        end
+    end
+
+    local destPart = targetPlat or baseFloor or base:FindFirstChildOfClass("BasePart")
+    if destPart then
+        hrp.CFrame = destPart.CFrame + Vector3.new(0, 3.5, 0)
+        task.wait(0.35)
+    end
+
+    -- Taruh Brainrot di platform (Panggil remote resmi)
+    SafeInvoke("BaseService", "RequestPlatformPlace")
+    if targetPlat then
+        local platNum = tonumber(targetPlat.Name:match("%d+"))
+        if platNum then
+            SafeInvoke("BaseService", "RequestPlatformPlace", platNum)
+        end
+    end
+
+    -- Sentuhan fisik ke platform
+    if targetPlat and typeof(firetouchinterest) == "function" then
+        local pPart = targetPlat:IsA("BasePart") and targetPlat or targetPlat:FindFirstChildOfClass("BasePart")
+        if pPart then
+            pcall(function()
+                firetouchinterest(hrp, pPart, 0)
+                firetouchinterest(hrp, pPart, 1)
+            end)
+        end
+    end
+
+    -- Otomatis pasang brainrot terbaik & panen uang
+    SafeInvoke("BaseService", "RequestEquipBestBrainrots")
+    SafeInvoke("BaseService", "RequestPlatformCollect")
+
+    task.wait(0.5)
+    State.IsCarrying = false
+    State.IsDelivering = false
+    Log("Brainrot berhasil ditempatkan di markas!")
+end
+
+-- ============================================================================
+-- 6. LOGIKA SELEKSI TELUR (AUTO TARGET)
 -- ============================================================================
 local RarityPriority = {
     ["Common"] = 1,
@@ -252,7 +374,6 @@ local function GetTargetEgg()
 
     if #candidates == 0 then return nil end
 
-    -- Urutkan sesuai Target Mode
     if Config.EggTargetMode == "Terdekat" then
         table.sort(candidates, function(a, b) return a.Distance < b.Distance end)
     elseif Config.EggTargetMode == "HP Terendah" then
@@ -270,7 +391,7 @@ local function GetTargetEgg()
 end
 
 -- ============================================================================
--- 5. DAFTAR ID PALU / HAMMERS DI TOKO
+-- 7. DAFTAR ID PALU / HAMMERS DI TOKO
 -- ============================================================================
 local KnownHammerIds = {
     "i1", "i2", "i3", "i4", "i5", "i6", "i7", "i8", "i9", "i10",
@@ -281,40 +402,70 @@ local KnownHammerIds = {
 }
 
 -- ============================================================================
--- 6. BACKGROUND WORKER LOOPS
+-- 8. BACKGROUND WORKER LOOPS
 -- ============================================================================
 
--- Loop 1: Auto Hancurkan Telur (Fast Hit Egg)
+-- Loop 1: Auto Hancurkan Telur & Bawa Brainrot ke Base
 task.spawn(function()
     while true do
-        if Config.AutoHitEgg then
-            local target = GetTargetEgg()
-            if target then
-                State.TargetEgg = target
+        if Config.AutoHitEgg and not State.IsDelivering then
+            -- 1. Cek apakah karakter sedang membawa Brainrot
+            if Config.AutoDeliverToBase and CheckIsCarrying() then
+                DeliverBrainrotToBase()
+            else
+                -- 2. Cari target telur
+                local target = GetTargetEgg()
+                if target then
+                    State.TargetEgg = target
 
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
-                -- Teleport ke telur jika diaktifkan & jarak > 8 stud
-                if Config.AutoTeleportToEgg and hrp and target.Distance > 8 then
-                    hrp.CFrame = target.Part.CFrame + Vector3.new(0, 3.2, 0)
-                    task.wait(0.04)
-                end
+                    -- Teleport ke telur jika diaktifkan & jarak > 8 stud
+                    if Config.AutoTeleportToEgg and hrp and target.Distance > 8 then
+                        hrp.CFrame = target.Part.CFrame + Vector3.new(0, 3.2, 0)
+                        task.wait(0.04)
+                    end
 
-                -- Kirim Remote RequestHitEgg (Format Knit Server)
-                local hitRF = GetKnitRemote("EggSpawnerService", "RF", "RequestHitEgg")
-                if hitRF then
+                    -- Kirim Remote RequestHitEgg
+                    local hitRF = GetKnitRemote("EggSpawnerService", "RF", "RequestHitEgg")
+                    if hitRF then
+                        pcall(function()
+                            hitRF:InvokeServer({ [1] = target.UUID })
+                        end)
+                        State.HitsCount = State.HitsCount + 1
+                    end
+
+                    -- Ayunkan Palu (Tool Activate)
                     pcall(function()
-                        hitRF:InvokeServer({ [1] = target.UUID })
+                        local tool = char and char:FindFirstChildOfClass("Tool")
+                        if tool then tool:Activate() end
                     end)
-                    State.HitsCount = State.HitsCount + 1
-                end
 
-                -- Tool Swing animation/activation
-                pcall(function()
-                    local tool = char and char:FindFirstChildOfClass("Tool")
-                    if tool then tool:Activate() end
-                end)
+                    -- 3. Cek apakah telur baru saja pecah dan drop muncul
+                    local curHp = tonumber(target.Part:GetAttribute("Health")) or 0
+                    if curHp <= 0 then
+                        task.wait(0.1)
+                        -- Ambil drop di sekitar
+                        local brainrotsFolder = Workspace:FindFirstChild("Brainrots")
+                        if brainrotsFolder and hrp then
+                            for _, b in ipairs(brainrotsFolder:GetChildren()) do
+                                local bPart = b:IsA("BasePart") and b or b:FindFirstChildOfClass("BasePart")
+                                if bPart and (bPart.Position - hrp.Position).Magnitude < 30 then
+                                    SafeInvoke("BrainrotSpawnerService", "RequestPickUp", b.Name)
+                                    SafeInvoke("BrainrotSpawnerService", "RequestPickUp", b)
+                                    State.IsCarrying = true
+                                    break
+                                end
+                            end
+                        end
+
+                        -- Jika sedang membawa, bawa ke base
+                        if Config.AutoDeliverToBase and CheckIsCarrying() then
+                            DeliverBrainrotToBase()
+                        end
+                    end
+                end
             end
             task.wait(Config.EggHitDelay)
         else
@@ -327,7 +478,7 @@ end)
 -- Loop 2: Auto Ambil Drops (Brainrot & Item di Lantai)
 task.spawn(function()
     while true do
-        if Config.AutoPickUpDrops then
+        if Config.AutoPickUpDrops and not State.IsDelivering then
             local brainrotsFolder = Workspace:FindFirstChild("Brainrots")
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -360,11 +511,10 @@ end)
 task.spawn(function()
     while true do
         local base = GetMyBase()
-        if base then
+        if base and not State.IsDelivering then
             -- 1. Panen Cash dari platform
             if Config.AutoCollectPlatform then
                 SafeInvoke("BaseService", "RequestPlatformCollect")
-                -- Trigger touch CollectZone jika ada
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 local cz = base:FindFirstChild("CollectZone", true)
@@ -405,7 +555,7 @@ task.spawn(function()
                 SafeInvoke("BaseService", "RequestPlaceEgg")
             end
         end
-        task.wait(1.2)
+        task.wait(1.5)
     end
 end)
 
@@ -413,7 +563,6 @@ end)
 task.spawn(function()
     while true do
         if Config.AutoBuyBestHammer then
-            -- Coba beli dari palu tertinggi ke terendah
             for i = #KnownHammerIds, 1, -1 do
                 local hId = KnownHammerIds[i]
                 SafeInvoke("HammerShopService", "PurchaseHammer", hId)
@@ -421,7 +570,6 @@ task.spawn(function()
         end
 
         if Config.AutoEquipHammer then
-            -- Coba pasang palu terkuat yang dimiliki
             for i = #KnownHammerIds, 1, -1 do
                 local hId = KnownHammerIds[i]
                 local ok = SafeInvoke("HammerShopService", "EquipHammer", hId)
@@ -438,21 +586,18 @@ task.spawn(function()
                 SafeInvoke("ZoneUnlockService", "RequestPurchaseZoneUnlock", z)
             end
         end
-        task.wait(3.0)
+        task.wait(3.5)
     end
 end)
 
--- Loop 5: Auto Boss Vault & Egg Vault
+-- Loop 5: Auto Boss Vault & Egg Vault (100% BEBAS ROBUX)
 task.spawn(function()
     while true do
-        -- Boss Vault
         if Config.AutoBossVault then
             local bossVault = Workspace:FindFirstChild("BossVault")
             if bossVault then
-                -- Mulai Vault jika siap
                 SafeInvoke("BossVaultService", "RequestStartVault")
 
-                -- Serang AttackTargets pada Boss
                 local targets = bossVault:FindFirstChild("AttackTargets")
                 if targets and Config.AutoAttackBossTarget then
                     for _, tgt in ipairs(targets:GetChildren()) do
@@ -462,34 +607,28 @@ task.spawn(function()
                     end
                 end
 
-                -- Serang Loot Egg setelah Boss kalah
                 if Config.AutoHitBossLoot then
                     SafeInvoke("BossVaultService", "RequestHitLootEgg")
                 end
             end
         end
 
-        -- Egg Vault (Cash Vault / Diamond / Chaos)
         if Config.AutoEggVault then
             SafeInvoke("EggVaultService", "RequestStartVault")
-            SafeInvoke("EggVaultService", "RequestStartDiamondVault")
-            SafeInvoke("EggVaultService", "RequestStartChaosVault")
             SafeInvoke("EggVaultService", "RequestHitVaultEgg")
         end
 
-        task.wait(0.2)
+        task.wait(0.25)
     end
 end)
 
--- Loop 6: Auto Rebirth, Pet & Event Gratis
+-- Loop 6: Auto Rebirth, Pet & Event Gratis (100% BEBAS ROBUX - NO REWARDTRACK POPUP)
 task.spawn(function()
     while true do
-        -- Auto Rebirth
         if Config.AutoRebirth then
             SafeInvoke("RebirthService", "RequestRebirth")
         end
 
-        -- Auto Pet
         if Config.AutoUpgradePet then
             SafeInvoke("PetService", "RequestUpgradePet")
         end
@@ -500,25 +639,23 @@ task.spawn(function()
             SafeInvoke("PetEggStockService", "PurchasePetEgg")
         end
 
-        -- Auto Wheel Spin Gratis
+        -- Wheel Spin Gratis
         if Config.AutoSpinWheel then
             SafeInvoke("WheelSpinService", "RequestAccrueFreeSpins")
             SafeInvoke("WheelSpinService", "RequestSpin")
             SafeInvoke("WheelSpinService", "RequestClaimSpin")
         end
 
-        -- Auto Klaim Hadiah Harian & Discovery
+        -- Klaim Daily Rewards Resmi (Bebas Robux)
         if Config.AutoClaimDaily then
             SafeInvoke("RewardService", "ClaimDailyReward")
             SafeInvoke("RewardService", "RefreshDailyRewards")
         end
         if Config.AutoClaimDiscovery then
             SafeInvoke("RewardService", "ClaimDiscoveryReward")
-            SafeInvoke("RewardTrackService", "RequestClaimNext")
-            SafeInvoke("RewardTrackService", "RequestClaimMilestoneReward")
+            -- CATATAN: RequestClaimNext RewardTrack DIHAPUS TOTAL AGAR TIDAK MUNCUL POPUP ROBUX
         end
 
-        -- Auto Trade Brainrot Trader
         if Config.AutoTradeBrainrot then
             SafeInvoke("BrainrotTraderService", "RequestDepositBest")
             SafeInvoke("BrainrotTraderService", "RequestTrade")
@@ -566,7 +703,7 @@ task.spawn(function()
 end)
 
 -- ============================================================================
--- 7. ANTARMUKA PENGGUNA (CYBER-BLUE EDITION UI)
+-- 9. ANTARMUKA PENGGUNA (CYBER-BLUE EDITION UI)
 -- ============================================================================
 local Theme = {
     BgMain = Color3.fromRGB(11, 16, 26),
@@ -580,22 +717,50 @@ local Theme = {
     Border = Color3.fromRGB(30, 41, 59),
 }
 
+-- Cleanup GUI lama
+pcall(function()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if pGui then
+        for _, g in ipairs(pGui:GetChildren()) do
+            if g.Name:find("RockstarHub") then g:Destroy() end
+        end
+    end
+    if CoreGui then
+        for _, g in ipairs(CoreGui:GetChildren()) do
+            if g.Name:find("RockstarHub") then pcall(function() g:Destroy() end) end
+        end
+    end
+end)
+
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "RockstarHub_BrainrotEgg"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-pcall(function()
-    if syn and syn.protect_gui then
+local guiParented = false
+if typeof(gethui) == "function" then
+    pcall(function()
+        ScreenGui.Parent = gethui()
+        guiParented = true
+    end)
+end
+if not guiParented and typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+    pcall(function()
         syn.protect_gui(ScreenGui)
         ScreenGui.Parent = CoreGui
-    elseif gethui then
-        ScreenGui.Parent = gethui()
-    else
-        ScreenGui.Parent = CoreGui
-    end
-end)
-if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
+        guiParented = true
+    end)
+end
+if not guiParented then
+    pcall(function()
+        local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
+        ScreenGui.Parent = pGui
+        guiParented = true
+    end)
+end
+if not guiParented or not ScreenGui.Parent then
+    pcall(function() ScreenGui.Parent = CoreGui end)
+end
 
 -- FLOATING TOGGLE BUTTON (R★)
 local ToggleBtn = Instance.new("TextButton")
@@ -831,7 +996,7 @@ for idx, tabInfo in ipairs(TabsList) do
 end
 
 -- ============================================================================
--- 8. UI BUILDER HELPERS (CARD, TOGGLE, BUTTON, SLIDER, DROPDOWN)
+-- 10. UI BUILDER HELPERS (CARD, TOGGLE, BUTTON, SLIDER, DROPDOWN)
 -- ============================================================================
 local function CreateCard(parent, title)
     local card = Instance.new("Frame")
@@ -963,12 +1128,13 @@ local function CreateActionButton(parent, text, color, onClick)
 end
 
 -- ============================================================================
--- 9. POPULASI HALAMAN TAB LENGKAP
+-- 11. POPULASI HALAMAN TAB LENGKAP
 -- ============================================================================
 
 -- TAB 1: AUTO FARM (TELUR & DROPS)
-local p1Card = CreateCard(TabFrames["Farm"], "Otomatisasi Pukul Telur (Egg Farming)")
+local p1Card = CreateCard(TabFrames["Farm"], "Otomatisasi Pukul Telur & Bawa ke Base")
 CreateToggle(p1Card, "Auto Hancurkan Telur", "Pukul telur secara otomatis dengan palu", "AutoHitEgg")
+CreateToggle(p1Card, "Auto Bawa Brainrot ke Base", "Bawa hasil telur ke markas & letakkan di platform", "AutoDeliverToBase")
 CreateToggle(p1Card, "Auto Teleport ke Telur", "Teleport melayang tepat di atas telur target", "AutoTeleportToEgg")
 CreateToggle(p1Card, "Auto Hancurkan Lucky Block", "Prioritaskan Lucky Block saat muncul di map", "AutoBreakLuckyBlock")
 
@@ -983,7 +1149,11 @@ CreateToggle(p2Card, "Auto Tingkatkan Semua Platform", "Naikkan level semua plat
 CreateToggle(p2Card, "Auto Tetaskan Telur Inkubator", "Tetaskan telur markas secara otomatis", "AutoHatchIncubator")
 CreateToggle(p2Card, "Auto Tempatkan Telur Markas", "Tempatkan telur cadangan ke inkubator markas", "AutoPlaceEggBase")
 
-CreateActionButton(p2Card, "🚀 Teleport ke Markas Sendiri", Theme.Accent, function()
+CreateActionButton(p2Card, "🚀 Bawa & Letakkan Brainrot Sekarang", Theme.Accent, function()
+    DeliverBrainrotToBase()
+end)
+
+CreateActionButton(p2Card, "📍 Teleport ke Markas Sendiri", Theme.BgMain, function()
     local b = GetMyBase()
     local spawnLoc = b and (b:FindFirstChild("SpawnLocation") or b:FindFirstChild("BaseFloor"))
     local char = LocalPlayer.Character
@@ -1014,7 +1184,7 @@ CreateActionButton(p3Card, "🔨 Pasang Palu Terkuat Sekarang", Theme.Accent, fu
     end
 end)
 
--- TAB 4: VAULT & BOSS
+-- TAB 4: VAULT & BOSS (100% BEBAS ROBUX)
 local p4Card = CreateCard(TabFrames["Vault"], "Pertarungan Boss Vault & Egg Vault")
 CreateToggle(p4Card, "Auto Boss Vault Penuh", "Masuk otomatis ke Boss Vault & serang", "AutoBossVault")
 CreateToggle(p4Card, "Auto Serang Lengan Boss", "Serang target Left/Right arms otomatis", "AutoAttackBossTarget")
@@ -1038,11 +1208,11 @@ CreateActionButton(p5Card, "⭐ Rebirth Sekarang", Theme.Accent, function()
     if ok then Log("Berhasil Rebirth!") else Log("Syarat Rebirth belum cukup!") end
 end)
 
--- TAB 6: HADIAH GRATIS & EVENT
+-- TAB 6: HADIAH GRATIS & EVENT (100% BEBAS ROBUX)
 local p6Card = CreateCard(TabFrames["Event"], "Hadiah Gratis & Brainrot Trader")
 CreateToggle(p6Card, "Auto Putar Roda Gratis (Wheel Spin)", "Klaim free spin dan putar roda keberuntungan", "AutoSpinWheel")
 CreateToggle(p6Card, "Auto Klaim Hadiah Harian", "Ambil Daily Rewards otomatis setiap hari", "AutoClaimDaily")
-CreateToggle(p6Card, "Auto Klaim Discovery & Milestone", "Klaim reward discovery & track otomatis", "AutoClaimDiscovery")
+CreateToggle(p6Card, "Auto Klaim Discovery Hadiah", "Klaim reward discovery gratis", "AutoClaimDiscovery")
 CreateToggle(p6Card, "Auto Trade Brainrot Trader", "Setor dan tukar brainrot di NPC Trader", "AutoTradeBrainrot")
 
 -- TAB 7: TELEPORT & PLAYER MODS
@@ -1100,5 +1270,5 @@ end)
 -- Default Tab
 SwitchTab("Farm")
 
-Log("★ ROCKSTAR HUB DIMUAT - HANCURKAN TELUR BRAINROT! ★")
-print("★ ROCKSTAR HUB - [🎃BOSS] HANCURKAN TELUR BRAINROT! BERHASIL DIMUAT! ★")
+Log("★ ROCKSTAR HUB v1.1 DIMUAT - BEBAS ROBUX & AUTO DELIVER BASE! ★")
+print("★ ROCKSTAR HUB v1.1 - [🎃BOSS] HANCURKAN TELUR BRAINROT! BERHASIL DIMUAT! ★")
