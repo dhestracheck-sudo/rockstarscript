@@ -1,22 +1,19 @@
 -- ============================================================================
--- * ROCKSTAR HUB v8.5 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EDITION) *
+-- * ROCKSTAR HUB v8.6 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EDITION) *
 -- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v8.5:
---   [[OK]] FITUR AUTO FUSE LENGKAP:
---       - Remote FusePets ("All" / true / generic)
---       - Interaksi Proximity Prompt StandFusing & FusingMachine Zone
---       - GUI Auto-Clicker untuk konfirmasi tombol Gabung / Fuse / Craft
---       - Tombol cepat "[Fast] Gabung Semua Hewan Sekarang" di Tab 1
---       - Opsi Teleport ke Mesin Fusing
---   [[OK]] FITUR AUTO GRADES LENGKAP:
---       - Remote RollGrade + Deteksi PetGrade pada tiap Podium pemain
---       - Target Grade Selector dinamis (A, S, SS, SSS, X)
---       - Auto Teleport ke GradeShopPad & Proximity StandGrades
---       - Tombol cepat "[Fast] Roll Grade Sekarang" di Tab 3
---       - Dukungan Auto Reroll Trait & Teleport TraitShopPad
---   [[OK]] RUN INDEPENDENT: Auto Fuse & Auto Grades berjalan mandiri tanpa harus menyalakan Auto Roll
---   [[OK]] MENARA & SHORTCUT STABIL: Mempertahankan perbaikan Menara v8.4 & Floating Button R* anti-macet
---   [[OK]] 100% UNIVERSAL EXECUTOR (DELTA PC & MOBILE): SafeCall anti-lag, 0 klik layar liar (Anti-Robux)
+-- Update v8.6:
+--   [[OK]] FITUR AUTO ITEM & PET TERBAIK KE TAS:
+--       - Auto Pasang Pet Terbaik dari Tas ke Podium (EquipBestPets)
+--       - Auto Pasang Tim Menara Terbaik (EquipBestTeam)
+--       - Auto Filter Server (SetSellWeaker): Hanya pet/item lebih kuat yang masuk ke tas
+--       - Auto Pasang Pet Terkuat Mengikuti Karakter (SetFollowPet)
+--       - Auto Pakai Item / Potion Boost dari Tas (UseItem)
+--       - Tombol cepat "[Fast] Pasang Pet & Item Terbaik Sekarang" di Tab 1
+--       - GUI Auto-Clicker untuk konfirmasi tombol Equip Best di tas
+--   [[OK]] FITUR AUTO FUSE & AUTO GRADES LENGKAP:
+--       - Auto Fuse mandiri (FusePets + Proximity + GUI Confirm)
+--       - Auto Roll Grade (RollGrade + Deteksi PetGrade Podium + Target Selector)
+--   [[OK]] 100% UNIVERSAL EXECUTOR (DELTA PC & MOBILE): Pure ASCII, SafeCall anti-lag, 0 klik liar
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -50,10 +47,12 @@ end
 -- 1. PENGATURAN & STATE GLOBAL
 -- ============================================================================
 local Config = {
-    -- Auto Roll & Pet
+    -- Auto Roll, Bag & Pet Terbaik
     AutoRoll = false,
     RollDelay = 0.15,
-    AutoEquipBest = false,
+    AutoEquipBest = true,           -- Otomatis pasang pet & item terbaik ke tas/podium
+    AutoSellWeaker = true,          -- Filter server: Hanya pet lebih kuat yang masuk ke tas
+    AutoUseBestItems = false,       -- Auto pakai potion boost dari tas
     AutoFuse = false,
     AutoTeleportFusing = false,
     AutoSellWeakest = false,
@@ -162,6 +161,13 @@ local Remotes = {
     SellPets = GetRemote("SellPets"),
     PodiumAction = GetRemote("PodiumAction"),
     CashCollected = GetRemote("CashCollected"),
+
+    SetSellWeaker = GetRemote("SetSellWeaker"),
+    SetAutoSellChance = GetRemote("SetAutoSellChance"),
+    UseItem = GetRemote("UseItem"),
+    MarkItemsSeen = GetRemote("MarkItemsSeen"),
+    SetFollowPet = GetRemote("SetFollowPet"),
+    HoldPet = GetRemote("HoldPet"),
 
     BuyUpgrade = GetRemote("BuyUpgrade"),
     UpgradeRebirthStat = GetRemote("UpgradeRebirthStat"),
@@ -802,6 +808,73 @@ local function StartTowerStage(stageNum)
 end
 
 -- ============================================================================
+-- ============================================================================
+-- 7A. SISTEM TAS & AUTO ITEM TERBAIK (AUTO BEST BAG & EQUIP)
+-- ============================================================================
+local PreseededPotionItems = {
+    "LuckyPotion", "LuckPotion", "SuperLuck", "MultiplierPotion",
+    "SpeedPotion", "RollSpeedPotion", "CandyPotion", "HalloweenPotion",
+}
+
+local function TriggerEquipBestGUI()
+    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    if not pGui then return end
+
+    for _, g in ipairs(pGui:GetChildren()) do
+        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub", 1, true) then
+            for _, desc in ipairs(g:GetDescendants()) do
+                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                    local bText = (desc:IsA("TextButton") and string.lower(desc.Text)) or ""
+                    local bName = string.lower(desc.Name)
+                    if not IsRobuxButton(bText, bName) then
+                        if (string.find(bText, "equip", 1, true) and (string.find(bText, "best", 1, true) or string.find(bText, "all", 1, true)))
+                           or (string.find(bName, "equip", 1, true) and (string.find(bName, "best", 1, true) or string.find(bName, "all", 1, true)))
+                           or string.find(bText, "pasang terbaik", 1, true) or string.find(bText, "pakai terbaik", 1, true) then
+                            FireGuiButtonSafe(desc)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function ExecuteUseBagItems()
+    for _, potionName in ipairs(PreseededPotionItems) do
+        SafeCall("UseItem", false, potionName)
+        task.wait(0.02)
+    end
+    SafeCall("UseItem", false)
+end
+
+local function ExecuteEquipBestBag()
+    -- 1. Server Remote: Pasang Pet Terbaik ke Podium & Tas
+    SafeCall("EquipBestPets", false)
+
+    -- 2. Server Remote: Pasang Tim Pertarungan Terbaik
+    SafeCall("EquipBestTeam", false)
+
+    -- 3. Set Pet Terkuat Mengikuti Karakter
+    SafeCall("SetFollowPet", false)
+
+    -- 4. Aktifkan Fitur Server agar hanya pet lebih bagus yang masuk tas
+    if Config.AutoSellWeaker then
+        SafeCall("SetSellWeaker", false, true)
+        SafeCall("SetSellWeaker", false)
+    end
+
+    -- 5. Auto Pakai Item / Potion jika aktif
+    if Config.AutoUseBestItems then
+        ExecuteUseBagItems()
+    end
+
+    -- 6. Auto-click tombol Equip Best di GUI Tas jika terbuka
+    TriggerEquipBestGUI()
+
+    -- 7. Bersihkan notifikasi item baru di tas
+    SafeCall("MarkItemsSeen", false)
+end
+
 -- 7B. SISTEM AUTO FUSE & AUTO ROLL GRADE (PET UPGRADE SYSTEMS)
 -- ============================================================================
 local function TriggerFuseGUI()
@@ -983,7 +1056,7 @@ task.spawn(function()
             SafeCall("RequestRoll", false)
 
             if Config.AutoEquipBest then
-                SafeCall("EquipBestPets", false)
+                ExecuteEquipBestBag()
             end
             if Config.AutoFuse then
                 ExecuteFuseAll()
@@ -994,11 +1067,14 @@ task.spawn(function()
             if Config.AutoSellAll then
                 SafeCall("SellAll", false)
             end
+            if Config.AutoSellWeaker then
+                SafeCall("SetSellWeaker", false, true)
+            end
             task.wait(Config.RollDelay)
         else
             -- Menjalankan Fuse, Equip Best & Sell bahkan saat AutoRoll mati
             if Config.AutoEquipBest then
-                SafeCall("EquipBestPets", false)
+                ExecuteEquipBestBag()
             end
             if Config.AutoFuse then
                 ExecuteFuseAll()
@@ -1816,9 +1892,31 @@ end
 -- ============================================================================
 
 -- TAB 1: PUTAR & PET
-local p1Card = CreateCard(TabFrames["Roll"], "Otomatisasi Putar Hewan")
+local p1Card = CreateCard(TabFrames["Roll"], "Otomatisasi Putar Hewan & Tas Terbaik")
 CreateToggle(p1Card, "Auto Putar (Auto Roll)", "Putar gacha hewan peliharaan otomatis", "AutoRoll")
-CreateToggle(p1Card, "Auto Pasang Hewan Terbaik", "Pasang otomatis pet dengan bonus tertinggi", "AutoEquipBest")
+CreateToggle(p1Card, "Auto Masuk Pet Terbaik ke Tas", "Otomatis filter server: Hanya pet lebih kuat yang masuk tas", "AutoSellWeaker")
+CreateToggle(p1Card, "Auto Pasang Pet & Item Terbaik", "Pasang otomatis pet & item terbaik ke tas & seluruh slot podium", "AutoEquipBest")
+
+local ManualEquipBestBtn = Instance.new("TextButton")
+ManualEquipBestBtn.Size = UDim2.new(1, 0, 0, 28)
+ManualEquipBestBtn.BackgroundColor3 = Color3.fromRGB(24, 48, 80)
+ManualEquipBestBtn.Text = "[Fast] Pasang Pet & Item Terbaik Sekarang"
+ManualEquipBestBtn.TextColor3 = Theme.Accent
+ManualEquipBestBtn.Font = Enum.Font.GothamBold
+ManualEquipBestBtn.TextSize = 11
+ManualEquipBestBtn.BorderSizePixel = 0
+ManualEquipBestBtn.Parent = p1Card
+
+local mebbCorner = Instance.new("UICorner")
+mebbCorner.CornerRadius = UDim.new(0, 6)
+mebbCorner.Parent = ManualEquipBestBtn
+
+ManualEquipBestBtn.MouseButton1Click:Connect(function()
+    ExecuteEquipBestBag()
+    Log("Tas: Memasang pet dan item terbaik ke seluruh slot...")
+end)
+
+CreateToggle(p1Card, "Auto Pakai Potion/Item Tas", "Gunakan otomatis ramuan boost/keberuntungan dari tas", "AutoUseBestItems")
 CreateToggle(p1Card, "Auto Gabung Hewan (Fuse)", "Gabungkan pet duplikat untuk menaikkan tier", "AutoFuse")
 CreateToggle(p1Card, "Teleport ke Mesin Fusing", "Dekati FusingMachine otomatis saat menggabungkan", "AutoTeleportFusing")
 
