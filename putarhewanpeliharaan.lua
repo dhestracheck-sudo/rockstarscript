@@ -1,7 +1,7 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v6.2 - CYBER BLUE EDITION (AUTO-UPGRADE PRECISION FIX) ★
+-- ★ ROCKSTAR HUB v6.3 - CYBER BLUE EDITION (TOWER & UPGRADE FIX) ★
 -- Game   : [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299)
--- Fitur  : Smart Podium Upgrade + Auto BuyUpgrade + Auto Roll + 3 Secret Dice
+-- Fitur  : Smart Auto Tower + Smart Podium/Stat Upgrade + Live Learning Log
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -20,7 +20,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared", 10)
 local Remotes = Shared and Shared:WaitForChild("Remotes", 10)
 
 -- ============================================================================
--- 1. STATE & DATA PEMBELAJARAN OTOMATIS (SELF-LEARNING + MODULE EXTRACTOR)
+-- 1. STATE & DATA PEMBELAJARAN OTOMATIS (SELF-LEARNING ENGINE)
 -- ============================================================================
 local State = {
     AutoRoll = false,
@@ -40,20 +40,34 @@ local State = {
     CustomSpeed = false,
 }
 
--- Menyimpan ID Upgrade, RebirthStat, Dice, & format PodiumAction yang ditemukan otomatis
-local Discovered = {
-    UpgradeIds = {
-        "Luck", "RollSpeed", "Cooldown", "Cash", "Money", "Income",
-        "Multiplier", "Capacity", "Inventory", "Storage", "WalkSpeed",
-        "AutoRoll", "PetEquip", "PlotSlots"
-    },
-    RebirthStatIds = {
-        "Luck", "Cash", "Money", "RollSpeed", "Multiplier", "Capacity", "Income"
-    },
-    DiceIds = {},
-    LearnedPodiumArgs = nil,
-    LearnedUpgradeArgs = {},
+local TowerRuntime = {
+    InTower = false,
+    LastStartAttempt = 0,
 }
+
+local Discovered = {
+    UpgradeIds = {},
+    RebirthStatIds = {},
+    DiceIds = {},
+    TowerIds = {},
+    -- Menyimpan argumen pasti yang tertangkap saat pemain klik manual 1x
+    LearnedCalls = {
+        PodiumAction = nil,
+        BuyUpgrade = {},
+        UpgradeRebirthStat = {},
+        BuyDice = {},
+        StartTower = nil,
+    },
+    RecentLogs = {},
+}
+
+local function AddLog(msg)
+    local line = os.date("%H:%M:%S") .. " | " .. tostring(msg)
+    table.insert(Discovered.RecentLogs, 1, line)
+    if #Discovered.RecentLogs > 25 then
+        table.remove(Discovered.RecentLogs)
+    end
+end
 
 local function AddUnique(list, val)
     if val == nil then return end
@@ -64,7 +78,7 @@ local function AddUnique(list, val)
 end
 
 -- ============================================================================
--- 2. FUNGSI REMOTE, PARSER UANG, & DETEKTOR PLOT PRESISI
+-- 2. FUNGSI REMOTE, PARSER UANG, & EKSTRAKTOR MODULE SHARED
 -- ============================================================================
 local function GetRemote(name)
     if not Remotes then
@@ -94,11 +108,9 @@ local function SafeFire(remoteName, ...)
     end
 end
 
--- Konversi teks uang (misal "$1.42T", "220k", "174") menjadi angka murni
 local SuffixMap = {
     k = 1e3, m = 1e6, b = 1e9, t = 1e12,
-    qa = 1e15, qi = 1e18, sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33,
-    qd = 1e15
+    qa = 1e15, qd = 1e15, qi = 1e18, sx = 1e21, sp = 1e24, oc = 1e27, no = 1e30, dc = 1e33
 }
 
 local function ParseMoney(val)
@@ -117,34 +129,32 @@ end
 local function GetPlayerMoney()
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     local mVal = ls and ls:FindFirstChild("Money")
-    if mVal then
-        return ParseMoney(mVal.Value)
-    end
+    if mVal then return ParseMoney(mVal.Value) end
     return 0
 end
 
--- Ekstrak semua ID Upgrade & Dice asli dari GetData dan ModuleScript di ReplicatedStorage.Shared
-local function ExtractGameConfigs()
-    -- 1. Cek dari GetData RemoteFunction
+-- Bongkar semua ModuleScript di ReplicatedStorage.Shared & GetData untuk mendapatkan ID asli
+local function ExtractSharedData()
     pcall(function()
         local ok, data = SafeInvoke("GetData")
         if ok and type(data) == "table" then
-            if type(data.Upgrades) == "table" then
-                for k, _ in pairs(data.Upgrades) do AddUnique(Discovered.UpgradeIds, k) end
-            end
-            if type(data.RebirthUpgrades) == "table" then
-                for k, _ in pairs(data.RebirthUpgrades) do AddUnique(Discovered.RebirthStatIds, k) end
-            end
-            if type(data.RebirthStats) == "table" then
-                for k, _ in pairs(data.RebirthStats) do AddUnique(Discovered.RebirthStatIds, k) end
-            end
-            if type(data.Dice) == "table" then
-                for k, _ in pairs(data.Dice) do AddUnique(Discovered.DiceIds, k) end
+            for k, v in pairs(data) do
+                local kl = tostring(k):lower()
+                if type(v) == "table" then
+                    if kl:find("upgrade") and not kl:find("rebirth") then
+                        for id, _ in pairs(v) do AddUnique(Discovered.UpgradeIds, id) end
+                    elseif kl:find("rebirth") then
+                        for id, _ in pairs(v) do AddUnique(Discovered.RebirthStatIds, id) end
+                    elseif kl:find("dice") then
+                        for id, _ in pairs(v) do AddUnique(Discovered.DiceIds, id) end
+                    elseif kl:find("tower") then
+                        for id, _ in pairs(v) do AddUnique(Discovered.TowerIds, id) end
+                    end
+                end
             end
         end
     end)
 
-    -- 2. Cek dari semua ModuleScript di dalam ReplicatedStorage.Shared
     if Shared then
         for _, mod in ipairs(Shared:GetDescendants()) do
             if mod:IsA("ModuleScript") then
@@ -152,31 +162,67 @@ local function ExtractGameConfigs()
                 pcall(function()
                     local ok, tbl = pcall(require, mod)
                     if ok and type(tbl) == "table" then
-                        if nLower:find("upgrade") then
-                            for k, v in pairs(tbl) do
-                                if type(k) == "string" then AddUnique(Discovered.UpgradeIds, k) end
-                                if type(v) == "table" and type(v.Id) == "string" then AddUnique(Discovered.UpgradeIds, v.Id) end
+                        local function ScanTableKeys(t, targetList)
+                            for k, v in pairs(t) do
+                                if type(k) == "string" and k ~= "Order" and k ~= "Config" and k ~= "Types" then
+                                    AddUnique(targetList, k)
+                                end
+                                if type(v) == "table" then
+                                    if type(v.Id) == "string" then AddUnique(targetList, v.Id) end
+                                    if type(v.Name) == "string" and #v.Name < 30 then AddUnique(targetList, v.Name) end
+                                    if type(v.Key) == "string" then AddUnique(targetList, v.Key) end
+                                end
                             end
+                        end
+
+                        if nLower:find("upgrade") and not nLower:find("rebirth") then
+                            ScanTableKeys(tbl, Discovered.UpgradeIds)
                         elseif nLower:find("rebirth") then
-                            for k, v in pairs(tbl) do
-                                if type(k) == "string" then AddUnique(Discovered.RebirthStatIds, k) end
-                                if type(v) == "table" and type(v.Id) == "string" then AddUnique(Discovered.RebirthStatIds, v.Id) end
-                            end
+                            ScanTableKeys(tbl, Discovered.RebirthStatIds)
                         elseif nLower:find("dice") then
-                            for k, v in pairs(tbl) do
-                                if type(k) == "string" then AddUnique(Discovered.DiceIds, k) end
-                                if type(v) == "table" and type(v.Id) == "string" then AddUnique(Discovered.DiceIds, v.Id) end
-                            end
+                            ScanTableKeys(tbl, Discovered.DiceIds)
+                        elseif nLower:find("tower") then
+                            ScanTableKeys(tbl, Discovered.TowerIds)
                         end
                     end
                 end)
             end
         end
     end
-end
-task.spawn(ExtractGameConfigs)
 
--- Self-Learning Hook: Jika pemain klik manual 1x pada Upgrade/Podium, rekam argumennya!
+    AddLog(string.format(
+        "Config dimuat: %d Upgrade, %d RebirthStat, %d Dice, %d Tower",
+        #Discovered.UpgradeIds, #Discovered.RebirthStatIds, #Discovered.DiceIds, #Discovered.TowerIds
+    ))
+end
+task.spawn(ExtractSharedData)
+
+-- Pantau TowerEvent dari Server agar tahu kapan masuk/keluar/kalah di Menara
+pcall(function()
+    local towerEv = GetRemote("TowerEvent")
+    if towerEv and towerEv:IsA("RemoteEvent") then
+        towerEv.OnClientEvent:Connect(function(action, data)
+            local actStr = tostring(action or ""):lower()
+            AddLog("TowerEvent: " .. tostring(action))
+            if actStr:find("start") or actStr:find("wave") or actStr:find("spawn") or actStr:find("floor") or actStr:find("fight") then
+                TowerRuntime.InTower = true
+            elseif actStr:find("revive") or actStr:find("dead") or actStr:find("die") or actStr:find("prompt") then
+                -- Jika muncul layar Revive saat Auto Tower aktif, otomatis tolak Revive & lanjutkan!
+                if State.AutoTower then
+                    task.defer(function()
+                        SafeInvoke("DeclineRevive")
+                        task.wait(0.3)
+                        SafeInvoke("ResumeTower")
+                    end)
+                end
+            elseif actStr:find("end") or actStr:find("leave") or actStr:find("defeat") or actStr:find("lose") or actStr:find("win") or actStr:find("victory") or actStr:find("finish") then
+                TowerRuntime.InTower = false
+            end
+        end)
+    end
+end)
+
+-- Self-Learning Hook: Menangkap argumen asli saat pemain mengklik tombol di dalam game
 pcall(function()
     if type(getrawmetatable) == "function" then
         local mt = getrawmetatable(game)
@@ -192,15 +238,26 @@ pcall(function()
                     local args = { ... }
                     pcall(function()
                         local name = tostring(self)
-                        if name == "PodiumAction" and #args > 0 then
-                            Discovered.LearnedPodiumArgs = args
-                        elseif name == "BuyUpgrade" and args[1] ~= nil then
-                            AddUnique(Discovered.UpgradeIds, args[1])
-                            Discovered.LearnedUpgradeArgs["BuyUpgrade"] = args
-                        elseif name == "UpgradeRebirthStat" and args[1] ~= nil then
-                            AddUnique(Discovered.RebirthStatIds, args[1])
-                        elseif name == "BuyDice" and args[1] ~= nil then
-                            AddUnique(Discovered.DiceIds, args[1])
+                        if name == "PodiumAction" then
+                            Discovered.LearnedCalls.PodiumAction = args
+                            AddLog("Belajar PodiumAction: (" .. tostring(args[1]) .. ", " .. tostring(args[2]) .. ", " .. tostring(args[3]) .. ")")
+                        elseif name == "BuyUpgrade" then
+                            if args[1] ~= nil then AddUnique(Discovered.UpgradeIds, args[1]) end
+                            Discovered.LearnedCalls.BuyUpgrade = args
+                            AddLog("Belajar BuyUpgrade: (" .. tostring(args[1]) .. ", " .. tostring(args[2]) .. ")")
+                        elseif name == "UpgradeRebirthStat" then
+                            if args[1] ~= nil then AddUnique(Discovered.RebirthStatIds, args[1]) end
+                            Discovered.LearnedCalls.UpgradeRebirthStat = args
+                            AddLog("Belajar RebirthStat: (" .. tostring(args[1]) .. ")")
+                        elseif name == "BuyDice" then
+                            if args[1] ~= nil then AddUnique(Discovered.DiceIds, args[1]) end
+                            AddLog("Belajar BuyDice: (" .. tostring(args[1]) .. ")")
+                        elseif name == "StartTower" then
+                            Discovered.LearnedCalls.StartTower = args
+                            TowerRuntime.InTower = true
+                            AddLog("Belajar StartTower: (" .. tostring(args[1]) .. ", " .. tostring(args[2]) .. ")")
+                        elseif name == "LeaveTower" then
+                            TowerRuntime.InTower = false
                         end
                     end)
                     inHook = false
@@ -213,7 +270,9 @@ pcall(function()
     end
 end)
 
--- Cari Plot milik LocalPlayer
+-- ============================================================================
+-- 3. HELPER PLOT, PODIUM, & INTERAKSI MAP
+-- ============================================================================
 local function GetMyPlot()
     for i = 1, 8 do
         local plot = Workspace:FindFirstChild("Plot" .. tostring(i))
@@ -224,13 +283,12 @@ local function GetMyPlot()
     return nil
 end
 
--- Ambil semua Podium yang terbuka di Plot (Lantai 1 & Lantai 2)
 local function GetMyPodiums()
     local list = {}
     local plot = GetMyPlot()
     if not plot then return list end
 
-    local function CollectFromFolder(folder)
+    local function Collect(folder)
         if not folder then return end
         for _, pod in ipairs(folder:GetChildren()) do
             if pod:IsA("Model") and pod:GetAttribute("Locked") ~= true then
@@ -239,11 +297,9 @@ local function GetMyPodiums()
         end
     end
 
-    CollectFromFolder(plot:FindFirstChild("Podiums"))
+    Collect(plot:FindFirstChild("Podiums"))
     local floor2 = plot:FindFirstChild("Floor2")
-    if floor2 then
-        CollectFromFolder(floor2:FindFirstChild("Podiums"))
-    end
+    if floor2 then Collect(floor2:FindFirstChild("Podiums")) end
     return list
 end
 
@@ -277,9 +333,7 @@ end
 
 local function TriggerClickDetector(cd)
     if not cd or not cd:IsA("ClickDetector") then return end
-    pcall(function()
-        cd.MaxActivationDistance = 999
-    end)
+    pcall(function() cd.MaxActivationDistance = 999 end)
     if type(fireclickdetector) == "function" then
         pcall(fireclickdetector, cd)
     end
@@ -300,14 +354,11 @@ local function TriggerTouch(part)
     end
 end
 
--- ============================================================================
--- 3. MESIN UPGRADE PODIUM PRESISI (MENDUKUNG JARAK DEKAT & SEMUA FORMAT REMOTE)
--- ============================================================================
-local function UpgradeSinglePodium(pod, useTeleportIfNeeded)
+-- Fungsi Upgrade Podium Pintar
+local function UpgradeSinglePodium(pod, allowTeleport)
     if not pod then return false end
     local slot = pod:GetAttribute("Slot") or tonumber(pod.Name:match("%d+"))
     local petUuid = pod:GetAttribute("PetUuid")
-    -- Hanya upgrade podium yang sudah ada pet di atasnya
     if not petUuid or petUuid == "" then return false end
 
     local cost = tonumber(pod:GetAttribute("UpgradeCost")) or 0
@@ -323,7 +374,6 @@ local function UpgradeSinglePodium(pod, useTeleportIfNeeded)
     local cdSingle = screenFace and screenFace:FindFirstChildOfClass("ClickDetector")
     local cdMax = maxFace and maxFace:FindFirstChildOfClass("ClickDetector")
 
-    -- Cek apakah uang cukup (berdasarkan UpgradeCost ATAU teks UpgradeMaxPrompt bukan +0)
     local canAfford = (cost > 0 and myMoney >= cost)
     if not canAfford and upgMaxPrompt then
         local actText = tostring(upgMaxPrompt.ActionText or "")
@@ -331,71 +381,122 @@ local function UpgradeSinglePodium(pod, useTeleportIfNeeded)
             canAfford = true
         end
     end
-    if not canAfford and cost == 0 then
-        canAfford = true
-    end
+    if not canAfford and cost == 0 then canAfford = true end
     if not canAfford then return false end
 
     local oldLevel = tonumber(pod:GetAttribute("Level")) or 1
 
-    -- 1. Coba panggil PodiumAction dengan argumen yang dipelajari atau pola standar
-    if Discovered.LearnedPodiumArgs then
-        local a1 = Discovered.LearnedPodiumArgs[1]
-        local a2 = Discovered.LearnedPodiumArgs[2]
-        if type(a1) == "number" then
-            SafeInvoke("PodiumAction", slot, a2 or "UpgradeMax")
-            SafeInvoke("PodiumAction", slot, "Upgrade")
-        elseif type(a1) == "string" then
-            SafeInvoke("PodiumAction", a1, slot)
+    -- 1. Gunakan pola PodiumAction yang sudah dipelajari (jika ada)
+    local learned = Discovered.LearnedCalls.PodiumAction
+    if learned then
+        if type(learned[1]) == "number" then
+            SafeInvoke("PodiumAction", slot, learned[2], learned[3])
+        elseif type(learned[2]) == "number" then
+            SafeInvoke("PodiumAction", learned[1], slot, learned[3])
+        elseif type(learned[1]) == "table" then
+            local copyTbl = {}
+            for k, v in pairs(learned[1]) do copyTbl[k] = v end
+            if copyTbl.Slot then copyTbl.Slot = slot end
+            if copyTbl.slot then copyTbl.slot = slot end
+            SafeInvoke("PodiumAction", copyTbl)
+        else
+            SafeInvoke("PodiumAction", table.unpack(learned))
         end
-    end
-
-    if slot then
+    else
+        -- Hanya coba 2 kombinasi paling umum agar tidak kena rate-limit server
         SafeInvoke("PodiumAction", "UpgradeMax", slot)
-        SafeInvoke("PodiumAction", "Upgrade", slot)
         SafeInvoke("PodiumAction", slot, "UpgradeMax")
-        SafeInvoke("PodiumAction", slot, "Upgrade")
-        SafeInvoke("PodiumAction", slot, "Max")
-        SafeInvoke("PodiumAction", "Max", slot)
     end
 
-    -- 2. Coba Trigger ClickDetector & ProximityPrompt dari jarak jauh dulu
+    -- 2. Trigger ClickDetector & ProximityPrompt
     if cdMax then TriggerClickDetector(cdMax) end
     if cdSingle then TriggerClickDetector(cdSingle) end
     if upgMaxPrompt then TriggerPrompt(upgMaxPrompt) end
     if upgPrompt then TriggerPrompt(upgPrompt) end
 
-    task.wait(0.08)
+    task.wait(0.1)
 
-    -- 3. Jika level belum naik (karena server mengecek jarak < 14 stud), dekatkan karakter sejenak!
+    -- 3. Jika server mewajibkan jarak < 14 stud dari layar Podium, teleport ke dekat Podium
     local newLevel = tonumber(pod:GetAttribute("Level")) or 1
-    if newLevel <= oldLevel and useTeleportIfNeeded then
+    if newLevel <= oldLevel and allowTeleport then
         local targetPart = screenFace or screenMesh or pod:FindFirstChild("PadBase")
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if targetPart and hrp then
-            local dist = (hrp.Position - targetPart.Position).Magnitude
-            if dist > 12 then
+            if (hrp.Position - targetPart.Position).Magnitude > 11 then
                 local savedCF = hrp.CFrame
                 hrp.CFrame = CFrame.new(targetPart.Position + Vector3.new(0, 2.5, 4))
-                task.wait(0.14)
+                task.wait(0.18)
                 if cdMax then TriggerClickDetector(cdMax) end
                 if cdSingle then TriggerClickDetector(cdSingle) end
                 if upgMaxPrompt then TriggerPrompt(upgMaxPrompt) end
                 if upgPrompt then TriggerPrompt(upgPrompt) end
-                task.wait(0.12)
+                task.wait(0.15)
                 if not State.AutoTreadmill then
                     hrp.CFrame = savedCF
                 end
             end
         end
     end
-
     return true
 end
 
+-- Fungsi Masuk / Jalankan Menara Tanpa Error
+local function TryEnterOrRunTower()
+    -- Selalu aktifkan Auto Retry & tolak Revive jika sedang sangkut di layar Revive
+    SafeFire("SetTowerAutoRetry", true)
+    SafeInvoke("DeclineRevive")
+    SafeInvoke("ResumeTower")
+
+    -- Jangan spam StartTower kalau sedang di dalam pertarungan menara!
+    if TowerRuntime.InTower and (os.clock() - TowerRuntime.LastStartAttempt) < 20 then
+        return
+    end
+
+    TowerRuntime.LastStartAttempt = os.clock()
+
+    -- Pastikan tim pet menara terbaik sudah terpasang sebelum mulai
+    SafeInvoke("EquipBestTeam")
+    task.wait(0.15)
+
+    -- 1. Jika pemain sudah pernah masuk menara 1x, gunakan argumen persis milik pemain
+    if Discovered.LearnedCalls.StartTower then
+        local ok, res = SafeInvoke("StartTower", table.unpack(Discovered.LearnedCalls.StartTower))
+        if ok and res ~= false then
+            TowerRuntime.InTower = true
+            return
+        end
+    end
+
+    -- 2. Coba panggil StartTower tanpa argumen dulu
+    local ok0, res0 = SafeInvoke("StartTower")
+    if ok0 and res0 ~= false and res0 ~= nil then
+        TowerRuntime.InTower = true
+        return
+    end
+
+    -- 3. Coba ID Menara yang diekstrak dari ReplicatedStorage.Shared
+    for _, tId in ipairs(Discovered.TowerIds) do
+        local ok, res = SafeInvoke("StartTower", tId)
+        if ok and res ~= false and res ~= nil then
+            Discovered.LearnedCalls.StartTower = { tId }
+            TowerRuntime.InTower = true
+            return
+        end
+    end
+
+    -- 4. Coba buka lewat StandTowers ProximityPrompt di TowersPad jika perlu
+    local towersPad = Workspace:FindFirstChild("TowersPad")
+    local zone = towersPad and towersPad:FindFirstChild("Zone")
+    local att = zone and zone:FindFirstChild("StandPromptAttachment")
+    local standPrompt = att and att:FindFirstChild("StandTowers")
+    if standPrompt then
+        TriggerPrompt(standPrompt)
+    end
+end
+
 -- ============================================================================
--- 4. UI ROCKSTAR HUB v6.2 (CUSTOM CYBER BLUE)
+-- 4. UI ROCKSTAR HUB v6.3 (CUSTOM CYBER BLUE)
 -- ============================================================================
 local guiParent = (type(gethui) == "function" and gethui()) or CoreGui
 local oldUI = guiParent:FindFirstChild("RockstarHubRollPetsV6")
@@ -407,7 +508,6 @@ screenGui.DisplayOrder = 999999999
 screenGui.ResetOnSpawn = false
 screenGui.Parent = guiParent
 
--- Tombol Floating Lingkaran Neon R★
 local floatBtn = Instance.new("TextButton")
 floatBtn.Size = UDim2.new(0, 54, 0, 54)
 floatBtn.Position = UDim2.new(0, 18, 0.42, 0)
@@ -432,7 +532,6 @@ local floatStroke = Instance.new("UIStroke", floatBtn)
 floatStroke.Color = Color3.fromRGB(0, 225, 255)
 floatStroke.Thickness = 2.2
 
--- Main Window
 local mainWin = Instance.new("Frame")
 mainWin.Size = UDim2.new(0, 560, 0, 400)
 mainWin.Position = UDim2.new(0.5, -280, 0.5, -200)
@@ -451,7 +550,6 @@ floatBtn.MouseButton1Click:Connect(function()
     mainWin.Visible = not mainWin.Visible
 end)
 
--- Top Header Bar
 local topBar = Instance.new("Frame", mainWin)
 topBar.Size = UDim2.new(1, 0, 0, 46)
 topBar.BackgroundColor3 = Color3.fromRGB(11, 22, 42)
@@ -482,7 +580,7 @@ titleText.Font = Enum.Font.GothamBlack
 titleText.TextSize = 13
 titleText.TextXAlignment = Enum.TextXAlignment.Left
 titleText.TextColor3 = Color3.fromRGB(235, 248, 255)
-titleText.Text = "ROCKSTAR HUB v6.2  •  [🎃] PUTAR HEWAN PELIHARAAN"
+titleText.Text = "ROCKSTAR HUB v6.3  •  [🎃] PUTAR HEWAN PELIHARAAN"
 
 local minBtn = Instance.new("TextButton", topBar)
 minBtn.Size = UDim2.new(0, 30, 0, 30)
@@ -497,7 +595,6 @@ minBtn.MouseButton1Click:Connect(function()
     mainWin.Visible = false
 end)
 
--- Sidebar Kiri
 local sidebar = Instance.new("Frame", mainWin)
 sidebar.Size = UDim2.new(0, 155, 1, -58)
 sidebar.Position = UDim2.new(0, 10, 0, 52)
@@ -514,7 +611,6 @@ sideLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 local sidePad = Instance.new("UIPadding", sidebar)
 sidePad.PaddingTop = UDim.new(0, 10)
 
--- Area Konten Kanan
 local contentHolder = Instance.new("Frame", mainWin)
 contentHolder.Size = UDim2.new(1, -182, 1, -58)
 contentHolder.Position = UDim2.new(0, 172, 0, 52)
@@ -660,9 +756,10 @@ end
 -- ============================================================================
 local tabMain     = CreateTab("⚡ Auto Utama")
 local tabUpgrade  = CreateTab("⬆️ Peningkatan")
+local tabEvent    = CreateTab("🗼 Menara & Event")
 local tabRewards  = CreateTab("🎁 Klaim & Rahasia")
-local tabEvent    = CreateTab("🎃 Event & Tower")
 local tabTeleport = CreateTab("📍 Teleport Map")
+local tabDebug    = CreateTab("🔍 Log & Belajar")
 
 TabButtons["⚡ Auto Utama"].BackgroundColor3 = Color3.fromRGB(0, 135, 255)
 TabButtons["⚡ Auto Utama"].TextColor3 = Color3.new(1, 1, 1)
@@ -677,7 +774,7 @@ AddToggle(tabMain, "💰 Auto Ambil Uang Podium (Plot Sendiri)", "Otomatis menye
     State.AutoCollectCash = v
 end)
 
-AddToggle(tabMain, "🐾 Auto Pasang Pet Terbaik (EquipBest)", "Otomatis memanggil EquipBestPets & EquipBestTeam", false, function(v)
+AddToggle(tabMain, "🐾 Auto Pasang Pet & Tim Terbaik", "Otomatis memanggil EquipBestPets & EquipBestTeam", false, function(v)
     State.AutoEquipBest = v
 end)
 
@@ -691,32 +788,64 @@ AddToggle(tabMain, "⚡ Lari Cepat (WalkSpeed 55)", "Meningkatkan kecepatan jala
     if hum and not v then hum.WalkSpeed = 16 end
 end)
 
--- [TAB 2: PENINGKATAN (UPGRADE PODIUM, STATUS, & DADU)]
-AddToggle(tabUpgrade, "⬆️ Auto Peningkatan Level Podium (Smart Proximity)", "Otomatis mendekati & meng-upgrade semua Podium yang uangnya cukup", false, function(v)
+-- [TAB 2: PENINGKATAN]
+AddToggle(tabUpgrade, "⬆️ Auto Peningkatan Level Podium", "Otomatis mendekati & meng-upgrade semua Podium yang uangnya cukup", false, function(v)
     State.AutoUpgradePodium = v
 end)
 
 AddButton(tabUpgrade, "⚡ Paksa Upgrade Semua Podium Sekarang (1x Keliling)", "UPGRADE MAX", function(btn)
     btn.Text = "PROSES..."
-    local podiums = GetMyPodiums()
-    for _, pod in ipairs(podiums) do
+    for _, pod in ipairs(GetMyPodiums()) do
         UpgradeSinglePodium(pod, true)
     end
     btn.Text = "✅ SELESAI!"
     task.delay(1.5, function() if btn and btn.Parent then btn.Text = "UPGRADE MAX" end end)
 end)
 
-AddToggle(tabUpgrade, "📈 Auto Beli Peningkatan Status (BuyUpgrade & Rebirth)", "Otomatis membeli upgrade Luck, Roll Speed, Cash, & Rebirth Stat", false, function(v)
+AddToggle(tabUpgrade, "📈 Auto Beli Peningkatan Status & Rebirth", "Otomatis membeli upgrade di menu Peningkatan & Rebirth", false, function(v)
     State.AutoBuyUpgrades = v
-    if v then task.spawn(ExtractGameConfigs) end
+    if v then task.spawn(ExtractSharedData) end
 end)
 
-AddToggle(tabUpgrade, "🎲 Auto Beli & Pasang Dadu Terbaik (BuyDice)", "Otomatis membeli dan memasang dadu terbaik yang cukup uangnya", false, function(v)
+AddToggle(tabUpgrade, "🎲 Auto Beli & Pasang Dadu Terbaik", "Otomatis membeli dan memasang dadu terbaik", false, function(v)
     State.AutoBuyDice = v
-    if v then task.spawn(ExtractGameConfigs) end
+    if v then task.spawn(ExtractSharedData) end
 end)
 
--- [TAB 3: KLAIM & RAHASIA]
+-- [TAB 3: MENARA & EVENT]
+AddToggle(tabEvent, "🗼 Smart Auto Menara (Auto Team + Anti-Macet Revive)", "Pasang tim terbaik, masuk menara, tolak layar Revive, & Auto Retry", false, function(v)
+    State.AutoTower = v
+    if v then
+        TowerRuntime.InTower = false
+        TowerRuntime.LastStartAttempt = 0
+        TryEnterOrRunTower()
+    end
+end)
+
+AddButton(tabEvent, "⚔️ Pasang Tim Terbaik & Buka Menu Menara", "BUKA MENARA", function()
+    SafeInvoke("EquipBestTeam")
+    TeleportTo(Vector3.new(-309.8, 329.5, -28.2))
+    task.wait(0.25)
+    local towersPad = Workspace:FindFirstChild("TowersPad")
+    local zone = towersPad and towersPad:FindFirstChild("Zone")
+    local att = zone and zone:FindFirstChild("StandPromptAttachment")
+    local standPrompt = att and att:FindFirstChild("StandTowers")
+    if standPrompt then TriggerPrompt(standPrompt) end
+end)
+
+AddToggle(tabEvent, "🍬 Auto Klaim Permen Halloween (CandyRain)", "Otomatis menyedot dan klaim semua permen saat Candy Rain", false, function(v)
+    State.AutoCandyClaim = v
+end)
+
+AddToggle(tabEvent, "♻️ Auto Rebirth Otomatis", "Otomatis melakukan Rebirth begitu syarat uang terpenuhi", false, function(v)
+    State.AutoRebirth = v
+end)
+
+AddToggle(tabEvent, "🗑️ Auto Jual Pet Terlemah (SellWeakest)", "Otomatis menjual pet terlemah agar tas tidak penuh", false, function(v)
+    State.AutoSellWeakest = v
+end)
+
+-- [TAB 4: KLAIM & RAHASIA]
 AddButton(tabRewards, "🌟 Klaim 3 Golden Dice Rahasia (Alley, Hidden, Tower)", "KLAIM SEMUA", function(btn)
     local char = LocalPlayer.Character
     local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -758,24 +887,6 @@ AddToggle(tabRewards, "⏩ Auto Skip 5 Menit (AdBoard Plot)", "Otomatis memicu W
     State.AutoSkipAdBoard = v
 end)
 
--- [TAB 4: EVENT & TOWER]
-AddToggle(tabEvent, "🍬 Auto Klaim Permen Halloween (CandyRain)", "Otomatis menyedot dan klaim semua permen saat Candy Rain", false, function(v)
-    State.AutoCandyClaim = v
-end)
-
-AddToggle(tabEvent, "🗼 Auto Masuk & Retry Tower", "Otomatis mengaktifkan Auto Retry dan masuk ke dalam Tower", false, function(v)
-    State.AutoTower = v
-    if v then SafeFire("SetTowerAutoRetry", true) end
-end)
-
-AddToggle(tabEvent, "♻️ Auto Rebirth Otomatis", "Otomatis melakukan Rebirth begitu syarat uang terpenuhi", false, function(v)
-    State.AutoRebirth = v
-end)
-
-AddToggle(tabEvent, "🗑️ Auto Jual Pet Terlemah (SellWeakest)", "Otomatis menjual pet terlemah agar tas tidak penuh", false, function(v)
-    State.AutoSellWeakest = v
-end)
-
 -- [TAB 5: TELEPORT MAP]
 AddButton(tabTeleport, "🏠 Teleport ke Plot / Base Sendiri", "TELEPORT", function()
     local plot = GetMyPlot()
@@ -801,6 +912,42 @@ end)
 
 AddButton(tabTeleport, "🗼 Teleport ke Gerbang Towers", "TELEPORT", function()
     TeleportTo(Vector3.new(-297.8, 326.0, -28.2))
+end)
+
+-- [TAB 6: LOG & BELAJAR OTOMATIS]
+local debugBox = Instance.new("TextBox", tabDebug)
+debugBox.Size = UDim2.new(1, 0, 0, 210)
+debugBox.BackgroundColor3 = Color3.fromRGB(5, 10, 18)
+debugBox.TextColor3 = Color3.fromRGB(0, 215, 255)
+debugBox.Font = Enum.Font.Code
+debugBox.TextSize = 11
+debugBox.TextXAlignment = Enum.TextXAlignment.Left
+debugBox.TextYAlignment = Enum.TextYAlignment.Top
+debugBox.MultiLine = true
+debugBox.TextWrapped = true
+debugBox.ClearTextOnFocus = false
+debugBox.TextEditable = false
+debugBox.Text = "Klik manual 1x pada tombol Upgrade atau Menara di game, maka script otomatis merekam dan mempelajari argumennya di sini!"
+Instance.new("UICorner", debugBox).CornerRadius = UDim.new(0, 8)
+
+AddButton(tabDebug, "📋 Copy Log Pembelajaran Remote", "COPY LOG", function(btn)
+    local fn = setclipboard or toclipboard
+    if type(fn) == "function" then
+        pcall(fn, debugBox.Text)
+        btn.Text = "✅ TERSALIN!"
+        task.delay(1.5, function() if btn and btn.Parent then btn.Text = "COPY LOG" end end)
+    end
+end)
+
+task.spawn(function()
+    while screenGui.Parent do
+        if Pages["🔍 Log & Belajar"].Visible then
+            debugBox.Text = "=== LOG SELF-LEARNING ROCKSTAR v6.3 ===\n"
+                .. "InTower Status: " .. tostring(TowerRuntime.InTower) .. "\n"
+                .. table.concat(Discovered.RecentLogs, "\n")
+        end
+        task.wait(1)
+    end
 end)
 
 -- ============================================================================
@@ -846,25 +993,29 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(1.0)
+        task.wait(1.2)
     end
 end)
 
--- Loop 3: Auto Beli Peningkatan Status (BuyUpgrade, UpgradeRebirthStat, BuyDice)
+-- Loop 3: Auto Beli Peningkatan Status & Dadu
 task.spawn(function()
     while screenGui.Parent do
         if State.AutoBuyUpgrades then
-            if Discovered.LearnedUpgradeArgs["BuyUpgrade"] then
-                SafeInvoke("BuyUpgrade", table.unpack(Discovered.LearnedUpgradeArgs["BuyUpgrade"]))
+            if #Discovered.LearnedCalls.BuyUpgrade > 0 then
+                SafeInvoke("BuyUpgrade", table.unpack(Discovered.LearnedCalls.BuyUpgrade))
             end
             for _, upgId in ipairs(Discovered.UpgradeIds) do
                 if not State.AutoBuyUpgrades then break end
                 SafeInvoke("BuyUpgrade", upgId)
-                SafeInvoke("BuyUpgrade", upgId, true)
+                task.wait(0.05)
+            end
+            if #Discovered.LearnedCalls.UpgradeRebirthStat > 0 then
+                SafeInvoke("UpgradeRebirthStat", table.unpack(Discovered.LearnedCalls.UpgradeRebirthStat))
             end
             for _, statId in ipairs(Discovered.RebirthStatIds) do
                 if not State.AutoBuyUpgrades then break end
                 SafeInvoke("UpgradeRebirthStat", statId)
+                task.wait(0.05)
             end
         end
 
@@ -873,10 +1024,11 @@ task.spawn(function()
                 if not State.AutoBuyDice then break end
                 SafeInvoke("BuyDice", diceId)
                 SafeInvoke("EquipDice", diceId)
+                task.wait(0.05)
             end
         end
 
-        task.wait(2.0)
+        task.wait(2.5)
     end
 end)
 
@@ -907,12 +1059,16 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Loop 5: Auto Equip, Rewards, Spin, Tower, Rebirth, Candy
+-- Loop 5: Auto Menara, Equip, Rewards, Spin, Rebirth, Candy
 task.spawn(function()
     while screenGui.Parent do
         if State.AutoEquipBest then
             SafeInvoke("EquipBestPets")
             SafeInvoke("EquipBestTeam")
+        end
+
+        if State.AutoTower then
+            TryEnterOrRunTower()
         end
 
         if State.AutoSpinWheel then
@@ -942,12 +1098,6 @@ task.spawn(function()
             local panel = ad and ad:FindFirstChild("Panel")
             local wp = panel and panel:FindFirstChild("WatchPrompt")
             if wp then TriggerPrompt(wp) end
-        end
-
-        if State.AutoTower then
-            SafeFire("SetTowerAutoRetry", true)
-            SafeInvoke("ResumeTower")
-            SafeInvoke("StartTower")
         end
 
         if State.AutoRebirth then SafeInvoke("Rebirth") end
