@@ -1,7 +1,7 @@
 -- ============================================================================
--- * ROCKSTAR HUB v8.2 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
+-- * ROCKSTAR HUB v8.4 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
 -- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v8.2:
+-- Update v8.4:
 --   [[OK]] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
 --   [[OK]] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
 --   [[OK]] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
@@ -11,7 +11,10 @@
 --   [[OK]] FIX AUTO TREADMILL: Berdiri di Belt + Touch Physics + Auto Run aktif
 --   [[OK]] FIX AUTO MENARA OTOMATIS PENUH:
 --       - AutoClick GUI (Deteksi luas: Start/Fight/Battle/Mulai/Tarung/Stage)
---       - Auto Fast Combat Tap (VirtualInputManager + VirtualUser + 20 CPS)
+--       - Auto Combat Tap aman (tanpa klik layar acak)
+--   [[OK]] v8.4: SafeCall auto-deteksi RemoteEvent/RemoteFunction + timeout
+--   [[OK]] v8.4: Blokir popup beli Robux & gabung komunitas
+--   [[OK]] v8.4: Fix tombol R* (single handler) & fix pattern scan Toko Dadu
 --       - Auto Retry & Decline Revive instan
 --   [[OK]] DADU TERBAIK & AUTO BUY TOKO DADU: Stabil & True Luck (Tanpa Skip Void)
 --   [[OK]] AUTO SELL: Jual Pet Terlemah & Jual Semua Pet Cadangan
@@ -56,7 +59,7 @@ local Config = {
     AutoSellWeakest = false,
     AutoSellAll = false,
 
-    -- Sistem Dadu v8.2
+    -- Sistem Dadu v8.4
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -190,15 +193,34 @@ local Remotes = {
     CandyClaim = GetRemote("CandyClaim"),
 }
 
-local function SafeCall(remoteName, isFire, ...)
+-- SafeCall v8.4: deteksi otomatis tipe remote + timeout + cache remote yang tidak ada
+local unpack_fn = table.unpack or unpack
+local function pack_fn(...)
+    return { n = select("#", ...), ... }
+end
+
+local MissingRemotes = {}
+local function SafeCall(remoteName, _, ...)
+    if MissingRemotes[remoteName] then return false end
     local r = Remotes[remoteName] or GetRemote(remoteName)
-    if r then
-        Remotes[remoteName] = r
-        if isFire then
-            return pcall(function(...) r:FireServer(...) end, ...)
-        else
-            return pcall(function(...) return r:InvokeServer(...) end, ...)
-        end
+    if not r then
+        MissingRemotes[remoteName] = true
+        return false
+    end
+    Remotes[remoteName] = r
+    local args = pack_fn(...)
+    if r:IsA("RemoteEvent") or r:IsA("UnreliableRemoteEvent") then
+        return pcall(function() r:FireServer(unpack_fn(args, 1, args.n)) end)
+    elseif r:IsA("RemoteFunction") then
+        local done, result = false, nil
+        task.spawn(function()
+            local ok, res = pcall(function() return r:InvokeServer(unpack_fn(args, 1, args.n)) end)
+            if ok then result = res end
+            done = true
+        end)
+        local t0 = os.clock()
+        while not done and (os.clock() - t0) < 2.5 do task.wait() end
+        return done, result
     end
     return false
 end
@@ -245,6 +267,16 @@ local KnownDiceCatalog = {
     { Name = "Galaxy", Aliases = {"Galaxy", "Galaksi"}, Luck = 100000000.0, Tier = "Divine" },
     { Name = "Infinity", Aliases = {"Infinity", "Tak Terbatas"}, Luck = 500000000.0, Tier = "Infinity" },
 }
+
+-- Dadu yang umumnya hanya bisa dibeli dengan Robux (tidak dibeli otomatis)
+local PremiumDiceNames = { "solar", "lunar", "galaxy", "infinity" }
+function IsPremiumDice(name)
+    local n = string.lower(tostring(name or ""))
+    for _, p in ipairs(PremiumDiceNames) do
+        if string.find(n, p, 1, true) then return true end
+    end
+    return false
+end
 
 local function ParseMultiplierString(str)
     if not str then return nil end
@@ -346,14 +378,15 @@ local function GetDiceCardsFromGui()
                                 equipBtn = el:IsA("TextButton") and el or el.Parent
                                 isOwned = true
                             end
-                        elseif string.find(txt, "buy") or string.find(txt, "beli") or string.find(txt, "$") or string.find(txt, "[Coin]") then
+                        elseif (string.find(txt, "buy", 1, true) or string.find(txt, "beli", 1, true) or string.find(txt, "$", 1, true) or string.find(txt, "coin", 1, true))
+                            and not string.find(txt, "robux", 1, true) and not string.find(txt, "r$", 1, true) then
                             if el:IsA("TextButton") or el:IsA("ImageButton") or el.Parent:IsA("TextButton") or el.Parent:IsA("ImageButton") then
                                 buyBtn = el:IsA("TextButton") and el or el.Parent
                             end
                         end
 
                         if el:IsA("TextLabel") then
-                            if string.find(txt, "[Luck]") or string.find(txt, "luck") or string.find(txt, "keberuntungan") or string.find(txt, "x") then
+                            if string.find(txt, "luck", 1, true) or string.find(txt, "keberuntungan", 1, true) or string.match(txt, "%d[%d%.,]*%s*[kmbt]?%s*x") then
                                 luckLabel = el.Text
                             end
                             for tierName, _ in pairs(TierMultiplier) do
@@ -362,7 +395,7 @@ local function GetDiceCardsFromGui()
                                     break
                                 end
                             end
-                            if not titleLabel and el.Text ~= "" and not string.find(txt, "luck") and not string.find(txt, "buy") and not string.find(txt, "equip") and not string.find(txt, "$") then
+                            if not titleLabel and el.Text ~= "" and not string.find(txt, "luck", 1, true) and not string.find(txt, "buy", 1, true) and not string.find(txt, "equip", 1, true) and not string.find(txt, "$", 1, true) then
                                 titleLabel = el.Text
                             end
                         end
@@ -560,42 +593,53 @@ local function GetMyPodiums()
 end
 
 -- UPGRADE 100% JARAK JAUH TANPA PERLU JALAN / TELEPORT
+-- Data map: PodiumX.Screen.PodiumPrompt.{ProximityPrompt (Upgrade), UpgradeMaxPrompt (Upgrade Max)}
+local function FirePromptRemote(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    pcall(function()
+        prompt.MaxActivationDistance = math.huge
+        prompt.RequiresLineOfSight = false
+        prompt.HoldDuration = 0
+    end)
+    if typeof(fireproximityprompt) == "function" then
+        pcall(function() fireproximityprompt(prompt) end)
+    end
+end
+
 local function UpgradeAllPodiumsRemote()
     local podiums = GetMyPodiums()
+    local upgraded = 0
     for _, podium in ipairs(podiums) do
-        if not Config.AutoUpgradePodium then break end
-        local slotNum = tonumber(podium:GetAttribute("Slot")) or tonumber(podium.Name:match("%d+"))
+        local isLocked = podium:GetAttribute("Locked") == true
         local petUuid = podium:GetAttribute("PetUuid")
+        if not isLocked and petUuid then
+            local slotNum = tonumber(podium:GetAttribute("Slot")) or tonumber(podium.Name:match("%d+"))
 
-        -- 1. Panggil Remote Resmi (Bisa dari jarak berapapun)
-        if slotNum then
-            SafeCall("PodiumAction", false, slotNum, "UpgradeMax")
-            SafeCall("PodiumAction", false, slotNum, "Upgrade")
-        end
-        if petUuid then
-            SafeCall("UpgradePet", false, petUuid)
-            SafeCall("LevelUpPet", false, petUuid)
-            SafeCall("PodiumAction", false, petUuid, "UpgradeMax")
-        end
-
-        -- 2. Trigger ClickDetector dari jarak jauh (fireclickdetector bypass jarak)
-        for _, desc in ipairs(podium:GetDescendants()) do
-            if desc:IsA("ClickDetector") and typeof(fireclickdetector) == "function" then
-                pcall(function() fireclickdetector(desc) end)
+            -- 1. Remote resmi PodiumAction (RemoteFunction)
+            if slotNum then
+                SafeCall("PodiumAction", false, slotNum, "UpgradeMax")
             end
-        end
 
-        -- 3. Trigger ProximityPrompt dari jarak jauh (Bypass Jarak Maksimal)
-        for _, desc in ipairs(podium:GetDescendants()) do
-            if desc:IsA("ProximityPrompt") then
-                desc.MaxActivationDistance = math.huge
-                desc.RequiresLineOfSight = false
-                desc.HoldDuration = 0
-                pcall(function() fireproximityprompt(desc) end)
+            -- 2. Prompt podium dari jarak jauh (Upgrade Max dulu, lalu Upgrade biasa)
+            local screen = podium:FindFirstChild("Screen")
+            local pp = screen and screen:FindFirstChild("PodiumPrompt")
+            if pp then
+                FirePromptRemote(pp:FindFirstChild("UpgradeMaxPrompt"))
+                FirePromptRemote(pp:FindFirstChild("ProximityPrompt"))
             end
+
+            -- 3. Trigger ClickDetector ScreenFace / MaxFace (Data Map)
+            for _, cd in ipairs(podium:GetDescendants()) do
+                if cd:IsA("ClickDetector") and typeof(fireclickdetector) == "function" then
+                    pcall(function() fireclickdetector(cd) end)
+                end
+            end
+
+            upgraded = upgraded + 1
+            task.wait(0.04)
         end
-        task.wait(0.04)
     end
+    return upgraded
 end
 
 -- ============================================================================
@@ -611,6 +655,10 @@ end
 if Remotes.TowerEvent and Remotes.TowerEvent:IsA("RemoteEvent") then
     Remotes.TowerEvent.OnClientEvent:Connect(function(eventType, payload)
         local evStr = tostring(eventType or ""):lower()
+        if State.LastTowerEventName ~= evStr then
+            State.LastTowerEventName = evStr
+            Log("TowerEvent: " .. evStr)
+        end
         if type(payload) == "table" then
             local stg = tonumber(payload.Stage or payload.Floor or payload.Wave or payload.NextStage or payload.UnlockedStage)
             if stg and stg > Config.HighestUnlockedStage then Config.HighestUnlockedStage = stg end
@@ -632,50 +680,71 @@ if Remotes.TowerEvent and Remotes.TowerEvent:IsA("RemoteEvent") then
     end)
 end
 
+local TowerWords = { "tower", "stage", "floor", "battle", "menara", "tarung" }
+local BlockedGuiWords = { "shop", "store", "robux", "pass", "communit", "audit", "group", "code", "premium", "offer", "deal", "product" }
+
+local function NameHasAny(name, list)
+    local n = string.lower(name)
+    for _, w in ipairs(list) do
+        if string.find(n, w, 1, true) then return true end
+    end
+    return false
+end
+
+-- Cek apakah tombol berada di dalam frame/GUI menara (dan bukan di dalam toko/komunitas)
+local function IsInTowerContext(inst, rootGui)
+    local inTower = false
+    local cur = inst
+    while cur and cur ~= rootGui.Parent do
+        if NameHasAny(cur.Name, BlockedGuiWords) then return false end
+        if NameHasAny(cur.Name, TowerWords) then inTower = true end
+        cur = cur.Parent
+    end
+    return inTower
+end
+
+local function FireGuiButtonSafe(btn)
+    if typeof(getconnections) ~= "function" then return end
+    pcall(function()
+        for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do pcall(function() conn:Fire() end) end
+        for _, conn in ipairs(getconnections(btn.Activated)) do pcall(function() conn:Fire() end) end
+    end)
+end
+
+local function IsRobuxButton(bText, bName)
+    return string.find(bText, "robux", 1, true) or string.find(bText, "r$", 1, true) or string.find(bText, "$", 1, true)
+        or string.find(bText, "buy", 1, true) or string.find(bText, "beli", 1, true) or string.find(bText, "join", 1, true)
+        or string.find(bText, "revive", 1, true) or string.find(bText, "skip", 1, true)
+        or string.find(bName, "buy", 1, true) or string.find(bName, "robux", 1, true) or string.find(bName, "revive", 1, true)
+        or string.find(bName, "purchase", 1, true) or string.find(bName, "product", 1, true)
+end
+
 local function AutoClickTowerGUI(stageNum)
     local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
     if not pGui then return end
 
     for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub") then
-            local gName = g.Name:lower()
-            -- Proteksi Ketat: Hanya periksa GUI Menara / Battle / Stage
-            local isTowerGui = gName:find("tower") or gName:find("stage") or gName:find("floor") or gName:find("battle") or gName:find("menara")
-            -- Anti-Robux & Anti-Komunitas: Abaikan toko, komunitas, robux, pass
-            local isBlacklisted = gName:find("shop") or gName:find("store") or gName:find("robux") or gName:find("pass") 
-                or gName:find("communit") or gName:find("audit") or gName:find("group") or gName:find("code")
+        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub", 1, true) and not NameHasAny(g.Name, BlockedGuiWords) then
+            for _, desc in ipairs(g:GetDescendants()) do
+                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible and IsInTowerContext(desc, g) then
+                    local bText = (desc:IsA("TextButton") and string.lower(desc.Text)) or ""
+                    local bName = string.lower(desc.Name)
 
-            if isTowerGui and not isBlacklisted then
-                for _, desc in ipairs(g:GetDescendants()) do
-                    if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                        local bText = (desc:IsA("TextButton") and desc.Text:lower()) or ""
-                        local bName = desc.Name:lower()
+                    if not IsRobuxButton(bText, bName) then
+                        -- Tombol mulai / masuk menara
+                        if string.find(bText, "fight", 1, true) or string.find(bText, "battle", 1, true) or string.find(bText, "tarung", 1, true)
+                           or string.find(bText, "masuk", 1, true) or string.find(bText, "mulai", 1, true) or string.find(bText, "enter", 1, true)
+                           or (string.find(bText, "start", 1, true) and not string.find(bText, "up", 1, true))
+                           or string.find(bName, "fight", 1, true) or string.find(bName, "battle", 1, true)
+                           or string.find(bName, "start", 1, true) or string.find(bName, "enter", 1, true) then
+                            FireGuiButtonSafe(desc)
+                        end
 
-                        -- Jangan pernah klik tombol beli item atau verifikasi komunitas
-                        local isRobuxBtn = bText:find("robux") or bText:find("r%$") or bText:find("%$") or bText:find("buy") 
-                            or bText:find("beli") or bText:find("join") or bText:find("claim") or bName:find("buy") or bName:find("robux")
-
-                        if not isRobuxBtn then
-                            -- Klik tombol mulai menara
-                            if bText:find("fight") or bText:find("battle") or bText:find("tarung") or bText:find("masuk") 
-                               or (bText:find("start") and not bText:find("up"))
-                               or bName:find("fight") or bName:find("battle") or bName:find("start") or bName:find("enter") then
-                                pcall(function()
-                                    if typeof(getconnections) == "function" then
-                                        for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
-                                        for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
-                                    end
-                                end)
-                            end
-
-                            -- Klik tombol nomor stage
-                            if stageNum and (bText == tostring(stageNum) or bName == "stage" .. tostring(stageNum) or bName == tostring(stageNum)) then
-                                pcall(function()
-                                    if typeof(getconnections) == "function" then
-                                        for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
-                                        for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
-                                    end
-                                end)
+                        -- Tombol nomor stage
+                        if stageNum then
+                            local s = tostring(stageNum)
+                            if bText == s or bName == "stage" .. s or bName == s or bName == "floor" .. s then
+                                FireGuiButtonSafe(desc)
                             end
                         end
                     end
@@ -720,8 +789,15 @@ local function StartTowerStage(stageNum)
     end
 
     AutoClickTowerGUI(stageNum)
-    SafeCall("StartTower", false, stageNum)
-    SafeCall("StartTower", false)
+    local done, res = SafeCall("StartTower", false, stageNum)
+    if not done then
+        done, res = SafeCall("StartTower", false)
+    end
+    if done then
+        State.InTower = true
+        State.TowerStartedAt = tick()
+        Log("Menara dimulai: Stage " .. tostring(stageNum))
+    end
 end
 
 -- ============================================================================
@@ -850,7 +926,7 @@ task.spawn(function()
 
             local cards = GetDiceCardsFromGui()
             for _, card in ipairs(cards) do
-                if card.Status == "unowned" and card.BuyButton then
+                if card.Status == "unowned" and card.BuyButton and not IsPremiumDice(card.Name) then
                     pcall(function()
                         for _, conn in ipairs(getconnections(card.BuyButton.MouseButton1Click)) do conn:Fire() end
                         for _, conn in ipairs(getconnections(card.BuyButton.Activated)) do conn:Fire() end
@@ -860,8 +936,10 @@ task.spawn(function()
             end
 
             for _, d in ipairs(KnownDiceCatalog) do
-                SafeCall("BuyDice", false, d.Name)
-                task.wait(0.04)
+                if not IsPremiumDice(d.Name) then
+                    SafeCall("BuyDice", false, d.Name)
+                    task.wait(0.04)
+                end
             end
 
             if Config.AutoEquipDice then
@@ -900,7 +978,7 @@ local PreseededRebirthStats = {
 }
 
 local PreseededCandyShopItems = {
-    "HauntedCrate", "PumpkinDice", "HalloweenDice", "CandyLuck1", "CandyLuck2",
+    "PumpkinDice", "HalloweenDice", "CandyLuck1", "CandyLuck2",
     "CandyMultiplier1", "CandyRollSpeed1", "CandyPack1", "CandyPack2", "CandyPack3",
 }
 
@@ -920,7 +998,7 @@ task.spawn(function()
                 task.wait(0.02)
             end
             for key, args in pairs(State.LearnedUpgradeArgs) do
-                SafeCall("BuyUpgrade", false, unpack(args))
+                SafeCall("BuyUpgrade", false, table.unpack(args))
             end
         end
 
@@ -958,11 +1036,12 @@ task.spawn(function()
             if Config.AutoRetryTower then
                 SafeCall("SetTowerAutoRetry", true, true)
             end
-            if Config.AutoDeclineRevive then
-                SafeCall("DeclineRevive", false)
-            end
 
             AutoClickTowerGUI(targetStage)
+
+            if State.InTower and State.TowerStartedAt and (tick() - State.TowerStartedAt) > 120 then
+                State.InTower = false
+            end
 
             if not State.InTower then
                 StartTowerStage(targetStage)
@@ -991,16 +1070,14 @@ task.spawn(function()
                     for _, g in ipairs(pGui:GetChildren()) do
                         if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "RockstarHub") then
                             local gn = g.Name:lower()
-                            if gn:find("tower") or gn:find("battle") or gn:find("combat") then
+                            if not NameHasAny(g.Name, BlockedGuiWords) then
                                 for _, desc in ipairs(g:GetDescendants()) do
-                                    if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
+                                    if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible and IsInTowerContext(desc, g) then
                                         local txt = (desc:IsA("TextButton") and desc.Text:lower()) or ""
                                         local n = desc.Name:lower()
-                                        if n:find("tap") or n:find("attack") or n:find("hit") or txt:find("tap") or txt:find("serang") then
-                                            if typeof(getconnections) == "function" then
-                                                for _, conn in ipairs(getconnections(desc.MouseButton1Click)) do pcall(function() conn:Fire() end) end
-                                                for _, conn in ipairs(getconnections(desc.Activated)) do pcall(function() conn:Fire() end) end
-                                            end
+                                        if (n:find("tap", 1, true) or n:find("attack", 1, true) or n:find("hit", 1, true) or txt:find("tap", 1, true) or txt:find("serang", 1, true))
+                                           and not IsRobuxButton(txt, n) then
+                                            FireGuiButtonSafe(desc)
                                         end
                                     end
                                 end
@@ -1044,10 +1121,18 @@ task.spawn(function()
         end
 
         if Config.AutoSpinWheel then
-            SafeCall("SpinWheel", false)
-        end
-        if Config.AutoWatchSkipAd then
-            SafeCall("WatchSkipAd", false)
+            local freeSpin = (tonumber(LocalPlayer:GetAttribute("WheelSpins")) or 0) > 0
+            if not freeSpin then
+                local wheel = Workspace:FindFirstChild("SpinWheel")
+                local base = wheel and wheel:FindFirstChild("Base")
+                local prompt = base and base:FindFirstChildOfClass("ProximityPrompt")
+                if prompt and string.find(string.lower(prompt.ActionText), "free", 1, true) then
+                    freeSpin = true
+                end
+            end
+            if freeSpin then
+                SafeCall("SpinWheel", false)
+            end
         end
         if Config.AutoRebirth then
             SafeCall("Rebirth", false)
@@ -1057,7 +1142,6 @@ task.spawn(function()
             SafeCall("ClaimDaily", false)
             SafeCall("ClaimStarterQuest", false)
             SafeCall("ClaimAllAchievements", false)
-            SafeCall("ClaimGroupChest", false)
             SafeCall("ClaimFriendChest", false)
             SafeCall("ClaimFreePet", false)
             for i = 1, 12 do SafeCall("ClaimPlaytime", false, i) end
@@ -1102,7 +1186,7 @@ local Theme = {
 }
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarHub_PutarHewan_v7_8"
+ScreenGui.Name = "RockstarHub_PutarHewan_v8_3"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
@@ -1166,7 +1250,10 @@ MFStroke.Color = Theme.Border
 MFStroke.Thickness = 1.2
 MFStroke.Parent = MainFrame
 
+local lastToggleTick = 0
 local function ToggleMainFrame()
+    if tick() - lastToggleTick < 0.25 then return end
+    lastToggleTick = tick()
     MainFrame.Visible = not MainFrame.Visible
 end
 
@@ -1194,7 +1281,7 @@ FT_Stroke.Color = Theme.Accent
 FT_Stroke.Thickness = 1.8
 FT_Stroke.Parent = FloatingToggle
 
--- Dragging & Klik Responsif (PC Mouse & Mobile Touch)
+-- Dragging & Klik Responsif (PC Mouse & Mobile Touch dengan Anti-Dobel Debounce)
 local isDraggingFT = false
 local dragStartFT = nil
 local startPosFT = nil
@@ -1219,24 +1306,24 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-local function HandleFTRelease(input)
+UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         if isDraggingFT then
             isDraggingFT = false
             if not movedFarFT then
                 ToggleMainFrame()
             end
+            task.delay(0.05, function() movedFarFT = false end)
         end
     end
-end
+end)
 
-UserInputService.InputEnded:Connect(HandleFTRelease)
-FloatingToggle.InputEnded:Connect(HandleFTRelease)
 FloatingToggle.MouseButton1Click:Connect(function()
     if not movedFarFT then
         ToggleMainFrame()
     end
 end)
+
 pcall(function()
     FloatingToggle.Activated:Connect(function()
         if not movedFarFT then
@@ -1286,21 +1373,22 @@ HeaderBottomBorder.BorderSizePixel = 0
 HeaderBottomBorder.Parent = MainFrame
 
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(0, 320, 1, 0)
+Title.Size = UDim2.new(1, -150, 1, 0)
 Title.Position = UDim2.new(0, 14, 0, 0)
 Title.BackgroundTransparency = 1
 Title.Text = "* ROCKSTAR HUB  -  PUTAR HEWAN PELIHARAAN"
 Title.TextColor3 = Theme.TextMain
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
+Title.TextTruncate = Enum.TextTruncate.AtEnd
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = Header
 
 local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 80, 0, 20)
-VersionBadge.Position = UDim2.new(0, 340, 0.5, -10)
+VersionBadge.Position = UDim2.new(1, -126, 0.5, -10)
 VersionBadge.BackgroundColor3 = Theme.Card
-VersionBadge.Text = "v8.2 CYBER"
+VersionBadge.Text = "v8.4 CYBER"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 10
@@ -1655,8 +1743,8 @@ rubCorner.CornerRadius = UDim.new(0, 6)
 rubCorner.Parent = RemoteUpgradeNowBtn
 
 RemoteUpgradeNowBtn.MouseButton1Click:Connect(function()
-    UpgradeAllPodiumsRemote()
-    Log("Berhasil menaikkan level semua podium dari jarak jauh!")
+    local n = UpgradeAllPodiumsRemote()
+    Log("Upgrade jarak jauh dikirim ke " .. tostring(n) .. " podium")
 end)
 
 CreateToggle(p3Card, "Auto Beli Semua Peningkatan", "Beli upgrade general yang telah dipelajari", "AutoBuyAllUpgrades")
@@ -1765,9 +1853,8 @@ CreateToggle(p5Card, "Auto Beli Toko Permen", "Tukarkan permen di Toko Candy Sho
 CreateToggle(p5Card, "Auto Beli Toko Quest", "Beli item di Toko Quest Shop otomatis", "AutoBuyQuestShop")
 
 local p5RewardCard = CreateCard(TabFrames["Event"], "Hadiah Gratis & Putar Roda")
-CreateToggle(p5RewardCard, "Auto Putar Roda Keberuntungan", "Putar Wheel of Fortune setiap putaran gratis siap", "AutoSpinWheel")
-CreateToggle(p5RewardCard, "Auto Klaim Semua Hadiah", "Klaim Daily, Peti Teman, Grup, Quest & Waktu Bermain", "AutoClaimRewards")
-CreateToggle(p5RewardCard, "Auto Tonton Skip Iklan", "Klaim hadiah skip iklan gratis secara berkala", "AutoWatchSkipAd")
+CreateToggle(p5RewardCard, "Auto Putar Roda (Gratis Saja)", "Hanya memutar saat ada putaran FREE, tidak pernah Robux", "AutoSpinWheel")
+CreateToggle(p5RewardCard, "Auto Klaim Semua Hadiah", "Klaim Daily, Peti Teman, Quest & Waktu Bermain (tanpa prompt Grup)", "AutoClaimRewards")
 
 -- TAB 6: KONSOL LOG REALTIME
 local p6Card = CreateCard(TabFrames["Log"], "Status Sistem & Aktivitas")
@@ -1794,5 +1881,5 @@ task.spawn(function()
     end
 end)
 
-Log("* ROCKSTAR HUB v8.2 DIMUAT LENGKAP *")
-print("* ROCKSTAR HUB v8.2 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
+Log("* ROCKSTAR HUB v8.4 DIMUAT LENGKAP *")
+print("* ROCKSTAR HUB v8.4 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
