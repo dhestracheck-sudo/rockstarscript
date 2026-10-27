@@ -1,14 +1,14 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v7.4 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
+-- ★ ROCKSTAR HUB v7.5 - [🎃] PUTAR HEWAN PELIHARAAN (CYBER-BLUE EDITION) ★
 -- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v7.4 (INDONESIAN DICE & LUCK PARSER VERIFIED EDITION):
---   [✓] Integrasi Dadu Asli Indonesia: Badai | Epik (7kx), Bayangan | Epik (40kx), Magma, Lava, dll.
---   [✓] Parser Otomatis Multiplier Keberuntungan (7kx -> 7,000, 40kx -> 40,000, 1.5Mx -> 1,500,000)
---   [✓] Sistem Bobot Tier Asli: Biasa, Langka, Epik, Legendaris, Mitos, Ilahi, Rahasia
---   [✓] UI Native Auto-Equip: Otomatis deteksi & klik tombol [Lengkapi] di Toko Dadu PlayerGui
---   [✓] Anti Dadu Ganti-Ganti Sendiri: Caching Dadu Terpasang + Cooldown Anti-Spam Remote
---   [✓] Deteksi Dadu Pilihan Manual saat pemain klik manual (Mode [Kunci Manual] otomatis aktif)
---   [✓] Tetap Mempertahankan Seluruh Fitur Map Scan: 16 Podium Plot, Menara, 3 Dadu Emas Rahasia, Halloween
+-- Update v7.5 (AUDIT TUNTAS: ANTI DADU GANTI-GANTI SENDIRI & UNIVERSAL DICE SHOP):
+--   [✓] Solusi Mutlak Dadu Ganti-Ganti Sendiri: Hentikan loop Equip 1 detik & pasang verifikasi [Equipped]
+--   [✓] Stop Total jika Dadu Terbaik Sudah Dipasang (Zero Click, Zero Remote spam)
+--   [✓] Proteksi Kunci Manual 5 Detik saat pemain klik manual (Anti overwrite)
+--   [✓] Integrasi Dadu Mythical & Divine: Solar (10Mx), Lunar (40Mx), Galaxy (100Mx+ Divine)
+--   [✓] Parsing Presisi Kartu UI: Hanya scan anak langsung container list, cegah tumpang tindih nama/tombol
+--   [✓] Filter Kepemilikan Ketat: DILARANG KERAS mencoba pasang dadu yang belum terkonfirmasi dimiliki
+--   [✓] Pemisahan Thread Auto-Equip ke polling tenang (4 detik) agar tidak bentrok dengan BuyDice
 -- ============================================================================
 
 if not game:IsLoaded() then
@@ -36,7 +36,7 @@ local Config = {
     AutoFuse = false,
     AutoSellWeakest = false,
 
-    -- Sistem Dadu v7.4 (Indonesian & True Luck Edition)
+    -- Sistem Dadu v7.5 (Anti-Switch & True Luck Edition)
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -274,16 +274,17 @@ local TierMultipliers = {
     ["epic"] = 5000,
     ["legendaris"] = 100000,
     ["legendary"] = 100000,
-    ["mitos"] = 1000000,
-    ["mythic"] = 1000000,
-    ["ilahi"] = 10000000,
-    ["dewa"] = 10000000,
-    ["divine"] = 10000000,
-    ["godly"] = 10000000,
-    ["rahasia"] = 100000000,
-    ["secret"] = 100000000,
-    ["glitched"] = 100000000,
-    ["event"] = 75000,
+    ["mitos"] = 10000000,
+    ["mythic"] = 10000000,
+    ["mythical"] = 10000000,
+    ["divine"] = 100000000,
+    ["ilahi"] = 100000000,
+    ["dewa"] = 100000000,
+    ["godly"] = 250000000,
+    ["glitched"] = 500000000,
+    ["rahasia"] = 1000000000,
+    ["secret"] = 1000000000,
+    ["event"] = 100000,
 }
 
 local function ParseLuckMultiplier(text)
@@ -390,7 +391,7 @@ local function RegisterVerifiedDice(diceId, luckVal, orderVal, displayName)
     end)
 end
 
--- Pre-Seeded Real Game Dice (Indonesian & Internal Names)
+-- Pre-Seeded Real Game Dice (English & Indonesian Dual-Key)
 local PreSeededDice = {
     {"Dasar",                     1,               "Biasa",       "Dasar | Biasa"},
     {"Basic",                     1,               "Biasa",       "Dasar | Biasa"},
@@ -423,19 +424,21 @@ local PreSeededDice = {
     {"PumpkinDice",               80000,           "Event",       "Dadu Labu (Pumpkin)"},
     {"HauntedDice",               120000,          "Event",       "Dadu Berhantu"},
     {"HalloweenDice",             180000,          "Event",       "Dadu Halloween"},
-    {"Bintang",                   150000,          "Legendaris",  "Bintang | Legendaris"},
-    {"Star",                      150000,          "Legendaris",  "Bintang | Legendaris"},
-    {"Galaksi",                   250000,          "Legendaris",  "Galaksi | Legendaris"},
-    {"Galaxy",                    250000,          "Legendaris",  "Galaksi | Legendaris"},
-    {"Kosmik",                    1000000,         "Mitos",       "Kosmik | Mitos"},
-    {"Cosmic",                    1000000,         "Mitos",       "Kosmik | Mitos"},
-    {"Nebula",                    1500000,         "Mitos",       "Nebula | Mitos"},
-    {"Ilahi",                     5000000,         "Ilahi",       "Ilahi | Dewa"},
-    {"Divine",                    5000000,         "Divine",      "Ilahi | Dewa"},
-    {"Godly",                     8000000,         "Godly",       "Dewa Tertinggi"},
-    {"Glitched",                  15000000,        "Rahasia",     "Glitched | Rahasia"},
-    {"Chaos",                     25000000,        "Rahasia",     "Chaos | Rahasia"},
-    {"Infinity",                  50000000,        "Rahasia",     "Infinity | Rahasia"},
+    {"Solar",                     10000000,        "Mythical",    "Solar | Mythical"},
+    {"Lunar",                     40000000,        "Mythical",    "Lunar | Mythical"},
+    {"Galaxy",                    100000000,       "Divine",      "Galaxy | Divine"},
+    {"Galaksi",                   100000000,       "Divine",      "Galaxy | Divine"},
+    {"Bintang",                   150000000,       "Divine",      "Bintang | Divine"},
+    {"Star",                      150000000,       "Divine",      "Star | Divine"},
+    {"Kosmik",                    250000000,       "Godly",       "Kosmik | Godly"},
+    {"Cosmic",                    250000000,       "Godly",       "Cosmic | Godly"},
+    {"Nebula",                    350000000,       "Godly",       "Nebula | Godly"},
+    {"Ilahi",                     500000000,       "Ilahi",       "Ilahi | Dewa"},
+    {"Divine",                    500000000,       "Divine",      "Ilahi | Dewa"},
+    {"Godly",                     750000000,       "Godly",       "Dewa Tertinggi"},
+    {"Glitched",                  1000000000,      "Rahasia",     "Glitched | Rahasia"},
+    {"Chaos",                     2500000000,      "Rahasia",     "Chaos | Rahasia"},
+    {"Infinity",                  5000000000,      "Rahasia",     "Infinity | Rahasia"},
 }
 
 for _, item in ipairs(PreSeededDice) do
@@ -462,11 +465,16 @@ if typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "functi
                     end
                     AddLearningLog("BuyDice", a1, a2, a3)
                 elseif rName == "EquipDice" and a1 ~= nil then
-                    RegisterVerifiedDice(a1, nil, nil)
-                    DiscoveredData.CurrentEquippedDice = a1
+                    local dId = tostring(a1)
+                    RegisterVerifiedDice(dId, nil, nil)
+                    DiscoveredData.CurrentEquippedDice = dId
+                    DiscoveredData.OwnedDiceCount[dId] = 1
                     if not IsScriptCallingEquip then
-                        Config.LockedDiceId = a1
+                        -- Pemain mengklik dadu manual di layar game!
+                        -- Kunci dadu ini agar script TIDAK menimpanya secara otomatis
+                        Config.LockedDiceId = dId
                         Config.DiceMode = "Manual"
+                        LastEquipTick = tick() + 5.0 -- Jeda auto-equip selama 5 detik
                         if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
                     end
                     AddLearningLog("EquipDice", a1, a2, a3)
@@ -617,17 +625,6 @@ end
 
 task.spawn(RefreshGameKnowledge)
 
-task.spawn(function()
-    while true do
-        pcall(function()
-            if typeof(ScanDiceShopGui) == "function" then
-                ScanDiceShopGui()
-            end
-        end)
-        task.wait(2.5)
-    end
-end)
-
 -- ============================================================================
 -- 4. FUNGSI HELPER POSISI, PLOT & INTERAKSI PROXIMITY
 -- ============================================================================
@@ -728,77 +725,81 @@ local function FireGuiButton(btn)
     return fired
 end
 
-local function ScanDiceShopGui()
+local function GetDiceCardsFromGui()
     local pGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not pGui then return nil end
+    if not pGui then return {} end
 
-    local bestOwnedCard = nil
-    local bestLuck = -1
+    local cards = {}
 
     for _, g in ipairs(pGui:GetChildren()) do
         if g:IsA("ScreenGui") and g.Enabled and g.Name ~= "RockstarHubUI" then
-            for _, item in ipairs(g:GetDescendants()) do
-                if item:IsA("GuiObject") and (item.Name:find("Dice") or item.Name:find("Item") or item.Name:find("Card") or item.Name:find("Template") or item:FindFirstChildOfClass("UIListLayout") == nil) then
-                    local equipBtn = nil
-                    local isEquipped = false
-                    local isOwned = false
-                    local titleText = ""
-                    local luckText = ""
+            local isDiceShop = false
+            for _, desc in ipairs(g:GetDescendants()) do
+                if desc:IsA("TextLabel") and (desc.Text:find("Dice Shop") or desc.Text:find("Toko Dadu")) then
+                    isDiceShop = true
+                    break
+                end
+            end
 
-                    for _, child in ipairs(item:GetDescendants()) do
-                        if child:IsA("TextLabel") and child.Text and #child.Text > 0 then
-                            local t = child.Text
-                            if t:find("|") or t:find("Epik") or t:find("Langka") or t:find("Legendaris") or t:find("Mitos") or t:find("Biasa") then
-                                titleText = t
-                            end
-                            if t:find("Keberuntungan") or t:find("Luck") or t:find("🍀") or t:find("x") then
-                                luckText = t
-                            end
-                        elseif (child:IsA("TextButton") or child:IsA("ImageButton")) then
-                            local btnTxt = ""
-                            if child:IsA("TextButton") then
-                                btnTxt = child.Text:lower()
-                            else
-                                for _, sc in ipairs(child:GetChildren()) do
-                                    if sc:IsA("TextLabel") then btnTxt = sc.Text:lower() break end
+            if isDiceShop then
+                local listContainers = {}
+                for _, desc in ipairs(g:GetDescendants()) do
+                    if desc:IsA("ScrollingFrame") or desc:FindFirstChildOfClass("UIListLayout") or desc:FindFirstChildOfClass("UIGridLayout") then
+                        table.insert(listContainers, desc)
+                    end
+                end
+
+                for _, container in ipairs(listContainers) do
+                    for _, card in ipairs(container:GetChildren()) do
+                        if card:IsA("GuiObject") and not card:IsA("UIListLayout") and not card:IsA("UIGridLayout") and not card:IsA("UIPadding") then
+                            local titleText = ""
+                            local luckText = ""
+                            local btn = nil
+                            local btnStatus = "none"
+
+                            for _, el in ipairs(card:GetDescendants()) do
+                                if el:IsA("TextLabel") and el.Text and #el.Text > 0 then
+                                    local txt = el.Text
+                                    if txt:find("|") then
+                                        titleText = txt
+                                    elseif txt:find("Luck") or txt:find("Keberuntungan") or txt:find("🍀") then
+                                        luckText = txt
+                                    end
+                                elseif el:IsA("TextButton") or el:IsA("ImageButton") then
+                                    local bTxt = ""
+                                    if el:IsA("TextButton") then
+                                        bTxt = el.Text:lower()
+                                    else
+                                        for _, sub in ipairs(el:GetChildren()) do
+                                            if sub:IsA("TextLabel") then bTxt = sub.Text:lower() break end
+                                        end
+                                    end
+                                    if bTxt:find("equipped") or bTxt:find("dilengkapi") then
+                                        btnStatus = "equipped"
+                                        btn = el
+                                    elseif bTxt:find("equip") or bTxt:find("lengkapi") then
+                                        btnStatus = "equip"
+                                        btn = el
+                                    elseif bTxt:find("buy") or bTxt:find("beli") then
+                                        btnStatus = "buy"
+                                        btn = el
+                                    end
                                 end
                             end
-                            if btnTxt:find("dilengkapi") or btnTxt:find("equipped") then
-                                isEquipped = true
-                                isOwned = true
-                            elseif btnTxt:find("lengkapi") or btnTxt:find("equip") then
-                                isOwned = true
-                                equipBtn = child
-                            end
-                        end
-                    end
 
-                    if isOwned or #titleText > 0 or #luckText > 0 then
-                        local cardLuck = CalculateDiceScore(titleText, luckText)
-                        local diceName = titleText:match("^([^|]+)") or item:GetAttribute("DiceId") or item:GetAttribute("Id") or item.Name
-                        diceName = tostring(diceName):gsub("^%s+", ""):gsub("%s+$", "")
+                            if #titleText > 0 or btn ~= nil then
+                                local dName = titleText:match("^([^|]+)") or card:GetAttribute("DiceId") or card.Name
+                                dName = tostring(dName):gsub("^%s+", ""):gsub("%s+$", "")
+                                local luckScore = CalculateDiceScore(titleText, luckText)
 
-                        if IsValidKey(diceName) then
-                            RegisterVerifiedDice(diceName, cardLuck, nil, #titleText > 0 and titleText or diceName)
-                            if isOwned then
-                                DiscoveredData.OwnedDiceCount[diceName] = 1
-                            end
-                        end
-
-                        if isEquipped then
-                            DiscoveredData.CurrentEquippedDice = diceName
-                        end
-
-                        if isOwned and not (Config.SkipVoidDice and IsVoidDice(diceName)) then
-                            if cardLuck > bestLuck then
-                                bestLuck = cardLuck
-                                bestOwnedCard = {
-                                    Button = equipBtn,
-                                    DiceId = diceName,
-                                    Luck = cardLuck,
-                                    Title = titleText,
-                                    IsEquipped = isEquipped
-                                }
+                                table.insert(cards, {
+                                    Card = card,
+                                    Name = dName,
+                                    FullName = #titleText > 0 and titleText or dName,
+                                    Luck = luckScore,
+                                    Status = btnStatus,
+                                    Button = btn,
+                                })
                             end
                         end
                     end
@@ -807,11 +808,11 @@ local function ScanDiceShopGui()
         end
     end
 
-    return bestOwnedCard
+    return cards
 end
 
 -- ============================================================================
--- 5. SISTEM DADU v7.4 (INDONESIAN & TRUE LUCK VERIFIED EDITION)
+-- 5. SISTEM DADU v7.5 (ANTI-SWITCH & UNIVERSAL DICE ENGINE)
 -- ============================================================================
 local function GetTargetDiceId()
     local list = DiscoveredData.VerifiedDice
@@ -821,7 +822,7 @@ local function GetTargetDiceId()
         return Config.LockedDiceId
     end
 
-    -- Prioritas 1: Dadu milik pemain dari scan UI / data dengan Luck tertinggi (bukan Void)
+    -- HANYA pilih dadu yang TERBUKTI DIMILIKI oleh pemain (OwnedDiceCount > 0)
     local bestId = nil
     local maxLuck = -1
     for _, dId in ipairs(list) do
@@ -835,17 +836,10 @@ local function GetTargetDiceId()
             end
         end
     end
-    if bestId then return bestId end
 
-    -- Prioritas 2: Cari di VerifiedDice dari tertinggi ke terendah (bukan Void)
-    for i = #list, 1, -1 do
-        local dId = list[i]
-        if not (Config.SkipVoidDice and IsVoidDice(dId)) then
-            return dId
-        end
-    end
-
-    return list[#list]
+    -- JIKA TIDAK ADA DADU MILIK PEMAIN YANG DITEMUKAN:
+    -- KEMBALIKAN DADU YANG SEDANG TERPASANG (JANGAN PERNAH MENEBAK DADU LAIN!)
+    return bestId or DiscoveredData.CurrentEquippedDice
 end
 
 local function RunBuyDiceStockOnly()
@@ -873,41 +867,78 @@ local function RunBuyDiceStockOnly()
             pcall(function()
                 Remotes.BuyDice:InvokeServer(diceId)
             end)
-            task.wait(0.02)
+            task.wait(0.04)
         end
     end
 end
 
 local LastEquipTick = 0
-local function EquipTargetDiceNow(forceEquip)
-    if not forceEquip and (tick() - LastEquipTick < 1.2) then return end
+local FailedEquipCount = {}
 
-    -- 1. Coba deteksi langsung dari UI Toko Dadu jika sedang terbuka
-    if Config.DiceMode == "AutoBest" then
-        local bestCard = ScanDiceShopGui()
-        if bestCard and not (Config.SkipVoidDice and IsVoidDice(bestCard.DiceId)) then
-            if bestCard.IsEquipped then
-                DiscoveredData.CurrentEquippedDice = bestCard.DiceId
-                return
+local function EquipTargetDiceNow(forceEquip)
+    if not forceEquip and (tick() - LastEquipTick < 3.0) then return end
+
+    -- 1. Evaluasi UI Toko Dadu jika sedang terbuka di layar
+    local cards = GetDiceCardsFromGui()
+    if #cards > 0 then
+        local currentCard = nil
+        local bestOwnedCard = nil
+        local bestLuck = -1
+
+        for _, c in ipairs(cards) do
+            RegisterVerifiedDice(c.Name, c.Luck, nil, c.FullName)
+            if c.Status == "equipped" or c.Status == "equip" then
+                DiscoveredData.OwnedDiceCount[c.Name] = 1
             end
-            if bestCard.Button then
+            if c.Status == "equipped" then
+                currentCard = c
+                DiscoveredData.CurrentEquippedDice = c.Name
+            end
+            if (c.Status == "equip" or c.Status == "equipped") and not (Config.SkipVoidDice and IsVoidDice(c.Name)) then
+                if c.Luck > bestLuck then
+                    bestLuck = c.Luck
+                    bestOwnedCard = c
+                end
+            end
+        end
+
+        -- JIKA DADU TERBAIK SUDAH TERPASANG (EQUIPPED): SELESAI, JANGAN LAKUKAN APA-APA!
+        if bestOwnedCard and bestOwnedCard.Status == "equipped" then
+            DiscoveredData.CurrentEquippedDice = bestOwnedCard.Name
+            return
+        end
+
+        -- JIKA ADA DADU MILIK KITA YANG LEBIH BAGUS DARI YANG SEDANG TERPASANG:
+        if bestOwnedCard and bestOwnedCard.Status == "equip" and bestOwnedCard.Button then
+            local curLuck = currentCard and currentCard.Luck or 0
+            if forceEquip or bestOwnedCard.Luck > curLuck then
                 IsScriptCallingEquip = true
-                FireGuiButton(bestCard.Button)
+                FireGuiButton(bestOwnedCard.Button)
+                task.wait(0.1)
+                if Remotes.EquipDice then
+                    pcall(function() Remotes.EquipDice:InvokeServer(bestOwnedCard.Name) end)
+                end
+                DiscoveredData.CurrentEquippedDice = bestOwnedCard.Name
                 LastEquipTick = tick()
-                DiscoveredData.CurrentEquippedDice = bestCard.DiceId
-                IsScriptCallingEquip = false
+                task.delay(0.5, function() IsScriptCallingEquip = false end)
                 if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
                 return
             end
         end
     end
 
-    -- 2. Pasang via Remote
+    -- 2. Evaluasi via Remote jika UI tidak terbuka
     if not Remotes.EquipDice then return end
     local targetDice = GetTargetDiceId()
     if not targetDice or not IsValidKey(targetDice) then return end
 
+    -- JANGAN PERNAH panggil EquipDice jika dadu sudah sama persis!
     if not forceEquip and DiscoveredData.CurrentEquippedDice == targetDice then
+        return
+    end
+
+    -- Cegah loop jika targetDice berulang kali gagal dipasang server
+    if (FailedEquipCount[targetDice] or 0) >= 3 and not forceEquip then
         return
     end
 
@@ -915,11 +946,16 @@ local function EquipTargetDiceNow(forceEquip)
     local ok, res = pcall(function()
         return Remotes.EquipDice:InvokeServer(targetDice)
     end)
+    LastEquipTick = tick()
+    task.delay(0.5, function() IsScriptCallingEquip = false end)
+
     if ok and res ~= false then
         DiscoveredData.CurrentEquippedDice = targetDice
-        LastEquipTick = tick()
+        FailedEquipCount[targetDice] = 0
+    else
+        FailedEquipCount[targetDice] = (FailedEquipCount[targetDice] or 0) + 1
     end
-    IsScriptCallingEquip = false
+
     if UpdateDiceDisplayFunc then task.spawn(UpdateDiceDisplayFunc) end
 end
 
@@ -1420,7 +1456,7 @@ local Header = Instance.new("Frame")
 Header.Size = UDim2.new(1, 0, 0, 42)
 Header.BackgroundColor3 = Theme.Header
 Header.BorderSizePixel = 0
-Header.Parent = MainFrame
+Header.Parent = Header
 
 local HeaderStroke = Instance.new("Frame")
 HeaderStroke.Size = UDim2.new(1, 0, 0, 1)
@@ -1444,7 +1480,7 @@ local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 130, 0, 22)
 VersionBadge.Position = UDim2.new(0, 340, 0.5, -11)
 VersionBadge.BackgroundColor3 = Theme.Element
-VersionBadge.Text = "v7.4 • TRUE LUCK"
+VersionBadge.Text = "v7.5 • ANTI-SWITCH"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 11
@@ -1693,7 +1729,7 @@ Tab1:AddToggle("🐾 Auto Equip Pet Terkuat (Best Pets)", Config.AutoEquipBest, 
 Tab1:AddToggle("🧬 Auto Gabung Pet (Auto Fuse All)", Config.AutoFuse, function(v) Config.AutoFuse = v end)
 Tab1:AddToggle("🗑️ Auto Jual Pet Terlemah (Sell Weakest)", Config.AutoSellWeakest, function(v) Config.AutoSellWeakest = v end)
 
-Tab1:AddSection("Sistem Dadu v7.4 (Indonesian & True Luck)")
+Tab1:AddSection("Sistem Dadu v7.5 (Anti-Switch & True Luck)")
 Tab1:AddToggle("🛒 Auto Beli Stok Dadu Toko (Tanpa Mengganti Dadu)", Config.AutoBuyDiceOnly, function(v) Config.AutoBuyDiceOnly = v end)
 Tab1:AddToggle("🎲 Auto Pasang Dadu (Equip Dice)", Config.AutoEquipDice, function(v) Config.AutoEquipDice = v end)
 Tab1:AddToggle("🚫 Jangan Pakai Dadu Kekosongan (Skip Void Dice)", Config.SkipVoidDice, function(v) Config.SkipVoidDice = v end)
@@ -2051,7 +2087,7 @@ LBCorner.Parent = LogBox
 
 local function RefreshLogDisplay()
     local lines = {}
-    table.insert(lines, "=== LOG STATUS ROCKSTAR v7.4 (TRUE LUCK) ===")
+    table.insert(lines, "=== LOG STATUS ROCKSTAR v7.5 (ANTI-SWITCH) ===")
     table.insert(lines, "Plot Terdeteksi: Plot6 (Owner: 11818951686)")
     table.insert(lines, "Stage Menara Terbuka: " .. tostring(Config.HighestUnlockedStage))
     table.insert(lines, "Dadu Terverifikasi: " .. tostring(#DiscoveredData.VerifiedDice))
@@ -2121,15 +2157,26 @@ task.spawn(function()
     end
 end)
 
--- Loop 3: Auto Buy Peningkatan Status & Dadu
+-- Loop 3: Auto Buy Peningkatan Status & Toko
 task.spawn(function()
     while true do
         if Config.AutoBuyAllUpgrades then RunAutoBuyAllUpgrades() end
         if Config.AutoBuyRebirthUpgrades then RunAutoBuyRebirthUpgrades() end
         if Config.AutoBuyCandyShop or Config.AutoBuyQuestShop then RunAutoBuyEventShops() end
         if Config.AutoBuyDiceOnly then RunBuyDiceStockOnly() end
-        if Config.AutoEquipDice then EquipTargetDiceNow(false) end
-        task.wait(1.0)
+        task.wait(1.2)
+    end
+end)
+
+-- Dedicated Thread: Auto-Equip Dadu Terbaik (Tenang, Anti-Spam & Anti-Bentrok)
+task.spawn(function()
+    while true do
+        if Config.AutoEquipDice and Config.DiceMode == "AutoBest" then
+            pcall(function()
+                EquipTargetDiceNow(false)
+            end)
+        end
+        task.wait(4.0) -- Evaluasi setiap 4 detik, bukan setiap detik
     end
 end)
 
@@ -2242,4 +2289,4 @@ task.delay(1, function()
     UpdateStageLabel()
 end)
 
-print("★ Rockstar Hub v7.4 (Indonesian & True Luck Edition) Berhasil Dijalankan! Tema: Cyber-Blue ★")
+print("★ Rockstar Hub v7.5 (Anti-Switch & Universal Dice Shop) Berhasil Dijalankan! Tema: Cyber-Blue ★")
