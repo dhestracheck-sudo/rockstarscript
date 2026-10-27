@@ -1,377 +1,504 @@
 -- ============================================================================
--- * ROCKSTAR HUB v1.0 - AUTO TRADE BOT [VOLCANIC DEVIL] *
+-- * ROCKSTAR HUB v2.0 - 100% FULLY AUTONOMOUS AUTO TRADE BOT *
 -- Game: [GHOST] Simulator Ketukan Kelahiran Kembali (Tap Simulator Rebirth)
 -- PlaceId: 72858262610964 | GameId: 10629695169 | PlaceVersion: 4039
--- Fitur Khusus:
---   [OK] Auto Target Pembeli (Input Username / Pilih Pemain Server 1-Klik)
---   [OK] Auto Terima (Accept) Permintaan Trade dari Pembeli
---   [OK] Auto Masukkan Pet Spesifik: VOLCANIC DEVIL (Mythical / Shiny / Mutation)
---   [OK] Auto Kunci Ready & Konfirmasi Accept (Fast Deal 3 Detik)
---   [OK] Proteksi Pet Terkunci & Filter Hanya Pembeli Terdaftar
---   [OK] 100% Universal Executor Compatible (Delta PC & Mobile)
+-- Mode Khusus: 100% ZERO HUMAN INTERVENTION (AFK SHOP BOT)
+--   [OK] Auto Accept ANY incoming Trade Request (GUI Prompt + Remote Hook)
+--   [OK] Auto Insert Pet: VOLCANIC DEVIL (Including Spawned/RainbowPets)
+--   [OK] Auto Lock READY immediately after pet inserted
+--   [OK] Auto Spam ACCEPT/CONFIRM as soon as countdown completes
+--   [OK] Auto Reset & Loop for 24/7 non-stop customer trading
+--   [OK] Built-in Anti-AFK (Zero Disconnect)
+--   [OK] 100% Universal Delta Executor Compatible (PC & Android)
 -- ============================================================================
-
-if not game:IsLoaded() then
-    local t0 = tick()
-    repeat task.wait(0.2) until game:IsLoaded() or (tick() - t0) > 3
-end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local LocalPlayer = Players.LocalPlayer
-while not LocalPlayer do
-    task.wait(0.1)
-    LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Universal Pack Function (Lua 5.1 Compatible)
+local function pack_fn(...)
+    return { n = select("#", ...), ... }
 end
 
 -- ============================================================================
--- 1. PENGATURAN & STATE
+-- 1. KONFIGURASI BOT (DEFAULT: 100% FULL OTOMATIS TANPA SENTUH)
 -- ============================================================================
 local Config = {
-    BuyerUsername = "",
-    TargetPetName = "Volcanic Devil",
-    AutoAcceptTrade = true,
-    AutoAcceptFromAnyone = false,
-    AutoAddVolcanicDevil = true,
-    MaxVolcanicDevilToSend = 1,     -- 1 = Kirim 1 ekor per transaksi, atau 99 = kirim semua
-    AutoReady = true,
-    AutoAccept = true,
-    TradeDelayReady = 1.0,          -- Jeda aman sebelum klik Ready (detik)
-    TradeDelayAccept = 1.5,         -- Jeda aman sebelum klik Accept (detik)
-    AntiLockedPet = true,           -- Jangan kirim pet yang dikunci
+    TargetPetName = "Volcanic Devil",  -- Pet spesifik yang dijual
+    BuyerUsername = "",                -- Kosongkan = Otomatis terima siapapun yang trade!
+    AutoAcceptTrade = true,            -- Otomatis terima ajakan trade (Remote + GUI)
+    AutoAcceptFromAnyone = true,       -- DEFAULT TRUE: Tidak butuh input username manual
+    AutoAddVolcanicDevil = true,       -- Otomatis masukkan Volcanic Devil ke trade slot
+    AutoFastDeal = true,               -- Otomatis kunci Ready dan Accept setelah timer
+    MaxPetsPerTrade = 1,               -- Jumlah Volcanic Devil per transaksi
+    ProtectEquippedPets = false,       -- DEFAULT FALSE: Boleh trade Volcanic Devil meski sedang di-equip
+    ProtectFavoritedPets = false,      -- Boleh trade Volcanic Devil
+    DealDelaySeconds = 3.2,            -- Jeda countdown server sebelum klik Confirm
+    AntiAfkEnabled = true,             -- Anti disconnected 20 menit idle
 }
 
 local State = {
     InTrade = false,
-    ActiveBuyer = nil,
-    TradeStartedAt = 0,
-    PetsAddedThisSession = 0,
+    CurrentTradingWith = "Siapapun",
+    VolcanicDevilsInStock = 0,
     TotalCompletedTrades = 0,
-    LogBuffer = {},
-    LogMaxLines = 12,
+    PetAlreadyAddedInCurrentTrade = false,
+    ReadyAlreadyClickedInCurrentTrade = false,
+    AcceptSpamming = false,
+    Logs = {},
+    LastTradeAttemptTime = 0,
 }
 
 local function Log(msg)
     local timestamp = os.date("%H:%M:%S")
-    local line = "[" .. timestamp .. "] " .. tostring(msg)
-    table.insert(State.LogBuffer, 1, line)
-    while #State.LogBuffer > State.LogMaxLines do
-        table.remove(State.LogBuffer)
+    local fullMsg = "[" .. timestamp .. "] " .. tostring(msg)
+    table.insert(State.Logs, 1, fullMsg)
+    if #State.Logs > 35 then
+        table.remove(State.Logs)
     end
+    print("[ROCKSTAR AUTO-TRADE]: " .. fullMsg)
+end
+
+-- Anti AFK
+if Config.AntiAfkEnabled then
+    pcall(function()
+        LocalPlayer.Idled:Connect(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+            Log("Anti-AFK: Mencegah idle disconnect.")
+        end)
+    end)
 end
 
 -- ============================================================================
--- 2. KONEKSI REMOTE SERVICES (TAP SIMULATOR 2)
+-- 2. RESOLVER REMOTE TRADE
 -- ============================================================================
-local pack_fn = table.pack or function(...) return { n = select("#", ...), ... } end
-local unpack_fn = table.unpack or unpack
-
-local function GetRemote(serviceName, remoteType, remoteName)
-    local s = ReplicatedStorage:FindFirstChild("RemoteServices")
-    if not s then return nil end
-    local svc = s:FindFirstChild(serviceName)
-    if not svc then return nil end
-    local folder = svc:FindFirstChild(remoteType) or svc
-    return folder:FindFirstChild(remoteName)
-end
-
 local Remotes = {
-    TradeRequested = GetRemote("TradingService", "RE", "TradeRequested"),
-    TradeUpdate = GetRemote("TradingService", "RE", "TradeUpdate"),
-    GetReview = GetRemote("TradeReview", "RF", "GetReview"),
+    TradeRequested = nil,
+    TradeUpdate = nil,
 }
 
--- Fallback pencarian remote
-if not Remotes.TradeRequested then
-    Remotes.TradeRequested = ReplicatedStorage:FindFirstChild("TradeRequested", true)
-end
-if not Remotes.TradeUpdate then
-    Remotes.TradeUpdate = ReplicatedStorage:FindFirstChild("TradeUpdate", true)
+local function GetRemote(path)
+    local parts = string.split(path, ".")
+    local curr = game
+    for _, part in ipairs(parts) do
+        curr = curr:FindFirstChild(part)
+        if not curr then return nil end
+    end
+    return curr
 end
 
-local function FireTradeRequest(targetPlayer)
-    if Remotes.TradeRequested and Remotes.TradeRequested:IsA("RemoteEvent") then
-        pcall(function() Remotes.TradeRequested:FireServer(targetPlayer) end)
-        pcall(function() Remotes.TradeRequested:FireServer("Request", targetPlayer) end)
-        return true
-    end
-    return false
+Remotes.TradeRequested = GetRemote("ReplicatedStorage.RemoteServices.TradingService.RE.TradeRequested")
+Remotes.TradeUpdate = GetRemote("ReplicatedStorage.RemoteServices.TradingService.RE.TradeUpdate")
+
+if Remotes.TradeRequested then
+    Log("Remote TradeRequested terdeteksi OK.")
+else
+    Log("WARNING: Remote TradeRequested tidak ditemukan pada path standar!")
 end
 
-local function FireTradeRespond(targetPlayer, accept)
-    if Remotes.TradeRequested and Remotes.TradeRequested:IsA("RemoteEvent") then
-        pcall(function() Remotes.TradeRequested:FireServer(targetPlayer, accept) end)
-        pcall(function() Remotes.TradeRequested:FireServer("Respond", targetPlayer, accept) end)
-        pcall(function() Remotes.TradeRequested:FireServer("Accept", targetPlayer) end)
-        return true
-    end
-    return false
-end
-
-local function FireTradeAction(action, ...)
-    local args = pack_fn(...)
-    if Remotes.TradeUpdate and Remotes.TradeUpdate:IsA("RemoteEvent") then
-        pcall(function()
-            Remotes.TradeUpdate:FireServer(action, unpack_fn(args, 1, args.n))
-        end)
-        return true
-    end
-    return false
+if Remotes.TradeUpdate then
+    Log("Remote TradeUpdate terdeteksi OK.")
+else
+    Log("WARNING: Remote TradeUpdate tidak ditemukan pada path standar!")
 end
 
 -- ============================================================================
--- 3. HELPER IDENTIFIKASI PEMAIN & PET VOLCANIC DEVIL
+-- 3. FUNGSI KLIK GUI UNIVERSAL (DELTA EXECUTOR SUPPORT)
 -- ============================================================================
-local function FindBuyerPlayer(query)
-    if not query or query == "" then return nil end
-    local q = string.lower(query)
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if string.lower(p.Name) == q or string.lower(p.DisplayName) == q then
-                return p
+local function SafeClick(btn)
+    if not btn then return false end
+    local success = false
+    pcall(function()
+        if firesignal and btn:IsA("GuiButton") then
+            firesignal(btn.MouseButton1Click)
+            firesignal(btn.Activated)
+            success = true
+        end
+    end)
+    pcall(function()
+        if getconnections and btn:IsA("GuiButton") then
+            for _, conn in ipairs(getconnections(btn.MouseButton1Click)) do
+                conn:Fire()
+                success = true
+            end
+            for _, conn in ipairs(getconnections(btn.Activated)) do
+                conn:Fire()
+                success = true
             end
         end
-    end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            if string.find(string.lower(p.Name), q, 1, true) or string.find(string.lower(p.DisplayName), q, 1, true) then
-                return p
-            end
-        end
-    end
-    return nil
+    end)
+    return success
 end
 
--- Memindai daftar Volcanic Devil milik pemain di Workspace
+-- ============================================================================
+-- 4. LOGIKA PENGAMBILAN DATA PET VOLCANIC DEVIL
+-- ============================================================================
 local function GetMyVolcanicDevils()
-    local devils = {}
+    local list = {}
     local myUserId = LocalPlayer.UserId
+    local myName = LocalPlayer.Name
 
-    local function ScanFolder(folder)
-        if not folder then return end
-        for _, child in ipairs(folder:GetChildren()) do
-            if child:IsA("Model") then
-                local isNameMatch = string.find(string.lower(child.Name), "volcanic devil", 1, true)
-                local ownerAttr = child:GetAttribute("Owner")
-                local petId = child:GetAttribute("PetId")
-                local rarity = child:GetAttribute("Rarity") or "Mythical"
-                local tier = child:GetAttribute("Tier") or "Normal"
-                local mutation = child:GetAttribute("Mutation") or "None"
-                local rainbow = child:GetAttribute("Rainbow") or false
+    local function ScanFolder(f, category)
+        if not f then return end
+        for _, obj in ipairs(f:GetChildren()) do
+            local name = obj.Name
+            local isVolcanic = false
+            if string.find(string.lower(name), "volcanic devil", 1, true) then
+                isVolcanic = true
+            end
 
-                if isNameMatch and (not ownerAttr or ownerAttr == myUserId) then
-                    table.insert(devils, {
-                        Model = child,
-                        PetId = petId,
-                        Name = child.Name,
-                        Tier = tier,
-                        Mutation = mutation,
-                        Rainbow = rainbow,
-                        Rarity = rarity,
+            local ownerAttr = obj:GetAttribute("Owner") or obj:GetAttribute("Player")
+            local isOwner = true
+            if ownerAttr then
+                local sOwner = tostring(ownerAttr)
+                if sOwner ~= tostring(myUserId) and sOwner ~= myName then
+                    isOwner = false
+                end
+            end
+
+            local petId = obj:GetAttribute("PetId") or obj:GetAttribute("Id") or obj:GetAttribute("UUID") or obj.Name
+            local isEquipped = obj:GetAttribute("Equipped") == true
+            local isLocked = obj:GetAttribute("Locked") == true or obj:GetAttribute("Favorite") == true
+
+            if isVolcanic and isOwner then
+                if not (Config.ProtectEquippedPets and isEquipped) and not (Config.ProtectFavoritedPets and isLocked) then
+                    table.insert(list, {
+                        Instance = obj,
+                        Id = petId,
+                        Name = name,
+                        Category = category,
+                        Equipped = isEquipped,
+                        Locked = isLocked,
                     })
                 end
             end
         end
     end
 
-    ScanFolder(Workspace:FindFirstChild("RainbowPets"))
-    ScanFolder(Workspace:FindFirstChild("Pets"))
-    ScanFolder(Workspace:FindFirstChild("GoldPets"))
+    pcall(function()
+        ScanFolder(workspace:FindFirstChild("RainbowPets"), "RainbowPets")
+        ScanFolder(workspace:FindFirstChild("Pets"), "Pets")
+        if LocalPlayer:FindFirstChild("Pets") then
+            ScanFolder(LocalPlayer.Pets, "PlayerPets")
+        end
+        if LocalPlayer:FindFirstChild("Inventory") then
+            ScanFolder(LocalPlayer.Inventory:FindFirstChild("Pets"), "InventoryPets")
+        end
+    end)
 
-    return devils
+    State.VolcanicDevilsInStock = #list
+    return list
 end
 
 -- ============================================================================
--- 4. GUI AUTO-CLICKER & INTERAKSI TRADE WINDOW
+-- 5. REMOTE ACTIONS
 -- ============================================================================
-local function FireGuiButtonSafe(btn)
+local function FireTradeRespond(senderPlayer)
+    if not Remotes.TradeRequested or not Remotes.TradeRequested:IsA("RemoteEvent") then return end
+    pcall(function() Remotes.TradeRequested:FireServer(senderPlayer, true) end)
+    pcall(function() Remotes.TradeRequested:FireServer(true, senderPlayer) end)
+    pcall(function() Remotes.TradeRequested:FireServer(senderPlayer) end)
+    pcall(function() Remotes.TradeRequested:FireServer("Accept", senderPlayer) end)
+    if typeof(senderPlayer) == "Instance" and senderPlayer:IsA("Player") then
+        pcall(function() Remotes.TradeRequested:FireServer(senderPlayer.Name, true) end)
+    end
+end
+
+local function FireTradeAction(action, payload)
+    if not Remotes.TradeUpdate or not Remotes.TradeUpdate:IsA("RemoteEvent") then return end
     pcall(function()
-        if typeof(getconnections) == "function" then
-            for _, conn in ipairs(getconnections(btn.MouseButton1Click) or {}) do
-                if conn.Fire then pcall(function() conn:Fire() end) end
-            end
-            for _, conn in ipairs(getconnections(btn.Activated) or {}) do
-                if conn.Fire then pcall(function() conn:Fire() end) end
-            end
+        if payload ~= nil then
+            Remotes.TradeUpdate:FireServer(action, payload)
+        else
+            Remotes.TradeUpdate:FireServer(action)
         end
-        pcall(function() btn.MouseButton1Click:Fire() end)
     end)
 end
 
--- Mencari dan mengklik pet Volcanic Devil di jendela Trade GUI
-local function AutoSelectVolcanicDevilFromGui()
-    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not pGui then return 0 end
+-- ============================================================================
+-- 6. FULLY AUTONOMOUS ENGINES (ZERO HUMAN INTERVENTION)
+-- ============================================================================
 
-    local clickedCount = 0
-    for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "Rockstar", 1, true) then
-            for _, desc in ipairs(g:GetDescendants()) do
-                if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-                    local bText = desc:IsA("TextButton") and string.lower(desc.Text) or ""
-                    local bName = string.lower(desc.Name)
+-- ENGINE 1: Auto Accept GUI Popup Invitation (Fast Polling 0.1 Detik)
+local function AutoAcceptIncomingPrompt()
+    if not Config.AutoAcceptTrade then return false end
 
-                    -- Periksa apakah tombol atau anaknya bertuliskan Volcanic Devil
-                    local match = false
-                    if string.find(bText, "volcanic devil", 1, true) or string.find(bName, "volcanic devil", 1, true) then
-                        match = true
-                    else
-                        for _, sub in ipairs(desc:GetDescendants()) do
-                            if sub:IsA("TextLabel") and string.find(string.lower(sub.Text), "volcanic devil", 1, true) then
-                                match = true
+    local acceptKeywords = {"accept", "terima", "yes", "ya", "confirm", "setuju"}
+    local requestKeywords = {"trade", "request", "wants to trade", "mengajak trade", "ajakan trade"}
+
+    local foundAny = false
+    pcall(function()
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("TextLabel") or desc:IsA("TextButton") then
+                        local textLower = string.lower(desc.Text)
+                        local isTradePrompt = false
+                        for _, rk in ipairs(requestKeywords) do
+                            if string.find(textLower, rk, 1, true) then
+                                isTradePrompt = true
                                 break
                             end
                         end
-                    end
 
-                    if match then
-                        FireGuiButtonSafe(desc)
-                        clickedCount = clickedCount + 1
-                        Log("GUI: Memasukkan Volcanic Devil #" .. tostring(clickedCount) .. " ke trade...")
-                        task.wait(0.2)
-                        if clickedCount >= Config.MaxVolcanicDevilToSend then
-                            return clickedCount
+                        if isTradePrompt then
+                            -- Cari tombol accept di sekitar prompt
+                            local container = desc:FindFirstAncestorWhichIsA("Frame") or desc.Parent
+                            if container then
+                                for _, btn in ipairs(container:GetDescendants()) do
+                                    if btn:IsA("GuiButton") then
+                                        local bText = string.lower(btn.Name)
+                                        if btn:IsA("TextButton") then
+                                            bText = bText .. " " .. string.lower(btn.Text)
+                                        end
+                                        for _, c in ipairs(btn:GetChildren()) do
+                                            if c:IsA("TextLabel") then
+                                                bText = bText .. " " .. string.lower(c.Text)
+                                            end
+                                        end
+
+                                        local isAcceptBtn = false
+                                        for _, ak in ipairs(acceptKeywords) do
+                                            if string.find(bText, ak, 1, true) and not string.find(bText, "cancel", 1, true) and not string.find(bText, "decline", 1, true) and not string.find(bText, "no", 1, true) then
+                                                isAcceptBtn = true
+                                                break
+                                            end
+                                        end
+
+                                        if isAcceptBtn then
+                                            SafeClick(btn)
+                                            Log("AUTO: Berhasil klik tombol Terima (Accept) ajakan trade di layar!")
+                                            foundAny = true
+                                            State.InTrade = true
+                                            break
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                        if foundAny then break end
+                    end
+                end
+                if foundAny then break end
+            end
+        end
+    end)
+    return foundAny
+end
+
+-- ENGINE 2: Deteksi Apakah Jendela Trade Sedang Terbuka di Layar
+local function IsTradeWindowActive()
+    local tradeActive = false
+    pcall(function()
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                local gName = string.lower(gui.Name)
+                if string.find(gName, "trade", 1, true) or string.find(gName, "trading", 1, true) then
+                    for _, d in ipairs(gui:GetDescendants()) do
+                        if d:IsA("GuiObject") and d.Visible then
+                            tradeActive = true
+                            return
                         end
                     end
                 end
             end
         end
-    end
-    return clickedCount
+    end)
+    return tradeActive or State.InTrade
 end
 
--- Menekan tombol Ready / Selesai di GUI
-local function AutoClickTradeReadyButton()
-    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not pGui then return false end
+-- ENGINE 3: Auto Masukkan Pet Volcanic Devil ke Slot Trade
+local function AutoInsertVolcanicDevil()
+    if State.PetAlreadyAddedInCurrentTrade then return true end
 
-    for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "Rockstar", 1, true) then
-            for _, desc in ipairs(g:GetDescendants()) do
-                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                    local bText = desc:IsA("TextButton") and string.lower(desc.Text) or ""
-                    local bName = string.lower(desc.Name)
-                    if (string.find(bText, "ready", 1, true) or string.find(bName, "ready", 1, true)
-                        or string.find(bText, "lock", 1, true) or string.find(bName, "lock", 1, true))
-                        and not string.find(bText, "robux", 1, true) then
-                        FireGuiButtonSafe(desc)
-                        Log("GUI: Menekan tombol Ready!")
-                        return true
+    local inserted = false
+    Log("AUTO: Mencari pet Volcanic Devil untuk dimasukkan ke trade...")
+
+    -- Jalur 1: Remote Event Direct Fire
+    local devils = GetMyVolcanicDevils()
+    if #devils > 0 then
+        for i = 1, math.min(#devils, Config.MaxPetsPerTrade) do
+            local pet = devils[i]
+            FireTradeAction("AddPet", pet.Id)
+            FireTradeAction("Add", pet.Id)
+            FireTradeAction("Offer", pet.Id)
+            FireTradeAction("SelectPet", pet.Instance)
+            Log("AUTO: Memasukkan Pet ID: " .. tostring(pet.Id))
+            inserted = true
+        end
+    end
+
+    -- Jalur 2: GUI Button Clicker (TradingPetGrid)
+    local guiCount = 0
+    pcall(function()
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, item in ipairs(gui:GetDescendants()) do
+                    if guiCount >= Config.MaxPetsPerTrade then break end
+                    if item:IsA("TextLabel") or item:IsA("TextButton") or item:IsA("ImageLabel") or item:IsA("Frame") then
+                        local t = (item:IsA("TextLabel") and item.Text) or item.Name
+                        if string.find(string.lower(t), "volcanic devil", 1, true) then
+                            local btn = item:FindFirstAncestorWhichIsA("GuiButton") or (item:IsA("GuiButton") and item)
+                            if btn then
+                                SafeClick(btn)
+                                guiCount = guiCount + 1
+                                inserted = true
+                                Log("AUTO: Klik kartu pet Volcanic Devil di tampilan UI!")
+                                task.wait(0.2)
+                            end
+                        end
                     end
                 end
             end
         end
+    end)
+
+    if inserted then
+        State.PetAlreadyAddedInCurrentTrade = true
+        Log("AUTO: Volcanic Devil berhasil masuk ke slot trade.")
     end
-    return false
+    return inserted
 end
 
--- Menekan tombol Accept / Konfirmasi di GUI
-local function AutoClickTradeAcceptButton()
-    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not pGui then return false end
+-- ENGINE 4: Auto Kunci Ready
+local function AutoLockReady()
+    if State.ReadyAlreadyClickedInCurrentTrade then return true end
 
-    for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "Rockstar", 1, true) then
-            for _, desc in ipairs(g:GetDescendants()) do
-                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                    local bText = desc:IsA("TextButton") and string.lower(desc.Text) or ""
-                    local bName = string.lower(desc.Name)
-                    if (string.find(bText, "accept", 1, true) or string.find(bName, "accept", 1, true)
-                        or string.find(bText, "confirm", 1, true) or string.find(bName, "confirm", 1, true))
-                        and not string.find(bText, "robux", 1, true) then
-                        FireGuiButtonSafe(desc)
-                        Log("GUI: Menekan tombol Konfirmasi (Accept)!")
-                        return true
+    Log("AUTO: Mengunci status READY...")
+    -- Jalur Remote
+    FireTradeAction("Ready", true)
+    FireTradeAction("Lock", true)
+    FireTradeAction("Ready")
+
+    -- Jalur GUI
+    pcall(function()
+        local readyKeywords = {"ready", "lock", "siap", "kunci"}
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, btn in ipairs(gui:GetDescendants()) do
+                    if btn:IsA("GuiButton") then
+                        local text = string.lower(btn.Name)
+                        if btn:IsA("TextButton") then text = text .. " " .. string.lower(btn.Text) end
+                        for _, c in ipairs(btn:GetChildren()) do
+                            if c:IsA("TextLabel") then text = text .. " " .. string.lower(c.Text) end
+                        end
+
+                        for _, kw in ipairs(readyKeywords) do
+                            if string.find(text, kw, 1, true) and not string.find(text, "cancel", 1, true) and not string.find(text, "unready", 1, true) then
+                                SafeClick(btn)
+                                Log("AUTO: Klik tombol Ready di layar!")
+                                State.ReadyAlreadyClickedInCurrentTrade = true
+                                return
+                            end
+                        end
                     end
                 end
             end
         end
-    end
-    return false
+    end)
+    State.ReadyAlreadyClickedInCurrentTrade = true
+    return true
 end
 
--- Membatalkan trade
-local function AutoClickTradeCancelButton()
-    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if not pGui then return false end
+-- ENGINE 5: Auto Spam Accept / Confirm (Sampai Trade Selesai)
+local function AutoSpamAccept()
+    if State.AcceptSpamming then return end
+    State.AcceptSpamming = true
 
-    for _, g in ipairs(pGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled and not string.find(g.Name, "Rockstar", 1, true) then
-            for _, desc in ipairs(g:GetDescendants()) do
-                if (desc:IsA("TextButton") or desc:IsA("ImageButton")) and desc.Visible then
-                    local bText = desc:IsA("TextButton") and string.lower(desc.Text) or ""
-                    local bName = string.lower(desc.Name)
-                    if string.find(bText, "cancel", 1, true) or string.find(bName, "cancel", 1, true)
-                        or string.find(bText, "decline", 1, true) or string.find(bName, "decline", 1, true) then
-                        FireGuiButtonSafe(desc)
-                        Log("GUI: Menekan tombol Batal (Cancel)!")
-                        return true
-                    end
-                end
-            end
-        end
-    end
-    return false
-end
-
--- ============================================================================
--- 5. EKSEKUSI AUTO TRADE LENGKAP (ALUR PENGIRIMAN)
--- ============================================================================
-local function ExecuteTradeDeal()
     task.spawn(function()
-        Log("Trade Deal: Memulai proses transfer Volcanic Devil...")
+        Log("AUTO: Menunggu countdown deal selesai lalu klik Accept/Confirm...")
+        local elapsed = 0
+        local maxWait = 15 -- Maksimal 15 detik jika partner lama klik
 
-        -- 1. Masukkan Pet Volcanic Devil
-        local myDevils = GetMyVolcanicDevils()
-        local added = 0
+        while elapsed < maxWait do
+            task.wait(0.2)
+            elapsed = elapsed + 0.2
 
-        -- Coba via Remote Server
-        for idx, d in ipairs(myDevils) do
-            if added >= Config.MaxVolcanicDevilToSend then break end
-            if d.PetId then
-                FireTradeAction("AddPet", d.PetId)
-                FireTradeAction("Add", d.PetId)
-                FireTradeAction("SetPet", d.PetId)
-                FireTradeAction(d.PetId)
-                added = added + 1
-                Log("Remote: Menambahkan " .. d.Name .. " (" .. d.Mutation .. ") ke trade")
-                task.wait(0.2)
+            -- Cek apakah trade masih aktif
+            if not IsTradeWindowActive() then
+                break
             end
+
+            -- Kirim remote accept
+            FireTradeAction("Accept")
+            FireTradeAction("Confirm")
+
+            -- Klik tombol accept di UI
+            pcall(function()
+                local acceptKeywords = {"accept", "confirm", "terima", "deal", "setuju"}
+                for _, gui in ipairs(PlayerGui:GetChildren()) do
+                    if gui:IsA("ScreenGui") and gui.Enabled then
+                        for _, btn in ipairs(gui:GetDescendants()) do
+                            if btn:IsA("GuiButton") then
+                                local text = string.lower(btn.Name)
+                                if btn:IsA("TextButton") then text = text .. " " .. string.lower(btn.Text) end
+                                for _, c in ipairs(btn:GetChildren()) do
+                                    if c:IsA("TextLabel") then text = text .. " " .. string.lower(c.Text) end
+                                end
+
+                                for _, kw in ipairs(acceptKeywords) do
+                                    if string.find(text, kw, 1, true) and not string.find(text, "cancel", 1, true) and not string.find(text, "decline", 1, true) then
+                                        SafeClick(btn)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
         end
 
-        -- Coba via GUI Auto-Clicker jika trade frame terbuka
-        local guiAdded = AutoSelectVolcanicDevilFromGui()
-        if guiAdded > 0 then
-            added = math.max(added, guiAdded)
-        end
-
-        Log("Pet Terpilih: " .. tostring(added) .. " ekor Volcanic Devil disiapkan.")
-
-        -- 2. Kunci Status Ready
-        task.wait(Config.TradeDelayReady)
-        Log("Deal: Mengunci status (Ready)...")
-        FireTradeAction("Ready", true)
-        FireTradeAction("SetReady", true)
-        FireTradeAction("Lock", true)
-        AutoClickTradeReadyButton()
-
-        -- 3. Konfirmasi Accept
-        task.wait(Config.TradeDelayAccept)
-        Log("Deal: Menyetujui pertukaran (Accept)...")
-        FireTradeAction("Accept")
-        FireTradeAction("Confirm")
-        AutoClickTradeAcceptButton()
-
+        State.AcceptSpamming = false
+        State.InTrade = false
+        State.PetAlreadyAddedInCurrentTrade = false
+        State.ReadyAlreadyClickedInCurrentTrade = false
         State.TotalCompletedTrades = State.TotalCompletedTrades + 1
-        Log("SUKSES: Transaksi Volcanic Devil selesai diproses!")
+        Log("SUKSES: Transaksi Volcanic Devil SELESAI 100% AFK! Bot siap untuk transaksi berikutnya.")
     end)
 end
 
--- Listener otomatis saat ada yang mengajak trade
+-- ============================================================================
+-- 7. BACKGROUND MASTER AUTONOMOUS LOOP (JALAN TERUS NON-STOP)
+-- ============================================================================
+task.spawn(function()
+    Log("Master Autonomous Loop diaktifkan (Mode AFK Tanpa Sentuh).")
+    while true do
+        task.wait(0.15)
+        local inTradeNow = IsTradeWindowActive()
+
+        if not inTradeNow then
+            -- STATE 1: Di luar trade -> Selalu cek dan auto accept ajakan trade
+            AutoAcceptIncomingPrompt()
+            State.PetAlreadyAddedInCurrentTrade = false
+            State.ReadyAlreadyClickedInCurrentTrade = false
+            State.AcceptSpamming = false
+        else
+            -- STATE 2: Sedang dalam trade -> Urutan eksekusi otomatis
+            if not State.PetAlreadyAddedInCurrentTrade then
+                task.wait(0.6)
+                AutoInsertVolcanicDevil()
+            elseif not State.ReadyAlreadyClickedInCurrentTrade then
+                task.wait(0.5)
+                AutoLockReady()
+            else
+                if not State.AcceptSpamming then
+                    task.wait(Config.DealDelaySeconds)
+                    AutoSpamAccept()
+                end
+            end
+        end
+    end
+end)
+
+-- Listener Remote TradeRequested
 pcall(function()
     if Remotes.TradeRequested and Remotes.TradeRequested:IsA("RemoteEvent") then
         Remotes.TradeRequested.OnClientEvent:Connect(function(...)
@@ -379,600 +506,223 @@ pcall(function()
             local sender = args[1] or args[2]
 
             if Config.AutoAcceptTrade then
-                local shouldAccept = false
-                local buyer = FindBuyerPlayer(Config.BuyerUsername)
-
-                if Config.AutoAcceptFromAnyone then
-                    shouldAccept = true
-                elseif buyer and typeof(sender) == "Instance" and sender:IsA("Player") and sender == buyer then
-                    shouldAccept = true
-                elseif buyer and typeof(sender) == "string" and string.find(string.lower(sender), string.lower(buyer.Name), 1, true) then
-                    shouldAccept = true
-                end
-
-                if shouldAccept then
-                    local sName = typeof(sender) == "Instance" and sender.Name or tostring(sender)
-                    Log("Trade: Menerima otomatis ajakan trade dari @" .. sName)
-                    FireTradeRespond(sender, true)
-                    State.InTrade = true
-                    State.ActiveBuyer = sName
-
-                    -- Otomatis masukkan pet dan selesaikan deal jika toggle aktif
-                    if Config.AutoAddVolcanicDevil then
-                        task.wait(1.0)
-                        ExecuteTradeDeal()
-                    end
-                end
+                local sName = typeof(sender) == "Instance" and sender.Name or tostring(sender)
+                Log("Remote: Menerima ajakan trade dari @" .. sName)
+                FireTradeRespond(sender)
+                State.InTrade = true
             end
         end)
     end
 end)
 
--- Listener Trade Update
+-- Listener Remote TradeUpdate
 pcall(function()
     if Remotes.TradeUpdate and Remotes.TradeUpdate:IsA("RemoteEvent") then
         Remotes.TradeUpdate.OnClientEvent:Connect(function(action, data)
             if action == "Started" or action == "Open" then
                 State.InTrade = true
-                Log("Jendela trade aktif!")
+                Log("Status Trade: Terbuka")
             elseif action == "Completed" or action == "Closed" or action == "Success" then
                 State.InTrade = false
-                Log("Sesi trade ditutup.")
+                Log("Status Trade: Ditutup / Sukses")
             end
         end)
     end
 end)
 
 -- ============================================================================
--- 6. TAMPILAN USER INTERFACE (ROCKSTAR TRADE BOT)
+-- 8. USER INTERFACE (STATUS MONITOR & MINIMALIST TOGGLE)
 -- ============================================================================
 local Theme = {
     Background = Color3.fromRGB(13, 17, 26),
     Sidebar = Color3.fromRGB(18, 24, 38),
     Card = Color3.fromRGB(24, 32, 50),
-    Accent = Color3.fromRGB(255, 90, 50),       -- Lava Flame Orange (Tema Volcanic Devil)
+    Accent = Color3.fromRGB(255, 90, 50),
     AccentHover = Color3.fromRGB(255, 130, 80),
     TextMain = Color3.fromRGB(245, 248, 255),
-    TextSub = Color3.fromRGB(150, 165, 195),
-    Success = Color3.fromRGB(60, 220, 120),
-    Danger = Color3.fromRGB(240, 70, 70),
-    Border = Color3.fromRGB(40, 55, 80),
+    TextDim = Color3.fromRGB(160, 175, 205),
+    Success = Color3.fromRGB(46, 213, 115),
+    Warning = Color3.fromRGB(255, 171, 0),
+    Border = Color3.fromRGB(42, 56, 86)
 }
 
 local function CleanupOldGui()
-    local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    if pGui then
-        for _, g in ipairs(pGui:GetChildren()) do
-            if g.Name == "RockstarTradeHub" then pcall(function() g:Destroy() end) end
-        end
-    end
+    local old = CoreGui:FindFirstChild("RockstarTapSimTradeGuiV2")
+    if old then old:Destroy() end
+    local oldP = PlayerGui:FindFirstChild("RockstarTapSimTradeGuiV2")
+    if oldP then oldP:Destroy() end
 end
 CleanupOldGui()
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "RockstarTradeHub"
+ScreenGui.Name = "RockstarTapSimTradeGuiV2"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.DisplayOrder = 999999
-ScreenGui.IgnoreGuiInset = true
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
--- Tombol Floating Pintasan (R*)
-local FloatingToggle = Instance.new("TextButton")
-FloatingToggle.Name = "FloatingToggle"
-FloatingToggle.Size = UDim2.new(0, 48, 0, 48)
-FloatingToggle.Position = UDim2.new(0, 20, 0.45, 0)
-FloatingToggle.BackgroundColor3 = Theme.Sidebar
-FloatingToggle.Text = "R*"
-FloatingToggle.TextColor3 = Theme.Accent
-FloatingToggle.Font = Enum.Font.GothamBold
-FloatingToggle.TextSize = 20
-FloatingToggle.BorderSizePixel = 0
-FloatingToggle.ZIndex = 1000
-FloatingToggle.Parent = ScreenGui
+pcall(function()
+    if syn and syn.protect_gui then
+        syn.protect_gui(ScreenGui)
+        ScreenGui.Parent = CoreGui
+    elseif gethui then
+        ScreenGui.Parent = gethui()
+    else
+        ScreenGui.Parent = CoreGui
+    end
+end)
+if not ScreenGui.Parent then ScreenGui.Parent = PlayerGui end
 
-local ftCorner = Instance.new("UICorner")
-ftCorner.CornerRadius = UDim.new(1, 0)
-ftCorner.Parent = FloatingToggle
+-- Floating Open/Close Button
+local OpenBtn = Instance.new("TextButton")
+OpenBtn.Name = "RockstarOpenBtnV2"
+OpenBtn.Size = UDim2.new(0, 130, 0, 36)
+OpenBtn.Position = UDim2.new(0, 18, 0.45, 0)
+OpenBtn.BackgroundColor3 = Theme.Accent
+OpenBtn.Text = "AUTO TRADE AFK"
+OpenBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+OpenBtn.Font = Enum.Font.GothamBold
+OpenBtn.TextSize = 12
+OpenBtn.Parent = ScreenGui
 
-local ftStroke = Instance.new("UIStroke")
-ftStroke.Color = Theme.Accent
-ftStroke.Thickness = 2
-ftStroke.Parent = FloatingToggle
+local OpenCorner = Instance.new("UICorner")
+OpenCorner.CornerRadius = UDim.new(0, 8)
+OpenCorner.Parent = OpenBtn
 
--- Frame Utama
+-- Main Frame
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 560, 0, 390)
-MainFrame.Position = UDim2.new(0.5, -280, 0.5, -195)
+MainFrame.Size = UDim2.new(0, 500, 0, 380)
+MainFrame.Position = UDim2.new(0.5, -250, 0.5, -190)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
-MainFrame.ClipsDescendants = true
+MainFrame.Active = true
+MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 
-local mfCorner = Instance.new("UICorner")
-mfCorner.CornerRadius = UDim.new(0, 10)
-mfCorner.Parent = MainFrame
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
 
-local mfStroke = Instance.new("UIStroke")
-mfStroke.Color = Theme.Border
-mfStroke.Thickness = 1
-mfStroke.Parent = MainFrame
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Theme.Border
+MainStroke.Thickness = 1.2
+MainStroke.Parent = MainFrame
 
--- Topbar
-local TopBar = Instance.new("Frame")
-TopBar.Size = UDim2.new(1, 0, 0, 40)
-TopBar.BackgroundColor3 = Theme.Sidebar
-TopBar.BorderSizePixel = 0
-TopBar.Parent = MainFrame
+OpenBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+-- Header Bar
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 48)
+Header.BackgroundColor3 = Theme.Sidebar
+Header.BorderSizePixel = 0
+Header.Parent = MainFrame
+
+local HeaderCorner = Instance.new("UICorner")
+HeaderCorner.CornerRadius = UDim.new(0, 12)
+HeaderCorner.Parent = Header
+
+local HeaderPatch = Instance.new("Frame")
+HeaderPatch.Size = UDim2.new(1, 0, 0, 12)
+HeaderPatch.Position = UDim2.new(0, 0, 1, -12)
+HeaderPatch.BackgroundColor3 = Theme.Sidebar
+HeaderPatch.BorderSizePixel = 0
+HeaderPatch.Parent = Header
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Size = UDim2.new(1, -50, 1, 0)
+TitleLabel.Size = UDim2.new(0, 380, 1, 0)
 TitleLabel.Position = UDim2.new(0, 16, 0, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.Text = "ROCKSTAR TRADE BOT - VOLCANIC DEVIL EDITION"
+TitleLabel.Text = "ROCKSTAR HUB v2.0 - 100% AFK AUTO TRADE"
 TitleLabel.TextColor3 = Theme.Accent
 TitleLabel.Font = Enum.Font.GothamBold
-TitleLabel.TextSize = 12
+TitleLabel.TextSize = 13
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.Parent = TopBar
+TitleLabel.Parent = Header
 
 local CloseBtn = Instance.new("TextButton")
-CloseBtn.Size = UDim2.new(0, 28, 0, 28)
-CloseBtn.Position = UDim2.new(1, -34, 0, 6)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 65)
+CloseBtn.Size = UDim2.new(0, 32, 0, 32)
+CloseBtn.Position = UDim2.new(1, -40, 0, 8)
+CloseBtn.BackgroundColor3 = Theme.Card
 CloseBtn.Text = "X"
-CloseBtn.TextColor3 = Theme.TextSub
+CloseBtn.TextColor3 = Theme.TextMain
 CloseBtn.Font = Enum.Font.GothamBold
-CloseBtn.TextSize = 12
-CloseBtn.BorderSizePixel = 0
-CloseBtn.Parent = TopBar
-
-local cbCorner = Instance.new("UICorner")
-cbCorner.CornerRadius = UDim.new(0, 6)
-cbCorner.Parent = CloseBtn
-
-local function ToggleMainFrame()
-    MainFrame.Visible = not MainFrame.Visible
-end
-
-CloseBtn.MouseButton1Click:Connect(ToggleMainFrame)
-FloatingToggle.MouseButton1Click:Connect(ToggleMainFrame)
-
--- Sidebar & Navigasi
-local Sidebar = Instance.new("Frame")
-Sidebar.Size = UDim2.new(0, 145, 1, -40)
-Sidebar.Position = UDim2.new(0, 0, 0, 40)
-Sidebar.BackgroundColor3 = Theme.Sidebar
-Sidebar.BorderSizePixel = 0
-Sidebar.Parent = MainFrame
-
-local sbLayout = Instance.new("UIListLayout")
-sbLayout.Padding = UDim.new(0, 6)
-sbLayout.Parent = Sidebar
-
-local sbPad = Instance.new("UIPadding")
-sbPad.PaddingLeft = UDim.new(0, 8)
-sbPad.PaddingRight = UDim.new(0, 8)
-sbPad.PaddingTop = UDim.new(0, 10)
-sbPad.Parent = Sidebar
-
-local Content = Instance.new("Frame")
-Content.Size = UDim2.new(1, -145, 1, -40)
-Content.Position = UDim2.new(0, 145, 0, 40)
-Content.BackgroundTransparency = 1
-Content.Parent = MainFrame
-
-local TabFrames = {}
-local TabButtons = {}
-
-local TabList = {
-    { Id = "Trade", Name = "Auto Trade" },
-    { Id = "Stock", Name = "Stok Pet" },
-    { Id = "Logs",  Name = "Log Aktivitas" },
-}
-
-local function SwitchTab(tabId)
-    for id, frame in pairs(TabFrames) do
-        frame.Visible = (id == tabId)
-    end
-    for id, btn in pairs(TabButtons) do
-        if id == tabId then
-            btn.BackgroundColor3 = Theme.Card
-            btn.TextColor3 = Theme.Accent
-            btn.Font = Enum.Font.GothamBold
-        else
-            btn.BackgroundColor3 = Color3.fromRGB(16, 22, 34)
-            btn.TextColor3 = Theme.TextSub
-            btn.Font = Enum.Font.GothamMedium
-        end
-    end
-end
-
-for idx, t in ipairs(TabList) do
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 34)
-    btn.BackgroundColor3 = (idx == 1) and Theme.Card or Color3.fromRGB(16, 22, 34)
-    btn.Text = "  " .. t.Name
-    btn.TextColor3 = (idx == 1) and Theme.Accent or Theme.TextSub
-    btn.Font = (idx == 1) and Enum.Font.GothamBold or Enum.Font.GothamMedium
-    btn.TextSize = 11
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.BorderSizePixel = 0
-    btn.Parent = Sidebar
-
-    local bCorner = Instance.new("UICorner")
-    bCorner.CornerRadius = UDim.new(0, 6)
-    bCorner.Parent = btn
-
-    btn.MouseButton1Click:Connect(function()
-        SwitchTab(t.Id)
-    end)
-    TabButtons[t.Id] = btn
-
-    local page = Instance.new("ScrollingFrame")
-    page.Size = UDim2.new(1, -16, 1, -16)
-    page.Position = UDim2.new(0, 8, 0, 8)
-    page.BackgroundTransparency = 1
-    page.BorderSizePixel = 0
-    page.ScrollBarThickness = 4
-    page.ScrollBarImageColor3 = Theme.Accent
-    page.CanvasSize = UDim2.new(0, 0, 0, 0)
-    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    page.Visible = (idx == 1)
-    page.Parent = Content
-
-    local pList = Instance.new("UIListLayout")
-    pList.Padding = UDim.new(0, 8)
-    pList.Parent = page
-
-    TabFrames[t.Id] = page
-end
-
-local function CreateCard(parent, title)
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(1, -4, 0, 100)
-    card.BackgroundColor3 = Theme.Card
-    card.BorderSizePixel = 0
-    card.AutomaticSize = Enum.AutomaticSize.Y
-    card.Parent = parent
-
-    local cCorner = Instance.new("UICorner")
-    cCorner.CornerRadius = UDim.new(0, 8)
-    cCorner.Parent = card
-
-    local cPad = Instance.new("UIPadding")
-    cPad.PaddingTop = UDim.new(0, 8)
-    cPad.PaddingBottom = UDim.new(0, 8)
-    cPad.PaddingLeft = UDim.new(0, 10)
-    cPad.PaddingRight = UDim.new(0, 10)
-    cPad.Parent = card
-
-    local cList = Instance.new("UIListLayout")
-    cList.Padding = UDim.new(0, 6)
-    cList.Parent = card
-
-    if title then
-        local tLabel = Instance.new("TextLabel")
-        tLabel.Size = UDim2.new(1, 0, 0, 18)
-        tLabel.BackgroundTransparency = 1
-        tLabel.Text = title
-        tLabel.TextColor3 = Theme.Accent
-        tLabel.Font = Enum.Font.GothamBold
-        tLabel.TextSize = 11
-        tLabel.TextXAlignment = Enum.TextXAlignment.Left
-        tLabel.Parent = card
-    end
-
-    return card
-end
-
-local function CreateToggle(parent, title, desc, configKey)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 36)
-    btn.BackgroundColor3 = Color3.fromRGB(18, 25, 40)
-    btn.Text = ""
-    btn.BorderSizePixel = 0
-    btn.Parent = parent
-
-    local bCorner = Instance.new("UICorner")
-    bCorner.CornerRadius = UDim.new(0, 6)
-    bCorner.Parent = btn
-
-    local titleLbl = Instance.new("TextLabel")
-    titleLbl.Size = UDim2.new(1, -60, 0, 16)
-    titleLbl.Position = UDim2.new(0, 8, 0, 3)
-    titleLbl.BackgroundTransparency = 1
-    titleLbl.Text = title
-    titleLbl.TextColor3 = Theme.TextMain
-    titleLbl.Font = Enum.Font.GothamMedium
-    titleLbl.TextSize = 11
-    titleLbl.TextXAlignment = Enum.TextXAlignment.Left
-    titleLbl.Parent = btn
-
-    local descLbl = Instance.new("TextLabel")
-    descLbl.Size = UDim2.new(1, -60, 0, 14)
-    descLbl.Position = UDim2.new(0, 8, 0, 19)
-    descLbl.BackgroundTransparency = 1
-    descLbl.Text = desc
-    descLbl.TextColor3 = Theme.TextSub
-    descLbl.Font = Enum.Font.Gotham
-    descLbl.TextSize = 9
-    descLbl.TextXAlignment = Enum.TextXAlignment.Left
-    descLbl.Parent = btn
-
-    local indicator = Instance.new("Frame")
-    indicator.Size = UDim2.new(0, 36, 0, 18)
-    indicator.Position = UDim2.new(1, -44, 0.5, -9)
-    indicator.BackgroundColor3 = Config[configKey] and Theme.Accent or Color3.fromRGB(30, 40, 60)
-    indicator.BorderSizePixel = 0
-    indicator.Parent = btn
-
-    local iCorner = Instance.new("UICorner")
-    iCorner.CornerRadius = UDim.new(1, 0)
-    iCorner.Parent = indicator
-
-    local function UpdateToggle()
-        indicator.BackgroundColor3 = Config[configKey] and Theme.Accent or Color3.fromRGB(30, 40, 60)
-    end
-
-    btn.MouseButton1Click:Connect(function()
-        Config[configKey] = not Config[configKey]
-        UpdateToggle()
-        Log("Pengaturan '" .. title .. "' diubah: " .. tostring(Config[configKey]))
-    end)
-end
-
--- ============================================================================
--- TAB 1: PENGATURAN AUTO TRADE VOLCANIC DEVIL
--- ============================================================================
-local cBuyer = CreateCard(TabFrames["Trade"], "Target Pembeli & Otomatisasi Undangan")
-
-local BuyerInput = Instance.new("TextBox")
-BuyerInput.Size = UDim2.new(1, 0, 0, 32)
-BuyerInput.BackgroundColor3 = Color3.fromRGB(18, 25, 40)
-BuyerInput.PlaceholderText = "Ketik Username Pembeli (Contoh: Budi)..."
-BuyerInput.PlaceholderColor3 = Theme.TextSub
-BuyerInput.Text = Config.BuyerUsername
-BuyerInput.TextColor3 = Theme.TextMain
-BuyerInput.Font = Enum.Font.GothamMedium
-BuyerInput.TextSize = 11
-BuyerInput.BorderSizePixel = 0
-BuyerInput.ClearTextOnFocus = false
-BuyerInput.Parent = cBuyer
-
-local biCorner = Instance.new("UICorner")
-biCorner.CornerRadius = UDim.new(0, 6)
-biCorner.Parent = BuyerInput
-
-BuyerInput.FocusLost:Connect(function()
-    Config.BuyerUsername = BuyerInput.Text
-    Log("Target Pembeli diset ke: @" .. Config.BuyerUsername)
-end)
-
-local CyclePlayerBtn = Instance.new("TextButton")
-CyclePlayerBtn.Size = UDim2.new(1, 0, 0, 28)
-CyclePlayerBtn.BackgroundColor3 = Color3.fromRGB(20, 28, 45)
-CyclePlayerBtn.Text = "Pilih Dari Server: (Klik untuk ganti pemain)"
-CyclePlayerBtn.TextColor3 = Theme.Accent
-CyclePlayerBtn.Font = Enum.Font.GothamMedium
-CyclePlayerBtn.TextSize = 10
-CyclePlayerBtn.BorderSizePixel = 0
-CyclePlayerBtn.Parent = cBuyer
-
-local cpbCorner = Instance.new("UICorner")
-cpbCorner.CornerRadius = UDim.new(0, 6)
-cpbCorner.Parent = CyclePlayerBtn
-
-local serverPlayerIndex = 1
-CyclePlayerBtn.MouseButton1Click:Connect(function()
-    local playersList = {}
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then table.insert(playersList, p) end
-    end
-    if #playersList == 0 then
-        CyclePlayerBtn.Text = "Tidak ada pemain lain di server"
-        return
-    end
-    serverPlayerIndex = (serverPlayerIndex % #playersList) + 1
-    local target = playersList[serverPlayerIndex]
-    Config.BuyerUsername = target.Name
-    BuyerInput.Text = target.Name
-    CyclePlayerBtn.Text = "Pemain Terpilih: " .. target.DisplayName .. " (@" .. target.Name .. ")"
-    Log("Pembeli terpilih: @" .. target.Name)
-end)
-
-local InviteTradeBtn = Instance.new("TextButton")
-InviteTradeBtn.Size = UDim2.new(1, 0, 0, 32)
-InviteTradeBtn.BackgroundColor3 = Color3.fromRGB(40, 65, 105)
-InviteTradeBtn.Text = "[Fast] Ajak Trade Pembeli Sekarang"
-InviteTradeBtn.TextColor3 = Theme.Accent
-InviteTradeBtn.Font = Enum.Font.GothamBold
-InviteTradeBtn.TextSize = 11
-InviteTradeBtn.BorderSizePixel = 0
-InviteTradeBtn.Parent = cBuyer
-
-local itbCorner = Instance.new("UICorner")
-itbCorner.CornerRadius = UDim.new(0, 6)
-itbCorner.Parent = InviteTradeBtn
-
-InviteTradeBtn.MouseButton1Click:Connect(function()
-    local name = BuyerInput.Text ~= "" and BuyerInput.Text or Config.BuyerUsername
-    local target = FindBuyerPlayer(name)
-    if target then
-        Log("Mengirim ajakan trade ke @" .. target.Name .. "...")
-        FireTradeRequest(target)
-    else
-        Log("Pemain '" .. tostring(name) .. "' tidak ditemukan!")
-    end
-end)
-
-CreateToggle(cBuyer, "Auto Terima Trade Pembeli", "Otomatis menerima ajakan trade dari pembeli yang ditargetkan", "AutoAcceptTrade")
-CreateToggle(cBuyer, "Terima Dari Siapa Saja", "Otomatis menerima ajakan trade dari pemain mana pun di server", "AutoAcceptFromAnyone")
-
--- Kartu Aksi Trade
-local cAction = CreateCard(TabFrames["Trade"], "Aksi Otomatis Volcanic Devil")
-
-local AutoAddToggle = CreateToggle(cAction, "Auto Masukkan Volcanic Devil", "Otomatis masukkan pet Volcanic Devil saat jendela trade terbuka", "AutoAddVolcanicDevil")
-
-local PutPetNowBtn = Instance.new("TextButton")
-PutPetNowBtn.Size = UDim2.new(1, 0, 0, 32)
-PutPetNowBtn.BackgroundColor3 = Color3.fromRGB(25, 45, 75)
-PutPetNowBtn.Text = "[1-Klik] Masukkan 1 Volcanic Devil ke Trade Sekarang"
-PutPetNowBtn.TextColor3 = Theme.Accent
-PutPetNowBtn.Font = Enum.Font.GothamBold
-PutPetNowBtn.TextSize = 11
-PutPetNowBtn.BorderSizePixel = 0
-PutPetNowBtn.Parent = cAction
-
-local ppbCorner = Instance.new("UICorner")
-ppbCorner.CornerRadius = UDim.new(0, 6)
-ppbCorner.Parent = PutPetNowBtn
-
-PutPetNowBtn.MouseButton1Click:Connect(function()
-    local devils = GetMyVolcanicDevils()
-    if #devils > 0 then
-        local d = devils[1]
-        Log("Memasukkan " .. d.Name .. " (" .. d.Mutation .. ") ke trade...")
-        if d.PetId then
-            FireTradeAction("AddPet", d.PetId)
-            FireTradeAction("Add", d.PetId)
-            FireTradeAction("SetPet", d.PetId)
-            FireTradeAction(d.PetId)
-        end
-        AutoSelectVolcanicDevilFromGui()
-    else
-        Log("Volcanic Devil tidak ditemukan di workspace/tas!")
-    end
-end)
-
-local DealNowBtn = Instance.new("TextButton")
-DealNowBtn.Size = UDim2.new(1, 0, 0, 38)
-DealNowBtn.BackgroundColor3 = Color3.fromRGB(25, 85, 55)
-DealNowBtn.Text = "[DEAL] Selesaikan Transaksi (Ready + Accept Instan)"
-DealNowBtn.TextColor3 = Color3.fromRGB(120, 255, 170)
-DealNowBtn.Font = Enum.Font.GothamBold
-DealNowBtn.TextSize = 12
-DealNowBtn.BorderSizePixel = 0
-DealNowBtn.Parent = cAction
-
-local dnbCorner = Instance.new("UICorner")
-dnbCorner.CornerRadius = UDim.new(0, 6)
-dnbCorner.Parent = DealNowBtn
-
-DealNowBtn.MouseButton1Click:Connect(function()
-    ExecuteTradeDeal()
-end)
-
-local CancelTradeBtn = Instance.new("TextButton")
-CancelTradeBtn.Size = UDim2.new(1, 0, 0, 28)
-CancelTradeBtn.BackgroundColor3 = Color3.fromRGB(75, 25, 25)
-CancelTradeBtn.Text = "[Batal] Batalkan / Keluar Dari Sesi Trade"
-CancelTradeBtn.TextColor3 = Color3.fromRGB(255, 130, 130)
-CancelTradeBtn.Font = Enum.Font.GothamBold
-CancelTradeBtn.TextSize = 10
-CancelTradeBtn.BorderSizePixel = 0
-CancelTradeBtn.Parent = cAction
-
-local ctbCorner = Instance.new("UICorner")
-ctbCorner.CornerRadius = UDim.new(0, 6)
-ctbCorner.Parent = CancelTradeBtn
-
-CancelTradeBtn.MouseButton1Click:Connect(function()
-    FireTradeAction("Cancel")
-    FireTradeAction("Decline")
-    AutoClickTradeCancelButton()
-    State.InTrade = false
-    Log("Sesi trade dibatalkan.")
-end)
-
--- ============================================================================
--- TAB 2: DAFTAR STOK PET VOLCANIC DEVIL
--- ============================================================================
-local cStock = CreateCard(TabFrames["Stock"], "Deteksi Pet Volcanic Devil Milik Anda")
-
-local StockCountLabel = Instance.new("TextLabel")
-StockCountLabel.Size = UDim2.new(1, 0, 0, 24)
-StockCountLabel.BackgroundTransparency = 1
-StockCountLabel.Text = "Stok Terdeteksi: Memindai..."
-StockCountLabel.TextColor3 = Theme.Accent
-StockCountLabel.Font = Enum.Font.GothamBold
-StockCountLabel.TextSize = 12
-StockCountLabel.TextXAlignment = Enum.TextXAlignment.Left
-StockCountLabel.Parent = cStock
-
-local StockListText = Instance.new("TextLabel")
-StockListText.Size = UDim2.new(1, 0, 0, 120)
-StockListText.BackgroundTransparency = 1
-StockListText.Text = "Memuat daftar pet..."
-StockListText.TextColor3 = Theme.TextSub
-StockListText.Font = Enum.Font.Code
-StockListText.TextSize = 10
-StockListText.TextXAlignment = Enum.TextXAlignment.Left
-StockListText.TextYAlignment = Enum.TextYAlignment.Top
-StockListText.Parent = cStock
-
-local function UpdateStockDisplay()
-    local devils = GetMyVolcanicDevils()
-    StockCountLabel.Text = "Total Volcanic Devil Terdeteksi: " .. tostring(#devils) .. " Ekor"
-
-    if #devils == 0 then
-        StockListText.Text = "Belum ada Volcanic Devil yang terdeteksi di sekitar/karakter.\nPastikan pet terpasang atau berada di tas Anda."
-    else
-        local lines = {}
-        for idx, d in ipairs(devils) do
-            local mutStr = d.Mutation ~= "None" and ("[" .. d.Mutation .. "] ") or ""
-            local rbStr = d.Rainbow and "[Rainbow] " or ""
-            local petIdShort = d.PetId and string.sub(d.PetId, 1, 8) .. "..." or "N/A"
-            table.insert(lines, tostring(idx) .. ". " .. rbStr .. mutStr .. d.Name .. " (" .. d.Tier .. ") | ID: " .. petIdShort)
-        end
-        StockListText.Text = table.concat(lines, "\n")
-    end
-end
-
-local RefreshStockBtn = Instance.new("TextButton")
-RefreshStockBtn.Size = UDim2.new(1, 0, 0, 28)
-RefreshStockBtn.BackgroundColor3 = Color3.fromRGB(24, 34, 52)
-RefreshStockBtn.Text = "Segarkan Daftar Stok Pet"
-RefreshStockBtn.TextColor3 = Theme.Accent
-RefreshStockBtn.Font = Enum.Font.GothamMedium
-RefreshStockBtn.TextSize = 10
-RefreshStockBtn.BorderSizePixel = 0
-RefreshStockBtn.Parent = cStock
-
-local rsbCorner = Instance.new("UICorner")
-rsbCorner.CornerRadius = UDim.new(0, 6)
-rsbCorner.Parent = RefreshStockBtn
-
-RefreshStockBtn.MouseButton1Click:Connect(UpdateStockDisplay)
-
--- ============================================================================
--- TAB 3: KONSOL LOG REALTIME
--- ============================================================================
-local cLogs = CreateCard(TabFrames["Logs"], "Catatan Aktivitas Transaksi")
-
-local LogDisplay = Instance.new("TextLabel")
-LogDisplay.Size = UDim2.new(1, 0, 0, 200)
-LogDisplay.BackgroundTransparency = 1
-LogDisplay.Text = "Menunggu aktivitas transaksi..."
-LogDisplay.TextColor3 = Theme.TextSub
-LogDisplay.Font = Enum.Font.Code
-LogDisplay.TextSize = 10
-LogDisplay.TextXAlignment = Enum.TextXAlignment.Left
-LogDisplay.TextYAlignment = Enum.TextYAlignment.Top
-LogDisplay.Parent = cLogs
-
-local function RefreshLogDisplay()
-    LogDisplay.Text = table.concat(State.LogBuffer, "\n")
-end
-
--- Background Loop untuk Refresh UI
+CloseBtn.TextSize = 14
+CloseBtn.Parent = Header
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
+CloseBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
+
+-- Status Info Card
+local StatusCard = Instance.new("Frame")
+StatusCard.Size = UDim2.new(1, -24, 0, 70)
+StatusCard.Position = UDim2.new(0, 12, 0, 56)
+StatusCard.BackgroundColor3 = Theme.Card
+StatusCard.BorderSizePixel = 0
+StatusCard.Parent = MainFrame
+
+local ScCorner = Instance.new("UICorner")
+ScCorner.CornerRadius = UDim.new(0, 8)
+ScCorner.Parent = StatusCard
+
+local StatusTitle = Instance.new("TextLabel")
+StatusTitle.Size = UDim2.new(1, -20, 0, 22)
+StatusTitle.Position = UDim2.new(0, 10, 0, 8)
+StatusTitle.BackgroundTransparency = 1
+StatusTitle.Text = "MODE BOT AKTIF: 100% TANPA CAMPUR TANGAN MANUSIA"
+StatusTitle.TextColor3 = Theme.Success
+StatusTitle.Font = Enum.Font.GothamBold
+StatusTitle.TextSize = 12
+StatusTitle.TextXAlignment = Enum.TextXAlignment.Left
+StatusTitle.Parent = StatusCard
+
+local StockLabel = Instance.new("TextLabel")
+StockLabel.Size = UDim2.new(1, -20, 0, 32)
+StockLabel.Position = UDim2.new(0, 10, 0, 32)
+StockLabel.BackgroundTransparency = 1
+StockLabel.Text = "Memindai stok Volcanic Devil..."
+StockLabel.TextColor3 = Theme.TextMain
+StockLabel.Font = Enum.Font.Gotham
+StockLabel.TextSize = 11
+StockLabel.TextXAlignment = Enum.TextXAlignment.Left
+StockLabel.Parent = StatusCard
+
+-- Console Log Box
+local LogCard = Instance.new("Frame")
+LogCard.Size = UDim2.new(1, -24, 1, -142)
+LogCard.Position = UDim2.new(0, 12, 0, 134)
+LogCard.BackgroundColor3 = Theme.Sidebar
+LogCard.BorderSizePixel = 0
+LogCard.Parent = MainFrame
+
+local LcCorner = Instance.new("UICorner")
+LcCorner.CornerRadius = UDim.new(0, 8)
+LcCorner.Parent = LogCard
+
+local ConsoleText = Instance.new("TextLabel")
+ConsoleText.Size = UDim2.new(1, -16, 1, -16)
+ConsoleText.Position = UDim2.new(0, 8, 0, 8)
+ConsoleText.BackgroundTransparency = 1
+ConsoleText.Text = "Bot siap melayani customer..."
+ConsoleText.TextColor3 = Theme.TextDim
+ConsoleText.Font = Enum.Font.Code
+ConsoleText.TextSize = 10
+ConsoleText.TextXAlignment = Enum.TextXAlignment.Left
+ConsoleText.TextYAlignment = Enum.TextYAlignment.Top
+ConsoleText.Parent = LogCard
+
+-- Loop Update Tampilan
 task.spawn(function()
     while true do
-        pcall(RefreshLogDisplay)
-        pcall(UpdateStockDisplay)
-        task.wait(2.0)
+        local devils = GetMyVolcanicDevils()
+        StockLabel.Text = "Pet Dijual: Volcanic Devil | Stok: " .. #devils .. " Ekor | Sukses: " .. State.TotalCompletedTrades .. " Deal"
+        if #State.Logs > 0 then
+            ConsoleText.Text = table.concat(State.Logs, "\n")
+        end
+        task.wait(1.5)
     end
 end)
 
-Log("* ROCKSTAR TRADE BOT TAP SIMULATOR 2 SIAP DIGUNAKAN *")
-Log("Target Pet Terkunci: VOLCANIC DEVIL")
+Log("ROCKSTAR HUB v2.0 READY: AFK Auto Trade Volcanic Devil aktif 100%!")
