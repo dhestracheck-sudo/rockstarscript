@@ -1,24 +1,25 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB v7.9 - [🎃] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) ★
--- Game: [🎃] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
--- Update v7.9:
---   [✓] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
---   [✓] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
---   [✓] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
---   [✓] SAFE GETCONNECTIONS: Anti-crash pada executor tanpa getconnections
---   [✓]
---   [✓] UPGRADE PET / PODIUM JARAK JAUH: 100% Tanpa Teleport (Bypass Proximity & Remote)
---   [✓] FIX AUTO TREADMILL: Berdiri di Belt + Touch Physics + Auto Run aktif
---   [✓] FIX AUTO MENARA OTOMATIS PENUH:
+-- * ROCKSTAR HUB v8.0 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN (UNIVERSAL EXECUTOR FIX) *
+-- Game: [[HALLOWEEN]] Putar Hewan Peliharaan (PlaceId: 73275665439299 | PlaceVersion: 1264)
+-- Update v8.0:
+--   [[OK]] 100% UNIVERSAL EXECUTOR COMPATIBLE: Fix syntax error "continue" (Lua 5.1/LuaJIT/Luau)
+--   [[OK]] ROBUST GUI PARENTING: Support gethui, syn.protect_gui, PlayerGui & CoreGui
+--   [[OK]] AUTO CLEANUP: Hapus instance RockstarHub lama sebelum render baru
+--   [[OK]] SAFE GETCONNECTIONS: Anti-crash pada executor tanpa getconnections
+--   [[OK]]
+--   [[OK]] UPGRADE PET / PODIUM JARAK JAUH: 100% Tanpa Teleport (Bypass Proximity & Remote)
+--   [[OK]] FIX AUTO TREADMILL: Berdiri di Belt + Touch Physics + Auto Run aktif
+--   [[OK]] FIX AUTO MENARA OTOMATIS PENUH:
 --       - AutoClick GUI (Deteksi luas: Start/Fight/Battle/Mulai/Tarung/Stage)
 --       - Auto Fast Combat Tap (VirtualInputManager + VirtualUser + 20 CPS)
 --       - Auto Retry & Decline Revive instan
---   [✓] DADU TERBAIK & AUTO BUY TOKO DADU: Stabil & True Luck (Tanpa Skip Void)
---   [✓] AUTO SELL: Jual Pet Terlemah & Jual Semua Pet Cadangan
+--   [[OK]] DADU TERBAIK & AUTO BUY TOKO DADU: Stabil & True Luck (Tanpa Skip Void)
+--   [[OK]] AUTO SELL: Jual Pet Terlemah & Jual Semua Pet Cadangan
 -- ============================================================================
 
 if not game:IsLoaded() then
-    game.Loaded:Wait()
+    local t0 = tick()
+    repeat task.wait(0.2) until game:IsLoaded() or (tick() - t0) > 3
 end
 
 local Players = game:GetService("Players")
@@ -26,8 +27,11 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
-local VirtualUser = game:GetService("VirtualUser")
-local CoreGui = game:GetService("CoreGui")
+local VirtualUser
+pcall(function() VirtualUser = game:GetService("VirtualUser") end)
+
+local CoreGui
+pcall(function() CoreGui = game:GetService("CoreGui") end)
 
 local VIM
 pcall(function()
@@ -52,7 +56,7 @@ local Config = {
     AutoSellWeakest = false,
     AutoSellAll = false,
 
-    -- Sistem Dadu v7.8
+    -- Sistem Dadu v8.0
     AutoBuyDiceOnly = false,
     AutoEquipDice = false,
     DiceMode = "AutoBest",          -- "AutoBest" atau "Manual"
@@ -124,7 +128,7 @@ local function Log(msg)
     if #State.LogBuffer > State.LogMaxLines then
         table.remove(State.LogBuffer)
     end
-    print("★ ROCKSTAR: " .. msg)
+    print("* ROCKSTAR: " .. msg)
 end
 
 -- ============================================================================
@@ -342,14 +346,14 @@ local function GetDiceCardsFromGui()
                                 equipBtn = el:IsA("TextButton") and el or el.Parent
                                 isOwned = true
                             end
-                        elseif string.find(txt, "buy") or string.find(txt, "beli") or string.find(txt, "$") or string.find(txt, "🪙") then
+                        elseif string.find(txt, "buy") or string.find(txt, "beli") or string.find(txt, "$") or string.find(txt, "[Coin]") then
                             if el:IsA("TextButton") or el:IsA("ImageButton") or el.Parent:IsA("TextButton") or el.Parent:IsA("ImageButton") then
                                 buyBtn = el:IsA("TextButton") and el or el.Parent
                             end
                         end
 
                         if el:IsA("TextLabel") then
-                            if string.find(txt, "🍀") or string.find(txt, "luck") or string.find(txt, "keberuntungan") or string.find(txt, "x") then
+                            if string.find(txt, "[Luck]") or string.find(txt, "luck") or string.find(txt, "keberuntungan") or string.find(txt, "x") then
                                 luckLabel = el.Text
                             end
                             for tierName, _ in pairs(TierMultiplier) do
@@ -464,7 +468,7 @@ local function EquipTargetDiceNow(force)
                 IsScriptCallingEquip = true
                 SafeCall("EquipDice", false, bestServerDice.Name)
                 task.delay(0.5, function() IsScriptCallingEquip = false end)
-                Log("Memasang Dadu Terbaik (Data Server): " .. bestServerDice.Name .. " (🍀 " .. bestServerDice.Luck .. "x)")
+                Log("Memasang Dadu Terbaik (Data Server): " .. bestServerDice.Name .. " ([Luck] " .. bestServerDice.Luck .. "x)")
                 State.CurrentDiceName = bestServerDice.Name
                 return
             end
@@ -492,7 +496,7 @@ local function EquipTargetDiceNow(force)
         end)
         task.delay(0.5, function() IsScriptCallingEquip = false end)
 
-        Log("Memasang Dadu Terbaik: " .. targetCard.Name .. " (🍀 " .. targetCard.Luck .. "x)")
+        Log("Memasang Dadu Terbaik: " .. targetCard.Name .. " ([Luck] " .. targetCard.Luck .. "x)")
         State.LastEquippedDiceId = targetCard.Name
         State.FailedEquipCount = State.FailedEquipCount + 1
         return
@@ -1067,8 +1071,16 @@ end)
 -- Anti AFK
 if Config.AntiAFK then
     LocalPlayer.Idled:Connect(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.new())
+        pcall(function()
+            if VirtualUser then
+                if typeof(VirtualUser.CaptureController) == "function" then
+                    VirtualUser:CaptureController()
+                end
+                if typeof(VirtualUser.ClickButton2) == "function" then
+                    VirtualUser:ClickButton2(Vector2.new())
+                end
+            end
+        end)
     end)
 end
 
@@ -1108,38 +1120,28 @@ pcall(function()
     end
 end)
 
-local guiParented = false
-if typeof(gethui) == "function" then
-    pcall(function()
-        ScreenGui.Parent = gethui()
-        guiParented = true
-    end)
-end
-if not guiParented and typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
-    pcall(function()
-        syn.protect_gui(ScreenGui)
-        ScreenGui.Parent = CoreGui
-        guiParented = true
-    end)
-end
-if not guiParented then
-    pcall(function()
-        local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
-        ScreenGui.Parent = pGui
-        guiParented = true
-    end)
-end
-if not guiParented or not ScreenGui.Parent then
-    pcall(function() ScreenGui.Parent = CoreGui end)
-end
+-- Delta & Mobile Safe GUI Parenting (PlayerGui prioritised for 100% visibility)
+local pGui = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 5)
+local targetParent = pGui
 
--- Floating Toggle Button (R★)
+pcall(function()
+    if typeof(gethui) == "function" then
+        local h = gethui()
+        if h and h:IsA("Instance") then targetParent = h end
+    elseif typeof(syn) == "table" and typeof(syn.protect_gui) == "function" then
+        syn.protect_gui(ScreenGui)
+        targetParent = CoreGui or pGui
+    end
+end)
+ScreenGui.Parent = targetParent or pGui
+
+-- Floating Toggle Button (R*)
 local FloatingToggle = Instance.new("TextButton")
 FloatingToggle.Name = "FloatingToggle"
 FloatingToggle.Size = UDim2.new(0, 46, 0, 46)
 FloatingToggle.Position = UDim2.new(0, 16, 0.5, -23)
 FloatingToggle.BackgroundColor3 = Theme.Header
-FloatingToggle.Text = "R★"
+FloatingToggle.Text = "R*"
 FloatingToggle.TextColor3 = Theme.Accent
 FloatingToggle.Font = Enum.Font.GothamBold
 FloatingToggle.TextSize = 16
@@ -1176,11 +1178,16 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Main Hub Window
+-- Main Hub Window (Mobile & Tablet Auto-Scaling)
+local cam = Workspace.CurrentCamera
+local vp = cam and cam.ViewportSize or Vector2.new(800, 600)
+local winW = math.clamp(vp.X - 30, 360, 660)
+local winH = math.clamp(vp.Y - 40, 280, 420)
+
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 680, 0, 430)
-MainFrame.Position = UDim2.new(0.5, -340, 0.5, -215)
+MainFrame.Size = UDim2.new(0, winW, 0, winH)
+MainFrame.Position = UDim2.new(0.5, -winW / 2, 0.5, -winH / 2)
 MainFrame.BackgroundColor3 = Theme.Background
 MainFrame.BorderSizePixel = 0
 MainFrame.Visible = true
@@ -1239,7 +1246,7 @@ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(0, 320, 1, 0)
 Title.Position = UDim2.new(0, 14, 0, 0)
 Title.BackgroundTransparency = 1
-Title.Text = "★ ROCKSTAR HUB  —  PUTAR HEWAN PELIHARAAN"
+Title.Text = "* ROCKSTAR HUB  -  PUTAR HEWAN PELIHARAAN"
 Title.TextColor3 = Theme.TextMain
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 13
@@ -1250,7 +1257,7 @@ local VersionBadge = Instance.new("TextLabel")
 VersionBadge.Size = UDim2.new(0, 80, 0, 20)
 VersionBadge.Position = UDim2.new(0, 340, 0.5, -10)
 VersionBadge.BackgroundColor3 = Theme.Card
-VersionBadge.Text = "v7.8 CYBER"
+VersionBadge.Text = "v8.0 CYBER"
 VersionBadge.TextColor3 = Theme.Accent
 VersionBadge.Font = Enum.Font.GothamBold
 VersionBadge.TextSize = 10
@@ -1317,12 +1324,12 @@ local TabFrames = {}
 local TabButtons = {}
 
 local TabDefs = {
-    { Id = "Roll", Name = "🎲 Putar & Pet" },
-    { Id = "Dice", Name = "🎲 Toko Dadu" },
-    { Id = "Upgrade", Name = "⚡ Peningkatan" },
-    { Id = "Tower", Name = "🏰 Menara" },
-    { Id = "Event", Name = "🎃 Halloween" },
-    { Id = "Log", Name = "📋 Konsol Log" },
+    { Id = "Roll", Name = "[Dice] Putar & Pet" },
+    { Id = "Dice", Name = "[Dice] Toko Dadu" },
+    { Id = "Upgrade", Name = "[Fast] Peningkatan" },
+    { Id = "Tower", Name = "[Tower] Menara" },
+    { Id = "Event", Name = "[HALLOWEEN] Halloween" },
+    { Id = "Log", Name = "[Log] Konsol Log" },
 }
 
 local function SwitchTab(tabId)
@@ -1527,7 +1534,7 @@ local function UpdateDiceDisplay()
     local cards = GetDiceCardsFromGui()
     for _, c in ipairs(cards) do
         if c.Status == "equipped" then
-            DiceStatusLabel.Text = string.format("Dadu Aktif: %s (Tier: %s | 🍀 %sx)", c.Name, c.Tier, tostring(c.Luck))
+            DiceStatusLabel.Text = string.format("Dadu Aktif: %s (Tier: %s | [Luck] %sx)", c.Name, c.Tier, tostring(c.Luck))
             return
         end
     end
@@ -1541,7 +1548,7 @@ end
 local ModeSwitchBtn = Instance.new("TextButton")
 ModeSwitchBtn.Size = UDim2.new(1, 0, 0, 32)
 ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
-ModeSwitchBtn.Text = "Mode Dadu: " .. (Config.DiceMode == "AutoBest" and "🌟 Auto-Best Luck (Tertinggi)" or "🔒 Kunci Manual")
+ModeSwitchBtn.Text = "Mode Dadu: " .. (Config.DiceMode == "AutoBest" and "[*] Auto-Best Luck (Tertinggi)" or "[Lock] Kunci Manual")
 ModeSwitchBtn.TextColor3 = Theme.Accent
 ModeSwitchBtn.Font = Enum.Font.GothamBold
 ModeSwitchBtn.TextSize = 11
@@ -1555,10 +1562,10 @@ msbCorner.Parent = ModeSwitchBtn
 ModeSwitchBtn.MouseButton1Click:Connect(function()
     if Config.DiceMode == "AutoBest" then
         Config.DiceMode = "Manual"
-        ModeSwitchBtn.Text = "Mode Dadu: 🔒 Kunci Manual (Dadu Terpilih)"
+        ModeSwitchBtn.Text = "Mode Dadu: [Lock] Kunci Manual (Dadu Terpilih)"
     else
         Config.DiceMode = "AutoBest"
-        ModeSwitchBtn.Text = "Mode Dadu: 🌟 Auto-Best Luck (Tertinggi)"
+        ModeSwitchBtn.Text = "Mode Dadu: [*] Auto-Best Luck (Tertinggi)"
     end
 end)
 
@@ -1569,7 +1576,7 @@ CreateToggle(p2Card, "Teleport ke Toko Dadu saat Beli", "Mendekat otomatis ke pa
 local ForceEquipBtn = Instance.new("TextButton")
 ForceEquipBtn.Size = UDim2.new(1, 0, 0, 30)
 ForceEquipBtn.BackgroundColor3 = Color3.fromRGB(30, 65, 110)
-ForceEquipBtn.Text = "⚡ Paksa Pasang Dadu Terbaik Sekarang"
+ForceEquipBtn.Text = "[Fast] Paksa Pasang Dadu Terbaik Sekarang"
 ForceEquipBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ForceEquipBtn.Font = Enum.Font.GothamBold
 ForceEquipBtn.TextSize = 11
@@ -1593,7 +1600,7 @@ CreateToggle(p3Card, "Auto Tingkatkan 16 Podium", "Tingkatkan 16 podium & level 
 local RemoteUpgradeNowBtn = Instance.new("TextButton")
 RemoteUpgradeNowBtn.Size = UDim2.new(1, 0, 0, 30)
 RemoteUpgradeNowBtn.BackgroundColor3 = Color3.fromRGB(24, 48, 80)
-RemoteUpgradeNowBtn.Text = "⚡ Tingkatkan Semua Podium Sekarang (Jarak Jauh)"
+RemoteUpgradeNowBtn.Text = "[Fast] Tingkatkan Semua Podium Sekarang (Jarak Jauh)"
 RemoteUpgradeNowBtn.TextColor3 = Theme.Accent
 RemoteUpgradeNowBtn.Font = Enum.Font.GothamBold
 RemoteUpgradeNowBtn.TextSize = 11
@@ -1632,7 +1639,7 @@ end
 local TowerModeBtn = Instance.new("TextButton")
 TowerModeBtn.Size = UDim2.new(1, 0, 0, 30)
 TowerModeBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
-TowerModeBtn.Text = "Mode Stage: " .. (Config.TowerStageMode == "Selected" and "🎯 Stage Manual Pilihan" or "🌟 Auto Stage Tertinggi")
+TowerModeBtn.Text = "Mode Stage: " .. (Config.TowerStageMode == "Selected" and "[Target] Stage Manual Pilihan" or "[*] Auto Stage Tertinggi")
 TowerModeBtn.TextColor3 = Theme.Accent
 TowerModeBtn.Font = Enum.Font.GothamBold
 TowerModeBtn.TextSize = 11
@@ -1646,10 +1653,10 @@ tmbCorner.Parent = TowerModeBtn
 TowerModeBtn.MouseButton1Click:Connect(function()
     if Config.TowerStageMode == "Selected" then
         Config.TowerStageMode = "Highest"
-        TowerModeBtn.Text = "Mode Stage: 🌟 Auto Stage Tertinggi"
+        TowerModeBtn.Text = "Mode Stage: [*] Auto Stage Tertinggi"
     else
         Config.TowerStageMode = "Selected"
-        TowerModeBtn.Text = "Mode Stage: 🎯 Stage Manual Pilihan"
+        TowerModeBtn.Text = "Mode Stage: [Target] Stage Manual Pilihan"
     end
     UpdateStageLabel()
 end)
@@ -1662,7 +1669,7 @@ StageControlRow.Parent = p4Card
 local PrevStageBtn = Instance.new("TextButton")
 PrevStageBtn.Size = UDim2.new(0, 80, 1, 0)
 PrevStageBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
-PrevStageBtn.Text = "◀ Kurang"
+PrevStageBtn.Text = "< Kurang"
 PrevStageBtn.TextColor3 = Theme.Accent
 PrevStageBtn.Font = Enum.Font.GothamBold
 PrevStageBtn.TextSize = 11
@@ -1677,7 +1684,7 @@ local NextStageBtn = Instance.new("TextButton")
 NextStageBtn.Size = UDim2.new(0, 80, 1, 0)
 NextStageBtn.Position = UDim2.new(0, 90, 0, 0)
 NextStageBtn.BackgroundColor3 = Color3.fromRGB(24, 38, 62)
-NextStageBtn.Text = "Tambah ▶"
+NextStageBtn.Text = "Tambah >"
 NextStageBtn.TextColor3 = Theme.Accent
 NextStageBtn.Font = Enum.Font.GothamBold
 NextStageBtn.TextSize = 11
@@ -1744,5 +1751,5 @@ task.spawn(function()
     end
 end)
 
-Log("★ ROCKSTAR HUB v7.8 DIMUAT LENGKAP ★")
-print("★ ROCKSTAR HUB v7.8 - [🎃] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! ★")
+Log("* ROCKSTAR HUB v8.0 DIMUAT LENGKAP *")
+print("* ROCKSTAR HUB v8.0 - [[HALLOWEEN]] PUTAR HEWAN PELIHARAAN BERHASIL DIMUAT LENGKAP! *")
