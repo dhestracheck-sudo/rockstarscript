@@ -1,309 +1,299 @@
 -- ============================================================================
--- ★ ROCKSTAR HUB (BLUE EDITION) // LOADER + BLUE THEME & LOGO REPLACER
--- Menghapus Logo Asli (Planet/Serenity/Lynx) & Menggantinya Jadi Logo Rockstar
+-- ★ ROCKSTAR HUB (CYBER BLUE EDITION) // CUSTOM UI REDESIGN & NO DISCORD LINK
+-- Menghapus Total Logo "SR", Menghapus Link Discord, & Merombak Tampilan UI
 -- ============================================================================
 
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
 
--- [OPSIONAL] Jika Anda punya ID Decal/Gambar Roblox sendiri untuk logo,
--- isi di bawah ini (contoh: "rbxassetid://123456789").
--- Jika dikosongkan (""), otomatis memakai Logo Emblem Bintang ★ Rockstar Biru!
-local CUSTOM_LOGO_ID = ""
-
--- ============================================================================
--- 1. ENGINE PENGUBAH WARNA BIRU, JUDUL, DAN PENGGANTI LOGO ROCKSTAR
--- ============================================================================
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
-local DetectedOriginalLogoIds = {}
+-- Abaikan GUI bawaan sistem Roblox
+local IgnoredSystemGuis = {
+    ["RobloxGui"] = true,
+    ["TopBarApp"] = true,
+    ["Chat"] = true,
+    ["PlayerList"] = true,
+    ["TouchGui"] = true,
+    ["Backpack"] = true,
+    ["DevConsoleMaster"] = true,
+    ["PurchasePrompt"] = true,
+    ["PurchasePromptApp"] = true,
+    ["RobloxNetworkPauseNotification"] = true,
+    ["TeleportEffectGui"] = true
+}
 
--- Konversi warna Oranye/Coklat (R > B) menjadi Biru Rockstar (B, G, R)
-local function ToRockstarBlue(c)
-    if typeof(c) ~= "Color3" then return c end
-    if c.R > c.B + 0.04 then
-        return Color3.new(
-            c.B,
-            math.clamp(c.G * 1.05, 0, 1),
-            c.R
-        )
+local function IsInsideSystemGui(inst)
+    local curr = inst
+    while curr do
+        if IgnoredSystemGuis[curr.Name] then
+            return true
+        end
+        curr = curr.Parent
     end
+    return false
+end
+
+-- ============================================================================
+-- 1. PALET WARNA ROCKSTAR CYBER BLUE (MEROMBAK SEMUA WARNA LAMA)
+-- ============================================================================
+local function ToRockstarBlue(c, isBackground)
+    if typeof(c) ~= "Color3" then return c end
+
+    -- Jangan ubah warna teks Putih bersih
+    if c.R > 0.85 and c.G > 0.85 and c.B > 0.85 then
+        return Color3.fromRGB(240, 248, 255)
+    end
+
+    -- Jika ini warna latar gelap (Hitam/Coklat Tua/Abu Gelap), ubah jadi Midnight Navy Blue
+    local maxVal = math.max(c.R, c.G, c.B)
+    if maxVal < 0.28 then
+        if maxVal < 0.10 then
+            return Color3.fromRGB(9, 15, 28)   -- Deep Midnight Blue
+        elseif maxVal < 0.18 then
+            return Color3.fromRGB(14, 23, 42)  -- Dark Royal Navy
+        else
+            return Color3.fromRGB(20, 34, 62)  -- Slate Blue Card
+        end
+    end
+
+    -- Jika warna Oranye / Merah / Coklat / Ungu (Aksen lama), ubah jadi Electric Cyan-Blue
+    if c.R > c.B + 0.03 then
+        return Color3.fromRGB(0, 165, 255)
+    end
+
     return c
 end
 
 local function ToRockstarSequence(seq)
     if typeof(seq) ~= "ColorSequence" then return seq end
     local keypoints = {}
-    local changed = false
     for _, kp in ipairs(seq.Keypoints) do
-        local newCol = ToRockstarBlue(kp.Value)
-        if newCol ~= kp.Value then changed = true end
-        table.insert(keypoints, ColorSequenceKeypoint.new(kp.Time, newCol))
+        table.insert(keypoints, ColorSequenceKeypoint.new(kp.Time, ToRockstarBlue(kp.Value, false)))
     end
-    if changed then
-        return ColorSequence.new(keypoints)
-    end
-    return seq
+    return ColorSequence.new(keypoints)
 end
 
-local function ToRockstarText(txt)
-    if type(txt) ~= "string" or txt == "" then return txt end
+-- ============================================================================
+-- 2. HAPUS TOTAL LINK DISCORD & UBAH JUDUL JADI "★ ROCKSTAR"
+-- ============================================================================
+local function ProcessAndCleanText(inst)
+    local txt = inst.Text
+    if type(txt) ~= "string" or txt == "" then return end
+
+    local lower = string.lower(txt)
+
+    -- A. HAPUS LINK DISCORD & SEMBUNYIKAN IKON DISCORD DI SEBELAHNYA
+    if string.find(lower, "discord", 1, true) or string.find(lower, "lynxx", 1, true) then
+        inst.Text = ""
+        inst.Visible = false
+        -- Sembunyikan juga ikon Discord & garis pemisah di dalam container yang sama
+        if inst.Parent then
+            for _, sib in ipairs(inst.Parent:GetChildren()) do
+                if sib ~= inst and (sib:IsA("ImageLabel") or sib:IsA("Frame")) then
+                    -- Jika posisinya dekat di sebelah kanan atas (area Discord)
+                    if sib.Position.X.Scale > 0.45 or sib.Position.X.Offset > 250 or sib.Size.X.Offset <= 28 then
+                        sib.Visible = false
+                    end
+                end
+            end
+        end
+        return
+    end
+
+    -- B. UBAH JUDUL LYNX / SERENITY MENJADI "★ ROCKSTAR"
+    if lower == "lynx" or lower == "serenity" or lower == "serenity hub" then
+        inst.Text = "★ ROCKSTAR"
+        inst.TextColor3 = Color3.fromRGB(35, 195, 255)
+        return
+    end
+
     local res = txt
     res = string.gsub(res, "[Ll][Yy][Nn][Xx][Xx]?", "Rockstar")
     res = string.gsub(res, "[Ss][Ee][Rr][Ee][Nn][Ii][Tt][Yy]%s*[Hh][Uu][Bb]", "Rockstar Hub")
     res = string.gsub(res, "[Ss][Ee][Rr][Ee][Nn][Ii][Tt][Yy]", "Rockstar")
-    res = string.gsub(res, "discord%.gg/[%w_%-]+", "discord.gg/rockstar")
-    return res
-end
-
--- Fungsi untuk mengganti ImageLabel / ImageButton logo asli dengan Logo Rockstar
-local function ReplaceWithRockstarLogo(imgInst)
-    if not imgInst or imgInst:FindFirstChild("RockstarLogoBadge") then return end
-
-    pcall(function()
-        if CUSTOM_LOGO_ID ~= "" then
-            imgInst.Image = CUSTOM_LOGO_ID
-            imgInst.ImageColor3 = Color3.fromRGB(0, 170, 255)
-            imgInst.ImageTransparency = 0
-            imgInst:GetPropertyChangedSignal("Image"):Connect(function()
-                if imgInst.Image ~= CUSTOM_LOGO_ID then
-                    imgInst.Image = CUSTOM_LOGO_ID
-                end
-            end)
-        else
-            -- Sembunyikan gambar logo bawaan mereka sepenuhnya
-            imgInst.ImageTransparency = 1
-            imgInst.Image = ""
-            imgInst:GetPropertyChangedSignal("Image"):Connect(function()
-                if imgInst.Image ~= "" then
-                    imgInst.Image = ""
-                    imgInst.ImageTransparency = 1
-                end
-            end)
-            imgInst:GetPropertyChangedSignal("ImageTransparency"):Connect(function()
-                if imgInst.ImageTransparency ~= 1 then
-                    imgInst.ImageTransparency = 1
-                end
-            end)
-
-            -- Pasang Emblem Bintang ★ Rockstar Biru Elektrik di tempat logo mereka
-            local Badge = Instance.new("Frame")
-            Badge.Name = "RockstarLogoBadge"
-            Badge.Size = UDim2.new(1, 2, 1, 2)
-            Badge.Position = UDim2.new(0.5, 0, 0.5, 0)
-            Badge.AnchorPoint = Vector2.new(0.5, 0.5)
-            Badge.BackgroundColor3 = Color3.fromRGB(14, 28, 52)
-            Badge.BorderSizePixel = 0
-            Badge.Parent = imgInst
-
-            local Corner = Instance.new("UICorner")
-            Corner.CornerRadius = UDim.new(1, 0)
-            Corner.Parent = Badge
-
-            local Stroke = Instance.new("UIStroke")
-            Stroke.Color = Color3.fromRGB(0, 165, 255)
-            Stroke.Thickness = 1.5
-            Stroke.Parent = Badge
-
-            local Star = Instance.new("TextLabel")
-            Star.Name = "StarIcon"
-            Star.Size = UDim2.new(1, 0, 1, 0)
-            Star.BackgroundTransparency = 1
-            Star.Text = "★"
-            Star.TextColor3 = Color3.fromRGB(40, 190, 255)
-            Star.Font = Enum.Font.GothamBlack
-            Star.TextScaled = true
-            Star.Parent = Badge
-        end
-    end)
-end
-
--- Cek apakah sebuah ImageLabel/ImageButton adalah logo utama di TopBar atau Tombol Floating
-local function CheckIfBrandLogo(imgInst)
-    if not (imgInst:IsA("ImageLabel") or imgInst:IsA("ImageButton")) then return false end
-
-    -- 1. Jika asset ID gambarnya sama dengan logo TopBar yang sudah terdeteksi
-    if imgInst.Image ~= "" and DetectedOriginalLogoIds[imgInst.Image] then
-        return true
+    if res ~= txt then
+        inst.Text = res
     end
+end
 
-    local parent = imgInst.Parent
-    if not parent then return false end
+-- ============================================================================
+-- 3. ROMBAK TOMBOL FLOATING "SR" JADI KAPSUL "★ ROCKSTAR" & HAPUS GAMBAR "SR"
+-- ============================================================================
+local ProtectedTabWords = {
+    "main", "automation", "shop", "event", "webhook", "settings", "config", "search"
+}
 
-    -- Jangan ganti ikon menu tab di Sidebar (Main, Automation, Shop, Event, Webhook, Settings, Config, Search)
-    local sidebarNames = {
-        ["main"] = true, ["automation"] = true, ["shop"] = true,
-        ["event"] = true, ["webhook"] = true, ["settings"] = true,
-        ["config"] = true, ["search feature..."] = true
-    }
-    for _, sibling in ipairs(parent:GetChildren()) do
-        if sibling:IsA("TextLabel") or sibling:IsA("TextBox") then
-            local t = string.lower(sibling.Text or sibling.PlaceholderText or "")
-            if sidebarNames[t] then
-                return false
+local function HasProtectedTabSibling(inst)
+    local p1 = inst.Parent
+    local p2 = p1 and p1.Parent
+    for _, container in ipairs({p1, p2}) do
+        if container then
+            for _, child in ipairs(container:GetChildren()) do
+                if child:IsA("TextLabel") or child:IsA("TextBox") then
+                    local t = string.lower((child:IsA("TextBox") and child.PlaceholderText or "") .. " " .. (child.Text or ""))
+                    for _, word in ipairs(ProtectedTabWords) do
+                        if string.find(t, word, 1, true) then
+                            return true
+                        end
+                    end
+                end
             end
         end
     end
-
-    -- 2. Jika berada satu baris/container dengan judul "Lynx" / "Serenity" / "Rockstar" di TopBar
-    for _, sibling in ipairs(parent:GetChildren()) do
-        if sibling:IsA("TextLabel") or sibling:IsA("TextButton") then
-            local raw = string.lower(sibling.Text or "")
-            if raw == "lynx" or raw == "serenity" or raw == "rockstar" or string.find(raw, "rockstar", 1, true) or string.find(raw, "lynx", 1, true) then
-                if imgInst.Image ~= "" then
-                    DetectedOriginalLogoIds[imgInst.Image] = true
-                end
-                return true
-            end
-        end
-    end
-
-    -- 3. Jika merupakan tombol floating (ImageButton/Frame kecil di luar MainFrame untuk buka/tutup UI)
-    if imgInst:IsA("ImageButton") and (parent:IsA("ScreenGui") or (parent:IsA("Frame") and parent.Parent and parent.Parent:IsA("ScreenGui") and parent.Size.X.Offset <= 70 and parent.Size.X.Offset > 0)) then
-        if imgInst.Image ~= "" then
-            DetectedOriginalLogoIds[imgInst.Image] = true
-        end
-        return true
-    end
-
     return false
 end
 
-local StyledInstances = setmetatable({}, {__mode = "k"})
-
-local function ApplyRockstarStyle(inst)
-    if not inst then return end
-
-    -- Selalu cek apakah ini logo yang harus diganti
-    if (inst:IsA("ImageLabel") or inst:IsA("ImageButton")) and CheckIfBrandLogo(inst) then
-        ReplaceWithRockstarLogo(inst)
+local function IsInsideScrollingContent(inst)
+    local curr = inst.Parent
+    while curr do
+        if curr:IsA("ScrollingFrame") then
+            return true
+        end
+        curr = curr.Parent
     end
+    return false
+end
 
-    if StyledInstances[inst] then return end
-    StyledInstances[inst] = true
+local function WipeLogoAndMakeRockstar(imgInst)
+    if not imgInst then return end
+    if IsInsideSystemGui(imgInst) then return end
+    if IsInsideScrollingContent(imgInst) then return end
+    if HasProtectedTabSibling(imgInst) then return end
 
     pcall(function()
-        -- 1. Ubah Warna Background
+        -- 1. Hapus paksa gambar "SR" / Planet
+        imgInst.Image = ""
+        imgInst.ImageTransparency = 1
+
+        -- 2. Cek apakah ini berada di dalam Tombol Floating (Kotak "SR")
+        local parentBtn = imgInst.Parent
+        if parentBtn and parentBtn:IsA("GuiObject") then
+            -- Jika ukuran kotak parent kecil/sedang (Tombol Floating "SR"), ubah bentuknya jadi Kapsul Panjang "★ ROCKSTAR"!
+            local w = parentBtn.Size.X.Offset
+            local h = parentBtn.Size.Y.Offset
+            if (w >= 28 and w <= 115 and h >= 28 and h <= 115) or parentBtn.Parent:IsA("ScreenGui") then
+                parentBtn.Size = UDim2.new(0, 130, 0, 38)
+                parentBtn.BackgroundColor3 = Color3.fromRGB(10, 20, 38)
+                parentBtn.BackgroundTransparency = 0.05
+
+                local corner = parentBtn:FindFirstChildOfClass("UICorner") or Instance.new("UICorner", parentBtn)
+                corner.CornerRadius = UDim.new(1, 0) -- Bentuk Kapsul Pill
+
+                local stroke = parentBtn:FindFirstChildOfClass("UIStroke") or Instance.new("UIStroke", parentBtn)
+                stroke.Color = Color3.fromRGB(0, 175, 255)
+                stroke.Thickness = 2
+
+                if not parentBtn:FindFirstChild("RockstarCapsuleTitle") then
+                    local title = Instance.new("TextLabel")
+                    title.Name = "RockstarCapsuleTitle"
+                    title.Size = UDim2.new(1, 0, 1, 0)
+                    title.BackgroundTransparency = 1
+                    title.Text = "★ ROCKSTAR"
+                    title.TextColor3 = Color3.fromRGB(55, 205, 255)
+                    title.Font = Enum.Font.GothamBlack
+                    title.TextSize = 13
+                    title.Active = false
+                    title.Parent = parentBtn
+                end
+                return
+            end
+        end
+
+        -- 3. Jika ini adalah logo di dalam TopBar (sebelah tulisan Rockstar), sembunyikan total karena judul sudah memakai "★ ROCKSTAR"
+        imgInst.Visible = false
+    end)
+end
+
+-- ============================================================================
+-- 4. TERAPKAN DESAIN BARU KE SELURUH KOMPONEN UI
+-- ============================================================================
+local ConnectedSignals = setmetatable({}, {__mode = "k"})
+
+local function ApplyRockstarStyle(inst)
+    if not inst or IsInsideSystemGui(inst) then return end
+
+    pcall(function()
+        -- A. Cek & Hapus Gambar Logo "SR" / Planet Setiap Kali Ditemukan (Tanpa Dikunci!)
+        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+            if not IsInsideScrollingContent(inst) and not HasProtectedTabSibling(inst) then
+                WipeLogoAndMakeRockstar(inst)
+            else
+                local c = ToRockstarBlue(inst.ImageColor3, false)
+                if c ~= inst.ImageColor3 then
+                    inst.ImageColor3 = c
+                end
+            end
+        end
+
+        -- B. Ubah Warna Background & Bentuk Sudut
         if inst:IsA("GuiObject") then
-            local newBg = ToRockstarBlue(inst.BackgroundColor3)
+            local newBg = ToRockstarBlue(inst.BackgroundColor3, true)
             if newBg ~= inst.BackgroundColor3 then
                 inst.BackgroundColor3 = newBg
             end
-            inst:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
-                local c = ToRockstarBlue(inst.BackgroundColor3)
-                if c ~= inst.BackgroundColor3 then
-                    inst.BackgroundColor3 = c
-                end
-            end)
-
-            local newBorder = ToRockstarBlue(inst.BorderColor3)
-            if newBorder ~= inst.BorderColor3 then
-                inst.BorderColor3 = newBorder
-            end
         end
 
-        -- 2. Ubah Teks & Warna Teks
+        -- C. Bersihkan Link Discord & Ubah Judul Teks
         if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
-            local origLower = string.lower(inst.Text or "")
-            local isBrandTitle = (origLower == "lynx" or origLower == "serenity" or string.find(origLower, "lynx", 1, true) or string.find(origLower, "serenity", 1, true))
-
-            local newTxt = ToRockstarText(inst.Text)
-            if newTxt ~= inst.Text then
-                inst.Text = newTxt
-            end
-
-            -- Jika ini adalah teks judul di TopBar, langsung cek semua ImageLabel di sebelahnya (di dalam TopBar) dan ganti logonya!
-            if isBrandTitle and inst.Parent then
-                for _, sib in ipairs(inst.Parent:GetDescendants()) do
-                    if (sib:IsA("ImageLabel") or sib:IsA("ImageButton")) then
-                        if sib.Image ~= "" then
-                            DetectedOriginalLogoIds[sib.Image] = true
-                        end
-                        ReplaceWithRockstarLogo(sib)
-                    end
-                end
-            end
-
-            inst:GetPropertyChangedSignal("Text"):Connect(function()
-                local t = ToRockstarText(inst.Text)
-                if t ~= inst.Text then
-                    inst.Text = t
-                end
-            end)
-
-            local newTc = ToRockstarBlue(inst.TextColor3)
+            ProcessAndCleanText(inst)
+            local newTc = ToRockstarBlue(inst.TextColor3, false)
             if newTc ~= inst.TextColor3 then
                 inst.TextColor3 = newTc
             end
-            inst:GetPropertyChangedSignal("TextColor3"):Connect(function()
-                local c = ToRockstarBlue(inst.TextColor3)
-                if c ~= inst.TextColor3 then
-                    inst.TextColor3 = c
-                end
-            end)
         end
 
-        -- 3. Ubah Warna Ikon / Gambar & Cek Logo
-        if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
-            if CheckIfBrandLogo(inst) then
-                ReplaceWithRockstarLogo(inst)
-            else
-                local newIc = ToRockstarBlue(inst.ImageColor3)
-                if newIc ~= inst.ImageColor3 then
-                    inst.ImageColor3 = newIc
-                end
-                inst:GetPropertyChangedSignal("ImageColor3"):Connect(function()
-                    local c = ToRockstarBlue(inst.ImageColor3)
-                    if c ~= inst.ImageColor3 then
-                        inst.ImageColor3 = c
+        -- D. ScrollBar Biru
+        if inst:IsA("ScrollingFrame") then
+            inst.ScrollBarImageColor3 = Color3.fromRGB(0, 165, 255)
+        end
+
+        -- E. Garis Pinggir (UIStroke) Biru Elektrik
+        if inst:IsA("UIStroke") then
+            inst.Color = Color3.fromRGB(28, 85, 160)
+        end
+
+        -- F. Gradasi Biru
+        if inst:IsA("UIGradient") then
+            inst.Color = ToRockstarSequence(inst.Color)
+        end
+
+        -- Pasang listener perubahan properti sekali saja per objek
+        if not ConnectedSignals[inst] then
+            ConnectedSignals[inst] = true
+
+            if inst:IsA("GuiObject") then
+                inst:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+                    local c = ToRockstarBlue(inst.BackgroundColor3, true)
+                    if c ~= inst.BackgroundColor3 then inst.BackgroundColor3 = c end
+                end)
+            end
+
+            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+                inst:GetPropertyChangedSignal("Text"):Connect(function()
+                    ProcessAndCleanText(inst)
+                end)
+                inst:GetPropertyChangedSignal("TextColor3"):Connect(function()
+                    local c = ToRockstarBlue(inst.TextColor3, false)
+                    if c ~= inst.TextColor3 then inst.TextColor3 = c end
+                end)
+            end
+
+            if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then
+                inst:GetPropertyChangedSignal("Image"):Connect(function()
+                    if not IsInsideScrollingContent(inst) and not HasProtectedTabSibling(inst) then
+                        WipeLogoAndMakeRockstar(inst)
+                    end
+                end)
+                inst:GetPropertyChangedSignal("Size"):Connect(function()
+                    if not IsInsideScrollingContent(inst) and not HasProtectedTabSibling(inst) then
+                        WipeLogoAndMakeRockstar(inst)
                     end
                 end)
             end
-        end
-
-        -- 4. Ubah Warna ScrollBar
-        if inst:IsA("ScrollingFrame") then
-            local newSc = ToRockstarBlue(inst.ScrollBarImageColor3)
-            if newSc ~= inst.ScrollBarImageColor3 then
-                inst.ScrollBarImageColor3 = newSc
-            end
-            inst:GetPropertyChangedSignal("ScrollBarImageColor3"):Connect(function()
-                local c = ToRockstarBlue(inst.ScrollBarImageColor3)
-                if c ~= inst.ScrollBarImageColor3 then
-                    inst.ScrollBarImageColor3 = c
-                end
-            end)
-        end
-
-        -- 5. Ubah Warna Garis Pinggir (UIStroke)
-        if inst:IsA("UIStroke") then
-            local newSt = ToRockstarBlue(inst.Color)
-            if newSt ~= inst.Color then
-                inst.Color = newSt
-            end
-            inst:GetPropertyChangedSignal("Color"):Connect(function()
-                local c = ToRockstarBlue(inst.Color)
-                if c ~= inst.Color then
-                    inst.Color = c
-                end
-            end)
-        end
-
-        -- 6. Ubah Warna Gradasi (UIGradient)
-        if inst:IsA("UIGradient") then
-            local newSeq = ToRockstarSequence(inst.Color)
-            if newSeq ~= inst.Color then
-                inst.Color = newSeq
-            end
-            inst:GetPropertyChangedSignal("Color"):Connect(function()
-                local s = ToRockstarSequence(inst.Color)
-                if s ~= inst.Color then
-                    inst.Color = s
-                end
-            end)
         end
     end)
 end
@@ -316,9 +306,8 @@ local function WatchGuiContainer(container)
         end
         container.DescendantAdded:Connect(function(desc)
             ApplyRockstarStyle(desc)
-            task.defer(function()
-                ApplyRockstarStyle(desc)
-            end)
+            task.delay(0.1, function() ApplyRockstarStyle(desc) end)
+            task.delay(0.5, function() ApplyRockstarStyle(desc) end)
         end)
     end)
 end
@@ -336,7 +325,7 @@ pcall(function()
 end)
 
 -- ============================================================================
--- 2. LOADER UTAMA
+-- 5. LOADER UTAMA (100% FITUR BEKERJA)
 -- ============================================================================
 local BASE = "https://raw.githubusercontent.com/MUshihara/Serenity-hub/main/"
 local isMM2 = game.PlaceId == 142823291 or game.GameId == 66654135
@@ -411,18 +400,18 @@ if not fn then
     error("[ROCKSTAR HUB] Loader compile failed: " .. tostring(err), 0)
 end
 
+-- Matikan permanen copy link Discord
 pcall(function()
     local env = (type(getgenv) == "function" and getgenv()) or _G
     env.__SERENITY_DISCORD_COPIED = true
-    env.__SERENITY_DISCORD_NOTICE_AT = os.time() + 999999
+    env.__SERENITY_DISCORD_NOTICE_AT = os.time() + 99999999
 end)
 
 local results = table.pack(fn())
 
--- Sweep ulang untuk memastikan semua logo & warna berubah menjadi Rockstar Biru
+-- Loop pembersih berkelanjutan agar tidak ada logo "SR" atau link Discord yang muncul belakangan
 task.spawn(function()
-    for _ = 1, 12 do
-        task.wait(0.4)
+    while task.wait(0.5) do
         pcall(function()
             if typeof(gethui) == "function" then
                 for _, d in ipairs(gethui():GetDescendants()) do ApplyRockstarStyle(d) end
