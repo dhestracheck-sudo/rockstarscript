@@ -1145,4 +1145,733 @@ local function CreateTab(tabName)
         end
         page.Visible = true
         btn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
-        btn.TextColor3 = Color3.
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end)
+
+    table.insert(Tabs, { Btn = btn, Page = page })
+    if #Tabs == 1 then
+        page.Visible = true
+        btn.BackgroundColor3 = Color3.fromRGB(0, 130, 200)
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+
+    return page
+end
+
+local function AddSection(page, title)
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -6, 0, 24)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "◆ " .. tostring(title)
+    lbl.TextColor3 = Color3.fromRGB(0, 215, 255)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = page
+    return lbl
+end
+
+local function AddToggle(page, labelText, defaultVal, callback)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -6, 0, 36)
+    row.BackgroundColor3 = Color3.fromRGB(20, 29, 46)
+    row.Parent = page
+
+    local rc = Instance.new("UICorner")
+    rc.CornerRadius = UDim.new(0, 6)
+    rc.Parent = row
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -68, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = labelText
+    lbl.TextColor3 = Color3.fromRGB(230, 240, 255)
+    lbl.Font = Enum.Font.GothamSemibold
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = row
+
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Size = UDim2.new(0, 46, 0, 22)
+    toggleBtn.Position = UDim2.new(1, -56, 0.5, -11)
+    toggleBtn.BackgroundColor3 = defaultVal and Color3.fromRGB(0, 185, 245) or Color3.fromRGB(45, 58, 80)
+    toggleBtn.Text = defaultVal and "ON" or "OFF"
+    toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleBtn.Font = Enum.Font.GothamBold
+    toggleBtn.TextSize = 11
+    toggleBtn.Parent = row
+
+    local tc = Instance.new("UICorner")
+    tc.CornerRadius = UDim.new(0, 6)
+    tc.Parent = toggleBtn
+
+    local state = defaultVal
+    toggleBtn.MouseButton1Click:Connect(function()
+        state = not state
+        toggleBtn.BackgroundColor3 = state and Color3.fromRGB(0, 185, 245) or Color3.fromRGB(45, 58, 80)
+        toggleBtn.Text = state and "ON" or "OFF"
+        pcall(callback, state)
+    end)
+end
+
+local function AddButton(page, labelText, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -6, 0, 34)
+    btn.BackgroundColor3 = Color3.fromRGB(0, 115, 180)
+    btn.Text = labelText
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 12
+    btn.Parent = page
+
+    local bc = Instance.new("UICorner")
+    bc.CornerRadius = UDim.new(0, 6)
+    bc.Parent = btn
+
+    btn.MouseButton1Click:Connect(function()
+        pcall(callback)
+    end)
+    return btn
+end
+
+-- ============================================================================
+-- 8. MEMBANGUN TAB MENU ROCKSTAR HUB v6.6
+-- ============================================================================
+local TabRoll = CreateTab("🎲 Roll & Pet")
+local TabUpgrade = CreateTab("⬆️ Peningkatan & Beli")
+local TabTower = CreateTab("🗼 Auto Menara")
+local TabEvent = CreateTab("🎃 Halloween & Klaim")
+local TabCollect = CreateTab("💰 Uang & Plot")
+local TabTeleport = CreateTab("📍 Teleport & Log")
+
+-- ----------------------------------------------------------------------------
+-- TAB 1: ROLL & PET
+-- ----------------------------------------------------------------------------
+AddSection(TabRoll, "Auto Roll & Manajemen Hewan Peliharaan")
+
+AddToggle(TabRoll, "🎲 Auto Roll Hewan Peliharaan (Cepat)", Config.AutoRoll, function(v)
+    Config.AutoRoll = v
+end)
+
+AddToggle(TabRoll, "🐾 Auto Pasang Pet Terbaik (Equip Best Pets)", Config.AutoEquipBest, function(v)
+    Config.AutoEquipBest = v
+end)
+
+AddToggle(TabRoll, "🧬 Auto Gabungkan Pet Kembar (Auto Fuse)", Config.AutoFuse, function(v)
+    Config.AutoFuse = v
+end)
+
+AddToggle(TabRoll, "🗑️ Auto Jual Pet Terlemah Saat Penuh (Sell Weakest)", Config.AutoSellWeakest, function(v)
+    Config.AutoSellWeakest = v
+end)
+
+AddButton(TabRoll, "⚡ Pasang Pet Terbaik Sekarang (Plot & Tower)", function()
+    if Remotes.EquipBestPets then pcall(function() Remotes.EquipBestPets:InvokeServer() end) end
+    if Remotes.EquipBestTeam then pcall(function() Remotes.EquipBestTeam:InvokeServer() end) end
+    Notify("Equip Best", "Pet terbaik untuk Plot & Menara telah dipasang!")
+end)
+
+-- ----------------------------------------------------------------------------
+-- TAB 2: PENINGKATAN & BELI (EXACT KEYS DARI LOG v6.3)
+-- ----------------------------------------------------------------------------
+AddSection(TabUpgrade, "Auto Buy Peningkatan (Luck1, RollSpeed1, MutationLuck1, dll.)")
+
+AddToggle(TabUpgrade, "📈 Auto Buy Semua Peningkatan (BuyUpgrade)", Config.AutoBuyAllUpgrades, function(v)
+    Config.AutoBuyAllUpgrades = v
+    if v then
+        Notify("Auto Buy Peningkatan", "Membeli otomatis Luck1..5, RollSpeed1..5, MutationLuck, TreadmillLuck, GoldenDice!")
+    end
+end)
+
+AddToggle(TabUpgrade, "♻️ Auto Buy Peningkatan Rebirth (UpgradeRebirthStat)", Config.AutoBuyRebirthUpgrades, function(v)
+    Config.AutoBuyRebirthUpgrades = v
+end)
+
+AddToggle(TabUpgrade, "🎲 Auto Buy & Equip Dadu Terbaik (Dice Shop)", Config.AutoBuyAndEquipDice, function(v)
+    Config.AutoBuyAndEquipDice = v
+end)
+
+AddToggle(TabUpgrade, "📜 Auto Buy Item Quest Shop", Config.AutoBuyQuestShop, function(v)
+    Config.AutoBuyQuestShop = v
+end)
+
+AddButton(TabUpgrade, "⚡ Beli Semua Peningkatan & Dadu Sekarang (1x Klik)", function()
+    RunAutoBuyAllUpgrades()
+    RunAutoBuyRebirthUpgrades()
+    RunAutoBuyAndEquipDice()
+    Notify("Beli Peningkatan", "Semua peningkatan & dadu yang terjangkau telah dibeli!")
+end)
+
+AddSection(TabUpgrade, "Auto Peningkatan Podium Pet (Lantai 1 & 2)")
+
+AddToggle(TabUpgrade, "⬆️ Auto Upgrade Level Semua Podium (Slot 1-16)", Config.AutoUpgradePodium, function(v)
+    Config.AutoUpgradePodium = v
+end)
+
+AddToggle(TabUpgrade, "📍 Teleport Mendekat Saat Upgrade Podium (<14m)", Config.AutoTeleportUpgrade, function(v)
+    Config.AutoTeleportUpgrade = v
+end)
+
+AddButton(TabUpgrade, "🚀 Keliling & Upgrade Max Semua Podium Sekarang", function()
+    task.spawn(function()
+        local hrp = GetHRP()
+        local oldCF = hrp and hrp.CFrame
+        local podiums = GetMyPodiums()
+        if #podiums == 0 then
+            Notify("Plot Belum Ditemukan", "Pastikan kamu sudah memiliki Plot!")
+            return
+        end
+        local upgradedCount = 0
+        for _, podium in ipairs(podiums) do
+            if podium:GetAttribute("Locked") ~= true then
+                UpgradeSinglePodium(podium, true)
+                upgradedCount = upgradedCount + 1
+                task.wait(0.1)
+            end
+        end
+        if oldCF and GetHRP() then
+            GetHRP().CFrame = oldCF
+        end
+        Notify("Podium Diupgrade", "Berhasil memicu Upgrade pada " .. upgradedCount .. " Podium!")
+    end)
+end)
+
+AddSection(TabUpgrade, "Rebirth, Trait & Grade")
+
+AddToggle(TabUpgrade, "🔥 Auto Rebirth Otomatis", Config.AutoRebirth, function(v)
+    Config.AutoRebirth = v
+end)
+
+AddToggle(TabUpgrade, "✨ Auto Reroll Trait Pet", Config.AutoRerollTrait, function(v)
+    Config.AutoRerollTrait = v
+end)
+
+AddToggle(TabUpgrade, "⭐ Auto Roll Grade Pet", Config.AutoRollGrade, function(v)
+    Config.AutoRollGrade = v
+end)
+
+-- ----------------------------------------------------------------------------
+-- TAB 3: AUTO MENARA & MENU PILIH STAGE (v6.6)
+-- ----------------------------------------------------------------------------
+local TowerStatusLabel = AddSection(TabTower, "Status Menara: Standby  |  Target: Stage 1")
+
+local StageSelectorCard = Instance.new("Frame")
+StageSelectorCard.Size = UDim2.new(1, -6, 0, 118)
+StageSelectorCard.BackgroundColor3 = Color3.fromRGB(18, 27, 44)
+StageSelectorCard.Parent = TabTower
+
+local StageCardCorner = Instance.new("UICorner")
+StageCardCorner.CornerRadius = UDim.new(0, 8)
+StageCardCorner.Parent = StageSelectorCard
+
+local StageCardStroke = Instance.new("UIStroke")
+StageCardStroke.Color = Color3.fromRGB(0, 175, 240)
+StageCardStroke.Thickness = 1.2
+StageCardStroke.Parent = StageSelectorCard
+
+local StageTitleLbl = Instance.new("TextLabel")
+StageTitleLbl.Size = UDim2.new(1, -16, 0, 24)
+StageTitleLbl.Position = UDim2.new(0, 10, 0, 6)
+StageTitleLbl.BackgroundTransparency = 1
+StageTitleLbl.Text = "🎯 Pilih Stage Menara:  STAGE 1  (Mode: Stage Pilihan)"
+StageTitleLbl.TextColor3 = Color3.fromRGB(0, 225, 255)
+StageTitleLbl.Font = Enum.Font.GothamBold
+StageTitleLbl.TextSize = 12
+StageTitleLbl.TextXAlignment = Enum.TextXAlignment.Left
+StageTitleLbl.Parent = StageSelectorCard
+
+local function UpdateStageDisplay()
+    local target = GetTargetTowerStage()
+    local modeTxt = (Config.TowerStageMode == "Highest") and "Auto Stage Tertinggi" or "Kunci Stage Pilihan"
+    StageTitleLbl.Text = string.format("🎯 Target Menara:  STAGE %d  (%s)", target, modeTxt)
+    TowerStatusLabel.Text = string.format("◆ Status: %s  |  Stage: %d", tostring(TowerRuntime.LastStatusText), target)
+end
+
+local StepRow = Instance.new("Frame")
+StepRow.Size = UDim2.new(1, -20, 0, 34)
+StepRow.Position = UDim2.new(0, 10, 0, 34)
+StepRow.BackgroundTransparency = 1
+StepRow.Parent = StageSelectorCard
+
+local StepLayout = Instance.new("UIListLayout")
+StepLayout.FillDirection = Enum.FillDirection.Horizontal
+StepLayout.Padding = UDim.new(0, 6)
+StepLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+StepLayout.Parent = StepRow
+
+local function CreateSmallStageBtn(parent, txt, width, color, onClick)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, width, 1, 0)
+    b.BackgroundColor3 = color
+    b.Text = txt
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 11
+    b.Parent = parent
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = b
+
+    b.MouseButton1Click:Connect(onClick)
+    return b
+end
+
+CreateSmallStageBtn(StepRow, "-10", 54, Color3.fromRGB(32, 48, 76), function()
+    Config.TowerStageMode = "Selected"
+    Config.SelectedStage = math.max(1, Config.SelectedStage - 10)
+    UpdateStageDisplay()
+end)
+
+CreateSmallStageBtn(StepRow, "-1", 50, Color3.fromRGB(32, 48, 76), function()
+    Config.TowerStageMode = "Selected"
+    Config.SelectedStage = math.max(1, Config.SelectedStage - 1)
+    UpdateStageDisplay()
+end)
+
+local ModeSwitchBtn = CreateSmallStageBtn(StepRow, "Mode: Pilihan", 140, Color3.fromRGB(0, 135, 205), function() end)
+ModeSwitchBtn.MouseButton1Click:Connect(function()
+    if Config.TowerStageMode == "Selected" then
+        Config.TowerStageMode = "Highest"
+        ModeSwitchBtn.Text = "Mode: Tertinggi"
+        ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 170, 130)
+        RefreshGameKnowledge()
+    else
+        Config.TowerStageMode = "Selected"
+        ModeSwitchBtn.Text = "Mode: Pilihan"
+        ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
+    end
+    UpdateStageDisplay()
+end)
+
+CreateSmallStageBtn(StepRow, "+1", 50, Color3.fromRGB(32, 48, 76), function()
+    Config.TowerStageMode = "Selected"
+    Config.SelectedStage = Config.SelectedStage + 1
+    UpdateStageDisplay()
+end)
+
+CreateSmallStageBtn(StepRow, "+10", 54, Color3.fromRGB(32, 48, 76), function()
+    Config.TowerStageMode = "Selected"
+    Config.SelectedStage = Config.SelectedStage + 10
+    UpdateStageDisplay()
+end)
+
+local PresetRow = Instance.new("Frame")
+PresetRow.Size = UDim2.new(1, -20, 0, 30)
+PresetRow.Position = UDim2.new(0, 10, 0, 76)
+PresetRow.BackgroundTransparency = 1
+PresetRow.Parent = StageSelectorCard
+
+local PresetLayout = Instance.new("UIListLayout")
+PresetLayout.FillDirection = Enum.FillDirection.Horizontal
+PresetLayout.Padding = UDim.new(0, 5)
+PresetLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+PresetLayout.Parent = PresetRow
+
+for _, presetNum in ipairs({1, 5, 10, 20, 30, 50}) do
+    CreateSmallStageBtn(PresetRow, "Stg " .. presetNum, 58, Color3.fromRGB(24, 38, 62), function()
+        Config.TowerStageMode = "Selected"
+        Config.SelectedStage = presetNum
+        ModeSwitchBtn.Text = "Mode: Pilihan"
+        ModeSwitchBtn.BackgroundColor3 = Color3.fromRGB(0, 135, 205)
+        UpdateStageDisplay()
+    end)
+end
+
+AddButton(TabTower, "🚀 Buka & Masuk ke Stage Pilihan Sekarang", function()
+    task.spawn(function()
+        local stg = GetTargetTowerStage()
+        Notify("Menara Stage " .. stg, "Membuka menara & masuk ke Stage " .. stg .. "...")
+        EnterTowerAtStage(stg)
+        UpdateStageDisplay()
+    end)
+end)
+
+AddSection(TabTower, "Otomatisasi Menara (Tanpa Ketuk Manual)")
+
+AddToggle(TabTower, "🗼 Auto Buka & Farm Menara Sesuai Stage", Config.AutoTower, function(v)
+    Config.AutoTower = v
+    if v then
+        local stg = GetTargetTowerStage()
+        Notify("Auto Menara ON", "Otomatis masuk & farming di Stage " .. tostring(stg))
+        task.spawn(function()
+            EnterTowerAtStage(stg)
+            UpdateStageDisplay()
+        end)
+    else
+        TowerRuntime.InTower = false
+        TowerRuntime.LastStatusText = "Standby"
+        UpdateStageDisplay()
+    end
+end)
+
+AddToggle(TabTower, "⚔️ Auto Tap Serang & Klik Tombol UI Menara", Config.AutoTapTowerCombat, function(v)
+    Config.AutoTapTowerCombat = v
+end)
+
+AddToggle(TabTower, "📍 Auto Teleport ke TowersPad Saat Buka Menara", Config.AutoTeleportToTowerPad, function(v)
+    Config.AutoTeleportToTowerPad = v
+end)
+
+AddToggle(TabTower, "🔄 Aktifkan Auto-Retry Menara (Server)", Config.AutoRetryTower, function(v)
+    Config.AutoRetryTower = v
+    if Remotes.SetTowerAutoRetry then
+        pcall(function() Remotes.SetTowerAutoRetry:FireServer(v) end)
+    end
+end)
+
+AddToggle(TabTower, "🛡️ Auto Tolak Popup Revive Robux (DeclineRevive)", Config.AutoDeclineRevive, function(v)
+    Config.AutoDeclineRevive = v
+end)
+
+AddButton(TabTower, "🚪 Keluar dari Menara Sekarang (LeaveTower)", function()
+    if Remotes.LeaveTower then
+        pcall(function() Remotes.LeaveTower:InvokeServer() end)
+    end
+    TowerRuntime.InTower = false
+    TowerRuntime.LastStatusText = "Keluar Manual"
+    UpdateStageDisplay()
+    Notify("Menara", "Berhasil keluar dari sesi Menara.")
+end)
+
+-- ----------------------------------------------------------------------------
+-- TAB 4: EVENT HALLOWEEN & KLAIM (FIXED v6.6)
+-- ----------------------------------------------------------------------------
+AddSection(TabEvent, "Event Halloween (Permen, Candy Shop & Haunted Crate)")
+
+AddToggle(TabEvent, "🍬 Auto Ambil & Klaim Permen Halloween (Anti-Error)", Config.AutoClaimCandy, function(v)
+    Config.AutoClaimCandy = v
+    if v then
+        Notify("Halloween Candy", "Memantau & mengambil permen Halloween otomatis!")
+    end
+end)
+
+AddToggle(TabEvent, "📍 Teleport ke Permen Saat Muncul di Map", Config.AutoTeleportCandy, function(v)
+    Config.AutoTeleportCandy = v
+end)
+
+AddToggle(TabEvent, "🍭 Auto Beli Item Candy Shop (BuyCandyShop)", Config.AutoBuyCandyShop, function(v)
+    Config.AutoBuyCandyShop = v
+end)
+
+AddButton(TabEvent, "🎃 Buka Toko Candy Shop & Haunted Crate Sekarang", function()
+    task.spawn(function()
+        local candyPad = Workspace:FindFirstChild("CandyShopPad")
+        local candyZone = candyPad and candyPad:FindFirstChild("Zone")
+        local candyPrompt = candyZone and candyZone:FindFirstChild("StandCandyShop", true)
+        if candyZone and candyZone:IsA("BasePart") then
+            SafeTeleport(candyZone.CFrame + Vector3.new(0, 3.5, 0))
+            task.wait(0.2)
+            if candyPrompt then SafeFirePrompt(candyPrompt) end
+        end
+        Notify("Halloween Shop", "Membuka Candy Shop!")
+    end)
+end)
+
+AddSection(TabEvent, "Roda Putar, Klaim Hadiah & 3 Golden Dice Rahasia")
+
+AddToggle(TabEvent, "🎡 Auto Putar Spin Wheel Gratis", Config.AutoSpinWheel, function(v)
+    Config.AutoSpinWheel = v
+end)
+
+AddToggle(TabEvent, "🎁 Auto Klaim Semua Hadiah (Daily, Playtime, Quest, Chest)", Config.AutoClaimRewards, function(v)
+    Config.AutoClaimRewards = v
+end)
+
+AddButton(TabEvent, "🎲 Ambil 3 Golden Dice Rahasia di Peta (Sekali Klik)", function()
+    task.spawn(function()
+        local hrp = GetHRP()
+        local oldCF = hrp and hrp.CFrame
+        local secrets = {
+            Workspace:FindFirstChild("AlleySecret"),
+            Workspace:FindFirstChild("HiddenSecret"),
+            Workspace:FindFirstChild("TowerSecret"),
+        }
+        local taken = 0
+        for _, sec in ipairs(secrets) do
+            local gd = sec and sec:FindFirstChild("GoldenDice")
+            local prompt = gd and gd:FindFirstChildOfClass("ProximityPrompt")
+            if gd and gd:IsA("BasePart") then
+                SafeTeleport(gd.CFrame + Vector3.new(0, 3, 0))
+                task.wait(0.25)
+                if prompt then
+                    SafeFirePrompt(prompt)
+                    taken = taken + 1
+                end
+                task.wait(0.2)
+            end
+        end
+        if oldCF then SafeTeleport(oldCF) end
+        Notify("Golden Dice Rahasia", "Berhasil memicu " .. taken .. " Golden Dice Rahasia!")
+    end)
+end)
+
+-- ----------------------------------------------------------------------------
+-- TAB 5: UANG & PLOT
+-- ----------------------------------------------------------------------------
+AddSection(TabCollect, "Auto Kumpul Uang & Fasilitas Plot")
+
+AddToggle(TabCollect, "💰 Auto Kumpul Uang Semua Podium (Lantai 1 & 2)", Config.AutoCollectCash, function(v)
+    Config.AutoCollectCash = v
+end)
+
+AddToggle(TabCollect, "🛒 Auto Beli Papan 'Auto Collect' di Plot", Config.AutoBuyAutoCollect, function(v)
+    Config.AutoBuyAutoCollect = v
+end)
+
+AddToggle(TabCollect, "🏃 Auto Gunakan Treadmill Plot", Config.AutoTreadmill, function(v)
+    Config.AutoTreadmill = v
+end)
+
+AddToggle(TabCollect, "⏩ Auto Lewati Iklan 5 Menit (WatchSkipAd)", Config.AutoWatchSkipAd, function(v)
+    Config.AutoWatchSkipAd = v
+end)
+
+-- ----------------------------------------------------------------------------
+-- TAB 6: TELEPORT PETA & LOG SELF-LEARNING
+-- ----------------------------------------------------------------------------
+AddSection(TabTeleport, "Log Self-Learning Rockstar v6.6")
+
+AddButton(TabTeleport, "📋 Salin Log Self-Learning ke Clipboard", function()
+    local header = "=== LOG SELF-LEARNING ROCKSTAR v6.6 ===\nInTower Status: " .. tostring(TowerRuntime.InTower) .. "\n"
+    local body = table.concat(LearningLogs, "\n")
+    local fullText = header .. (body ~= "" and body or "(Belum ada log tambahan)")
+    if typeof(setclipboard) == "function" then
+        setclipboard(fullText)
+        Notify("Log Disalin", "Log Self-Learning v6.6 berhasil disalin ke Clipboard!")
+    else
+        print(fullText)
+        Notify("Log Dicetak", "Log dicetak ke konsol F9.")
+    end
+end)
+
+AddSection(TabTeleport, "Teleport Cepat ke Plot & Toko")
+
+AddButton(TabTeleport, "🏠 Teleport ke Plot Milikku", function()
+    local myPlot = GetMyPlot()
+    if myPlot then
+        SafeTeleport(myPlot:GetPivot() + Vector3.new(0, 5, 0))
+        Notify("Teleport", "Berhasil pindah ke " .. myPlot.Name)
+    else
+        Notify("Plot", "Plot milikmu belum ditemukan!")
+    end
+end)
+
+local MapLocations = {
+    { Name = "🎲 Toko Dadu (Dice Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("DiceShopPad") end, Fallback = Vector3.new(200, 330, 10) },
+    { Name = "🍬 Toko Permen (Candy Shop)", Path = function() return Workspace:FindFirstChild("CandyShopPad") end, Fallback = Vector3.new(203.7, 332.5, 48.1) },
+    { Name = "🎃 Peti Angker (Haunted Crate)", Path = function() return Workspace:FindFirstChild("HauntedCrateStand") end, Fallback = Vector3.new(189.5, 333.3, 55.6) },
+    { Name = "🧬 Mesin Fuse Pet (Fusing Machine)", Path = function() return Workspace:FindFirstChild("FusingMachine") end, Fallback = Vector3.new(229.0, 332.6, 1.5) },
+    { Name = "✨ Toko Trait (Trait Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("TraitShopPad") end, Fallback = Vector3.new(210, 330, -15) },
+    { Name = "⭐ Toko Grade (Grade Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("GradeShopPad") end, Fallback = Vector3.new(215, 330, -30) },
+    { Name = "📜 Toko Quest (Quest Shop)", Path = function() return Workspace:FindFirstChild("Model") and Workspace.Model:FindFirstChild("QuestShopPad") end, Fallback = Vector3.new(220, 330, -40) },
+    { Name = "🎡 Roda Putar (Spin Wheel)", Path = function() return Workspace:FindFirstChild("SpinWheel") end, Fallback = Vector3.new(235.5, 342.1, -53.7) },
+    { Name = "🗼 Menara Pertarungan (TowersPad)", Path = function() return Workspace:FindFirstChild("TowersPad") end, Fallback = Vector3.new(-309.8, 333.5, -28.2) },
+}
+
+for _, loc in ipairs(MapLocations) do
+    AddButton(TabTeleport, loc.Name, function()
+        local obj = loc.Path()
+        if obj then
+            local zone = obj:FindFirstChild("Zone", true)
+            if zone and zone:IsA("BasePart") then
+                SafeTeleport(zone.CFrame + Vector3.new(0, 4, 0))
+                return
+            end
+            SafeTeleport(obj:GetPivot() + Vector3.new(0, 4, 0))
+        else
+            SafeTeleport(CFrame.new(loc.Fallback))
+        end
+    end)
+end
+
+-- ============================================================================
+-- 9. LOOP OTOMATISASI UTAMA (BACKGROUND WORKERS)
+-- ============================================================================
+
+ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+    if Config.InstantPrompt then
+        prompt.HoldDuration = 0
+        SafeFirePrompt(prompt)
+    end
+end)
+
+LocalPlayer.Idled:Connect(function()
+    if Config.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end)
+
+-- Loop 1: Auto Roll Cepat + Auto Tap Pertarungan Menara
+task.spawn(function()
+    while task.wait(Config.RollDelay) do
+        if Config.AutoRoll and Remotes.RequestRoll then
+            pcall(function()
+                Remotes.RequestRoll:InvokeServer(false)
+            end)
+        end
+
+        if Config.AutoTower and Config.AutoTapTowerCombat and TowerRuntime.InTower then
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton1(Vector2.new(500, 300))
+            end)
+        end
+    end
+end)
+
+-- Loop 2: Auto Kumpul Uang Podium + Auto Halloween Candy (v6.6)
+task.spawn(function()
+    while task.wait(0.5) do
+        if Config.AutoCollectCash then
+            local hrp = GetHRP()
+            local podiums = GetMyPodiums()
+            for _, podium in ipairs(podiums) do
+                if podium:GetAttribute("Locked") ~= true then
+                    local pad = podium:FindFirstChild("CollectPad")
+                    local slot = tonumber(podium:GetAttribute("Slot"))
+                    if pad and pad:IsA("BasePart") and hrp then
+                        if typeof(firetouchinterest) == "function" then
+                            pcall(function()
+                                firetouchinterest(hrp, pad, 0)
+                                firetouchinterest(hrp, pad, 1)
+                            end)
+                        end
+                    end
+                    if Remotes.CashCollected and slot then
+                        pcall(function()
+                            Remotes.CashCollected:FireServer(slot)
+                        end)
+                    end
+                end
+            end
+        end
+
+        if Config.AutoClaimCandy then
+            pcall(CollectHalloweenCandies)
+        end
+
+        if Config.AutoBuyAutoCollect then
+            local plot = GetMyPlot()
+            local board = plot and plot:FindFirstChild("AutoCollectBoard")
+            local panel = board and board:FindFirstChild("Panel")
+            local buyPrompt = panel and panel:FindFirstChild("BuyPrompt")
+            if buyPrompt and buyPrompt.Enabled then
+                local hrp = GetHRP()
+                if hrp and panel:IsA("BasePart") and (hrp.Position - panel.Position).Magnitude > 12 then
+                    SafeTeleport(panel.CFrame + Vector3.new(0, 3, 0))
+                    task.wait(0.1)
+                end
+                SafeFirePrompt(buyPrompt)
+            end
+        end
+    end
+end)
+
+-- Loop 3: Auto Buy Semua Peningkatan, Rebirth Stat, Dadu, Candy Shop, Quest Shop & Podium
+task.spawn(function()
+    while task.wait(1.0) do
+        if Config.AutoBuyAllUpgrades then
+            RunAutoBuyAllUpgrades()
+        end
+
+        if Config.AutoBuyRebirthUpgrades then
+            RunAutoBuyRebirthUpgrades()
+        end
+
+        if Config.AutoBuyAndEquipDice then
+            RunAutoBuyAndEquipDice()
+        end
+
+        if Config.AutoBuyCandyShop or Config.AutoBuyQuestShop then
+            RunAutoBuyEventShops()
+        end
+
+        if Config.AutoUpgradePodium then
+            local podiums = GetMyPodiums()
+            for _, podium in ipairs(podiums) do
+                if not Config.AutoUpgradePodium then break end
+                if podium:GetAttribute("Locked") ~= true then
+                    UpgradeSinglePodium(podium, Config.AutoTeleportUpgrade and not TowerRuntime.InTower)
+                    task.wait(0.08)
+                end
+            end
+        end
+
+        if Config.AutoRebirth and Remotes.Rebirth then
+            pcall(function() Remotes.Rebirth:InvokeServer() end)
+        end
+
+        if Config.AutoRerollTrait and Remotes.RerollTrait then
+            pcall(function() Remotes.RerollTrait:InvokeServer() end)
+        end
+
+        if Config.AutoRollGrade and Remotes.RollGrade then
+            pcall(function() Remotes.RollGrade:InvokeServer() end)
+        end
+    end
+end)
+
+-- Loop 4: Auto Menara & Stage Selector
+task.spawn(function()
+    while task.wait(1.5) do
+        if Config.AutoTower then
+            StepAutoTower()
+            UpdateStageDisplay()
+        end
+    end
+end)
+
+-- Loop 5: Auto Equip Best, Fuse, Sell, Klaim Hadiah & Spin Wheel
+task.spawn(function()
+    while task.wait(3.5) do
+        if Config.AutoEquipBest then
+            if Remotes.EquipBestPets then pcall(function() Remotes.EquipBestPets:InvokeServer() end) end
+            if Remotes.EquipBestTeam then pcall(function() Remotes.EquipBestTeam:InvokeServer() end) end
+        end
+
+        if Config.AutoFuse and Remotes.FusePets then
+            pcall(function() Remotes.FusePets:InvokeServer() end)
+            pcall(function() Remotes.FusePets:InvokeServer("All") end)
+        end
+
+        if Config.AutoSellWeakest and Remotes.SellWeakest then
+            pcall(function() Remotes.SellWeakest:InvokeServer() end)
+        end
+
+        if Config.AutoSpinWheel then
+            if Remotes.SpinWheel then pcall(function() Remotes.SpinWheel:InvokeServer() end) end
+            local sw = Workspace:FindFirstChild("SpinWheel")
+            local base = sw and sw:FindFirstChild("Base")
+            local prompt = base and base:FindFirstChildOfClass("ProximityPrompt")
+            if prompt then SafeFirePrompt(prompt) end
+        end
+
+        if Config.AutoWatchSkipAd and Remotes.WatchSkipAd then
+            pcall(function() Remotes.WatchSkipAd:InvokeServer() end)
+        end
+
+        if Config.AutoClaimRewards then
+            if Remotes.ClaimDaily then pcall(function() Remotes.ClaimDaily:InvokeServer() end) end
+            if Remotes.ClaimStarterQuest then pcall(function() Remotes.ClaimStarterQuest:InvokeServer() end) end
+            if Remotes.ClaimAllAchievements then pcall(function() Remotes.ClaimAllAchievements:InvokeServer() end) end
+            if Remotes.ClaimGroupChest then pcall(function() Remotes.ClaimGroupChest:InvokeServer() end) end
+            if Remotes.ClaimFriendChest then pcall(function() Remotes.ClaimFriendChest:InvokeServer() end) end
+            if Remotes.ClaimFreePet then pcall(function() Remotes.ClaimFreePet:InvokeServer() end) end
+            if Remotes.ClaimPlaytime then
+                for i = 1, 12 do
+                    pcall(function() Remotes.ClaimPlaytime:InvokeServer(i) end)
+                end
+            end
+            if Remotes.ClaimQuest then
+                for i = 1, 15 do
+                    pcall(function() Remotes.ClaimQuest:InvokeServer(i) end)
+                end
+            end
+        end
+    end
+end)
+
+Notify("Rockstar Hub v6.6 Aktif", "Fix Halloween Candy, Exact BuyUpgrade & Stage Menara siap!")
